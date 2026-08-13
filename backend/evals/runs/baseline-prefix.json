@@ -1,0 +1,115 @@
+{
+  "tag": "baseline",
+  "base_url": "https://17tongyou.com/travel",
+  "results": [
+    {
+      "id": "single_city_basic",
+      "category": "single",
+      "text": "我想去成都玩3天，两个人，喜欢逛老街和吃小吃，帮我排个行程",
+      "note": "最常见的单城攻略。守表格完整、无占位符泄漏、无裸星号。",
+      "conversation_id": "75de79c78a37444ea8dd071518884081",
+      "metrics": {
+        "elapsed_s": 245.4,
+        "chars": 5595,
+        "sources_n": 6,
+        "xhs_n": 5,
+        "has_amap": true,
+        "has_ctrip": false,
+        "images_n": 15,
+        "reused": false,
+        "memories_used": 0
+      },
+      "findings": [],
+      "verified": true,
+      "verification_report": "### single_city_basic　<sub>最常见的单城攻略。守表格完整、无占位符泄漏、无裸星号。</sub>\n\n**最终回复**：# 成都3日老街小吃漫游攻略…（5595 字，耗时 245s）\n\n**工具调用顺序**：\n- parse_request\n- amap_city_brief\n- xhs_search\n- xhs_detail\n- web_search_skipped\n- generate_guide\n\n**结果验证**：\n```\nVerificationResult(\n    passed=True,\n    reason='产出覆盖了用户要求的全部天数与城市，且有真实来源支撑',\n    evidence={\n        'days_covered': [\n            1,\n            2,\n            3,\n        ],\n        'days_required': 3,\n        'cities_required': ['成都'],\n        'cities_missing': [],\n        'sources_count': 6,\n        'source_sites': [\n            'amap',\n            'xhs',\n        ],\n        'chars': 5595,\n        'truncated': False,\n    }\n)\n```\n\n**过程验证**：\n```\nVerificationResult(\n    passed=True,\n    reason='调用顺序与降级策略均符合既定纪律',\n    evidence={\n        'tool_sequence': [\n            'parse_request',\n            'amap_city_brief',\n            'xhs_search',\n            'xhs_detail',\n            'web_search_skipped',\n            'generate_guide',\n        ],\n        'reused_sources': False,\n        'web_search_skipped': True,\n        'continued_generation': False,\n        'progress_steps': 12,\n    }\n)\n```\n\n**质量验证**：\n```\nVerificationResult(\n    passed=True,\n    reason='全部质量维度通过',\n    evidence={\n        '排版完整性': 'PASS',\n        '数据可读性': 'PASS',\n        '内容完整性': 'PASS',\n        '上下文纪律': 'PASS',\n        '安全合规': 'PASS',\n        '来源可溯': 'PASS',\n        'findings': '无',\n    }\n)\n```\n",
+      "progress": [
+        "正在理解你的旅行需求…",
+        "已获取高德实时数据（天气 + 景点）：成都",
+        "📕 正在小红书搜索：成都 旅游攻略 老街 小吃",
+        "📕 正在读第 1 篇小红书笔记",
+        "📕 正在读第 2 篇小红书笔记",
+        "📕 正在读第 3 篇小红书笔记",
+        "📕 正在读第 4 篇小红书笔记",
+        "📕 正在读第 5 篇小红书笔记",
+        "📕 正在读第 6 篇小红书笔记",
+        "已获取 5 篇小红书笔记（男友做的成都地图攻略🥰三天不绕路、成都玉林路9家必吃店！吃货必打卡、和朋友认为成都一致认为好吃的）",
+        "小红书资料充足，跳过网页搜索",
+        "正在综合多个来源，生成攻略…"
+      ],
+      "excerpt": "# 成都3日老街小吃漫游攻略\n\n> **行程速览**：3天主线围绕老成都街巷与在地小吃展开，Day1走文殊院·抚琴夜市老街烟火线，Day2串宽窄巷子·锦里·玉林路经典小吃线，Day3逛春熙路·太古里·镗钯街新旧交融线。节奏轻松偏逛吃，2人随心走，多留时间给街角小店和夜市氛围。\n\n---\n\n## Day 1：文殊院巷巷美食 → 宽窄巷子闲逛 → 抚琴夜市\n\n**今日路线**：文殊院及周边巷弄 → 宽窄巷子 → 奎星楼街 → 抚琴夜市\n\n| 时段 | 地点与体验 | 交通与停留 | 参考花费（2人） |\n|------|-----------|-----------|---------------|\n| 上午 9:00-12:00 | **文殊院**及周边巷弄：严太婆锅盔（现烤夹牛肉/夹凉粉，外酥里嫩）、洞子口张老二凉粉（甜水面、黄凉粉、钟水饺三件套都试一口）；文殊院本身免费，可进香、看银杏、"
+    },
+    {
+      "id": "single_city_budget",
+      "category": "single",
+      "text": "十月国庆想去成都玩4天3晚，两个人，预算5000左右，爱吃辣、喜欢小众不挤的地方",
+      "note": "带预算与偏好。守价格区间不被删除线吃掉（¥400~600 类）。",
+      "conversation_id": "151f680b61274f3bba3529c60cfd1b61",
+      "metrics": {
+        "elapsed_s": 233.0,
+        "chars": 7758,
+        "sources_n": 8,
+        "xhs_n": 5,
+        "has_amap": true,
+        "has_ctrip": false,
+        "images_n": 15,
+        "reused": true,
+        "memories_used": 1
+      },
+      "findings": [
+        {
+          "code": "raw_bold_marker",
+          "detail": "11 处 CJK 标点紧邻 `**`",
+          "level": "error"
+        }
+      ],
+      "verified": false,
+      "verification_report": "### single_city_budget　<sub>带预算与偏好。守价格区间不被删除线吃掉（¥400~600 类）。</sub>\n\n**最终回复**：# 成都4日小众逛吃攻略｜国庆避开人潮，专走本地人私藏路线…（7758 字，耗时 233s）\n\n**工具调用顺序**：\n- parse_request\n- amap_city_brief\n- reuse_recent_sources\n- web_search\n- generate_guide\n\n**结果验证**：\n```\nVerificationResult(\n    passed=True,\n    reason='产出覆盖了用户要求的全部天数与城市，且有真实来源支撑',\n    evidence={\n        'days_covered': [\n            1,\n            2,\n            3,\n            4,\n        ],\n        'days_required': 4,\n        'cities_required': ['成都'],\n        'cities_missing': [],\n        'sources_count': 8,\n        'source_sites': [\n            'amap',\n            'web',\n            'xhs',\n        ],\n        'chars': 7758,\n        'truncated': False,\n    }\n)\n```\n\n**过程验证**：\n```\nVerificationResult(\n    passed=True,\n    reason='调用顺序与降级策略均符合既定纪律',\n    evidence={\n        'tool_sequence': [\n            'parse_request',\n            'amap_city_brief',\n            'reuse_recent_sources',\n            'web_search',\n            'generate_guide',\n        ],\n        'reused_sources': True,\n        'web_search_skipped': False,\n        'continued_generation': False,\n        'progress_steps': 7,\n    }\n)\n```\n\n**质量验证**：\n```\nVerificationResult(\n    passed=False,\n    reason=\"1 个维度不达标：['排版完整性']\",\n    evidence={\n        '排版完整性': 'FAIL（raw_bold_marker）',\n        '数据可读性': 'PASS',\n        '内容完整性': 'PASS',\n        '上下文纪律': 'PASS',\n        '安全合规': 'PASS',\n        '来源可溯': 'PASS',\n        'findings': ['raw_bold_marker: 11 处 CJK 标点紧邻 `**`'],\n    }\n)\n```\n",
+      "progress": [
+        "正在理解你的旅行需求…",
+        "已获取高德实时数据（天气 + 景点）：成都",
+        "♻️ 复用了今天查过的 5 篇小红书资料（男友做的成都地图攻略🥰三天不绕路、成都玉林路9家必吃店！吃货必打卡、和朋友认为成都一致认为好吃的），跳过重新抓取。想要最新资料，回一句「重新搜索」即可。",
+        "正在搜索：成都 4天旅游攻略 行程",
+        "已读取：成都市_百度百科",
+        "已读取：成都（七朝古都）_百度百科",
+        "正在综合多个来源，生成攻略…"
+      ],
+      "excerpt": "# 成都4日小众逛吃攻略｜国庆避开人潮，专走本地人私藏路线\n\n> **行程速览**：4天主线围绕“城南新貌+老城巷陌+烟火夜市”展开，Day1落地先探铁像寺水街与金融城夜景，Day2熊猫基地+东郊记忆+抚琴夜市，Day3文殊院+镗钯街+望江楼+玉林路美食扫街，Day4桂溪生态公园+返程。全程避开宽窄巷子/锦里/春熙路等国庆爆挤区域，专挑本地人常去的小众点位，人均预算约2500元，节奏轻松偏逛吃。\n\n## Day 1 抵达成都 · 城南水乡与都市夜景\n\n![小红书灵感图｜男友做的成都地图攻略🥰三天不绕路](/travel/api/img?u=https%3A%2F%2Fsns-webpic-qc.xhscdn.com%2F202608041321%2F7f352f31b634d51f2c2134ecb33a259e%2F1040g00831v8949adig0g5nih60cg99hgl13"
+    },
+    {
+      "id": "multi_city_domestic",
+      "category": "multi",
+      "text": "帮我规划武汉、开封、洛阳6天的动车游，两个人，喜欢历史古迹",
+      "note": "多城。守高德数据不整条丢失、搜索词不整串塞、正文覆盖每一城。",
+      "conversation_id": "f27f3d5218fe42d397130e3dc21ed77e",
+      "metrics": {
+        "elapsed_s": 371.5,
+        "chars": 8089,
+        "sources_n": 9,
+        "xhs_n": 6,
+        "has_amap": true,
+        "has_ctrip": false,
+        "images_n": 30,
+        "reused": false,
+        "memories_used": 0
+      },
+      "findings": [],
+      "verified": true,
+      "verification_report": "### multi_city_domestic　<sub>多城。守高德数据不整条丢失、搜索词不整串塞、正文覆盖每一城。</sub>\n\n**最终回复**：> **行程速览**：6天动车串联武汉→开封→洛阳三大古都，以“三国鼎立”的历史轴线为主线，节奏张弛有度——武汉两日看江…（8089 字，耗时 372s）\n\n**工具调用顺序**：\n- parse_request\n- amap_city_brief\n- xhs_search\n- xhs_detail\n- xhs_search\n- web_search_skipped\n- generate_guide\n\n**结果验证**：\n```\nVerificationResult(\n    passed=True,\n    reason='产出覆盖了用户要求的全部天数与城市，且有真实来源支撑',\n    evidence={\n        'days_covered': [\n            1,\n            2,\n            3,\n            4,\n            5,\n            6,\n        ],\n        'days_required': 6,\n        'cities_required': [\n            '武汉',\n            '开封',\n            '洛阳',\n        ],\n        'cities_missing': [],\n        'sources_count': 9,\n        'source_sites': [\n            'amap',\n            'xhs',\n        ],\n        'chars': 8089,\n        'truncated': False,\n    }\n)\n```\n\n**过程验证**：\n```\nVerificationResult(\n    passed=True,\n    reason='调用顺序与降级策略均符合既定纪律',\n    evidence={\n        'tool_sequence': [\n            'parse_request',\n            'amap_city_brief',\n            'xhs_search',\n            'xhs_detail',\n            'xhs_search',\n            'web_search_skipped',\n            'generate_guide',\n        ],\n        'reused_sources': False,\n        'web_search_skipped': True,\n        'continued_generation': False,\n        'progress_steps': 12,\n    }\n)\n```\n\n**质量验证**：\n```\nVerificationResult(\n    passed=True,\n    reason='全部质量维度通过',\n    evidence={\n        '排版完整性': 'PASS',\n        '数据可读性': 'PASS',\n        '内容完整性': 'PASS',\n        '上下文纪律': 'PASS',\n        '安全合规': 'PASS',\n        '来源可溯': 'PASS',\n        'findings': '无',\n    }\n)\n```\n",
+      "progress": [
+        "正在理解你的旅行需求…",
+        "已获取高德实时数据（天气 + 景点）：武汉、开封、洛阳",
+        "📕 正在小红书搜索：武汉 旅游攻略 历史古迹",
+        "📕 正在读第 1 篇小红书笔记",
+        "📕 正在读第 2 篇小红书笔记",
+        "📕 正在读第 3 篇小红书笔记",
+        "📕 正在读第 4 篇小红书笔记",
+        "📕 正在小红书搜索：开封 旅游攻略 历史古迹",
+        "📕 正在小红书搜索：洛阳 旅游攻略 历史古迹",
+        "已获取 6 篇小红书笔记（【湖北篇-武汉】武汉独属的浪漫文、武汉旅游攻略✅送给要去武汉旅游的、穿越北宋“天下首府”｜开封府游玩）",
+        "小红书资料充足，跳过网页搜索",
+        "正在综合多个来源，生成攻略…"
+      ],
+      "excerpt": "> **行程速览**：6天动车串联武汉→开封→洛阳三大古都，以“三国鼎立”的历史轴线为主线，节奏张弛有度——武汉两日看江汉交汇的千年风华，开封两日沉浸北宋市井烟火，洛阳两日对话盛唐与石窟艺术，整体安排不赶路、不绕路。\n\n> ⚠️ **日期提示**：当前未提供具体出行日期，以下行程中的天气参考为近期预报趋势，仅供参考。请补充具体日期后可查询实时天气、动车车次与票价；文中所有票价均标注“参考价（非实时）”。\n\n---\n\n## Day 1：武汉｜江汉汇流，初识江城\n\n**今日路线**：山海关路过早 → 武汉天地 → 黎黄陂路 → 巴公房子 → 咸安坊 → 江汉路步行街 → 江汉关博物馆 → 江汉关大楼\n\n| 时段 | 地点与体验 | 交通与停留 | 参考花费（2人） |\n|------|------------|-----------|----------------|\n| 上午 09:00 |"
+    }
+  ]
+}

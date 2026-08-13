@@ -1,0 +1,87 @@
+# 输出质量回归评估集（2026-08-04）
+#
+# 每条 query 固定不变——改 prompt / 流水线前后各跑一遍做对照。
+# expect 里只写**能被规则确定判定**的期望；主观质量仍靠人看报告里的正文摘录。
+#
+# 字段：
+#   id           唯一标识（快照对照按它匹配）
+#   category     分类，可用 --only 筛
+#   text         用户原话
+#   cities       正文里应当出现的城市（任一命中即可，多城行程写全）
+#   min_days     应覆盖的最少天数（0=不检查）
+#   forbid_words 不该出现的词（记忆污染/内部话术等场景专用）
+#   deep         是否打开深度推理开关
+#   note         这条 query 是为了守住什么
+
+- id: single_city_basic
+  category: single
+  text: 我想去成都玩3天，两个人，喜欢逛老街和吃小吃，帮我排个行程
+  cities: [成都]
+  min_days: 3
+  note: 最常见的单城攻略。守表格完整、无占位符泄漏、无裸星号。
+
+- id: single_city_budget
+  category: single
+  text: 十月国庆想去成都玩4天3晚，两个人，预算5000左右，爱吃辣、喜欢小众不挤的地方
+  cities: [成都]
+  min_days: 4
+  note: 带预算与偏好。守价格区间不被删除线吃掉（¥400~600 类）。
+
+- id: multi_city_domestic
+  category: multi
+  text: 帮我规划武汉、开封、洛阳6天的动车游，两个人，喜欢历史古迹
+  cities: [武汉, 开封, 洛阳]
+  min_days: 6
+  note: 多城。守高德数据不整条丢失、搜索词不整串塞、正文覆盖每一城。
+
+- id: multi_city_overseas
+  category: multi
+  text: 10.1-10.7 国庆，我想去马来西亚游玩，吉隆坡，仙本那，亚庇，主要想在仙本那住度假酒店，跳岛等等，帮我规划一下行程，包括往返时间
+  cities: [吉隆坡, 仙本那, 亚庇]
+  min_days: 7
+  note: 海外多城 + 住宿意图。守续写不截断、携程选城按住宿意图排序。
+
+- id: waypoint_trip
+  category: waypoint
+  text: 合肥出发，终点是武汉，开车自驾，帮我看一下途经有什么可以闲逛的地方，例如古镇一样
+  cities: []
+  min_days: 0
+  forbid_words: [咸宁, 羊楼洞]
+  note: 沿途中转。守推荐点在行进方向上（不出现终点以南的城市）、不反问目的地。
+
+- id: hotel_intent
+  category: hotel
+  text: 帮我查一下成都市中心性价比高的酒店，两个人住3晚，预算每晚400左右
+  cities: [成都]
+  min_days: 0
+  forbid_words: [本轮参考资料, 参考资料中不含]
+  note: 酒店意图。守不向用户解释内部实现。
+
+- id: no_time_mentioned
+  category: memory
+  text: 帮我规划厦门2天1晚，两个人，喜欢海边和咖啡馆
+  cities: [厦门]
+  min_days: 2
+  forbid_words: [国庆, 春节, 元旦, 五一]
+  note: 用户没提任何节假日。守旧行程记忆不把「国庆」「预算5000」泄漏进来。
+
+- id: long_multi_city
+  category: multi
+  text: 帮我规划云南8天，昆明、大理、丽江、香格里拉，两个人，节奏轻松一点
+  cities: [昆明, 大理, 丽江]
+  min_days: 8
+  note: 超长多城。守长度上限触发时自动续写、8 天全覆盖。
+
+- id: food_focus
+  category: single
+  text: 帮我出一份武汉2天的美食攻略，两个人，预算1500，要接地气的本地馆子
+  cities: [武汉]
+  min_days: 2
+  note: 美食向。守小红书细节被织入（店名/人均/排队提示）而非泛泛百科。
+
+- id: relaxed_pace
+  category: single
+  text: 想去杭州3天，带爸妈，走不动路，帮我安排节奏很慢的行程
+  cities: [杭州]
+  min_days: 3
+  note: 节奏约束。守「轻松就少安排景点」被遵守（人工看，规则只守基本项）。

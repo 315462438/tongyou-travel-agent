@@ -1,0 +1,52 @@
+{
+  "tag": "smoke",
+  "base_url": "https://17tongyou.com/travel",
+  "results": [
+    {
+      "id": "single_city_basic",
+      "category": "single",
+      "text": "我想去成都玩3天，两个人，喜欢逛老街和吃小吃，帮我排个行程",
+      "note": "最常见的单城攻略。守表格完整、无占位符泄漏、无裸星号。",
+      "conversation_id": "666326b897544f71bc565ec8153219e6",
+      "metrics": {
+        "elapsed_s": 288.8,
+        "chars": 6783,
+        "sources_n": 6,
+        "xhs_n": 5,
+        "has_amap": true,
+        "has_ctrip": false,
+        "images_n": 16,
+        "reused": false,
+        "memories_used": 3
+      },
+      "findings": [
+        {
+          "code": "raw_bold_marker",
+          "detail": "4 处 CJK 标点紧邻 `**`",
+          "level": "error"
+        }
+      ],
+      "excerpt": "# 慢逛成都·3天老街小吃寻味记\n\n> **行程速览**：三天时间不赶路，一头扎进成都的老街巷里，从清晨的一碗甜水面到深夜的一把烧烤，两个人牵着手逛吃逛吃，把抚琴的烟火、玉林的文艺、奎星楼的香辣统统装进胃里，主打一个舒坦、不绕路。\n\n\n\n![小红书灵感·男友做的成都地图攻略🥰三天不绕路·1](/travel/api/img?u=https%3A%2F%2Fsns-webpic-qc.xhscdn.com%2F202608041109%2F894ff0ff4819e89f7a4da8c6d4d52a75%2F1040g00831v8949adig005nih60cg99hgciq08p0%21nd_dft_wlteh_webp_3)\n\n\n\n---\n\n## Day 1 市井烟火初体验\n\n**今日路线**：熊猫基地 → 文殊院 → 东郊记忆 → 抚琴夜市\n\n| 时段 | 地点与体验 | 交通与停"
+    },
+    {
+      "id": "no_time_mentioned",
+      "category": "memory",
+      "text": "帮我规划厦门2天1晚，两个人，喜欢海边和咖啡馆",
+      "note": "用户没提任何节假日。守旧行程记忆不把「国庆」「预算5000」泄漏进来。",
+      "conversation_id": "c3d267f1c69e4555bc7bf76b1859d0db",
+      "metrics": {
+        "elapsed_s": 268.1,
+        "chars": 6165,
+        "sources_n": 5,
+        "xhs_n": 4,
+        "has_amap": true,
+        "has_ctrip": false,
+        "images_n": 14,
+        "reused": false,
+        "memories_used": 3
+      },
+      "findings": [],
+      "excerpt": "# 厦门2天1晚 · 海风与咖啡馆的温柔漫游\n\n> **行程速览**：两天都沿着海岸线慢走慢坐——第一天扎进环岛路，把下午交给 Snow Peak 的海景落地窗和不在书店的沙滩伞下，傍晚追一场白城日落；第二天回到市区，用筼筜湖的晨光、海湾公园的草坪和白鹭洲的绿荫收尾。全程节奏松软，重点就是看海、喝咖啡、发呆，两个人刚刚好。\n\n---\n\n## Day 1 ｜ 环岛路海景咖啡馆串游 + 白城日落\n\n**今日路线**：黄厝海滩 → Snow Peak 咖啡馆 → 不在书店 → 玩月坡 → 白城沙滩 → Sea U 海云餐酒吧\n\n| 时段 | 地点与体验 | 交通与停留 | 参考花费 |\n|------|------------|------------|----------|\n| 上午 10:30 | 抵达厦门，前往环岛路黄厝一带。把行李寄存在民宿/酒店后，先到**黄厝海滩**踩沙踏浪。沙滩开阔"
+    }
+  ]
+}

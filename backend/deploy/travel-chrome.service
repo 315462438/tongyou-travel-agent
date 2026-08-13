@@ -1,0 +1,16 @@
+[Unit]
+Description=Headless Chromium for Travel Agent (CDP :9223)
+After=network.target
+
+[Service]
+User=ubuntu
+ExecStart=/snap/bin/chromium --headless=new --no-sandbox --disable-gpu \
+    --remote-debugging-port=9223 \
+    --user-data-dir=/home/ubuntu/chrome-agent-profile \
+    --no-first-run --lang=zh-CN \
+    --window-size=1440,900
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

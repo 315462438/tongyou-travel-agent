@@ -1,0 +1,38 @@
+# ---- 密钥与本地配置（绝不提交）----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# ---- Node / 前端 ----
+node_modules/
+frontend/dist/
+.vite/
+*.tsbuildinfo
+
+# ---- 构建产物 ----
+# backend/static 是 frontend 构建产物的拷贝（部署时生成），不进版本库。
+# 部署流程见 CLAUDE.md：npm run build && cp -r dist/. ../backend/static/
+backend/static/
+
+# ---- IDE / 系统 ----
+.idea/
+.vscode/
+.DS_Store
+
+# ---- 运行时产物 ----
+*.log
+/tmp/
+backend/*.db
+backend/*.sqlite3
