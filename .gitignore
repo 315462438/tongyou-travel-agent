@@ -5,6 +5,12 @@
 *.pem
 *.key
 
+# 凭据交接类文档一律不进仓库（真实凭据请放在仓库之外）
+*凭据*
+*credential*
+*secret*
+*.secrets
+
 # ---- Python ----
 __pycache__/
 *.py[cod]
