@@ -42,13 +42,30 @@ class ConfirmRequest(BaseModel):
     choice: str  # login / skip
 
 
+# 子代理面板里**只在点开详情时才需要**的重字段（Phase 94）。
+# 完整输入输出加起来一个子代理能有两万字，4 个就是几十 KB；`/messages` 是
+# 800ms 一轮的轮询接口，全带上纯属浪费带宽。详情走 `/subagents/{run_id}` 按需取。
+_SUBAGENT_HEAVY = ("prompt_full", "output")
+
+
+def _light_meta(meta: dict | None) -> dict | None:
+    if not isinstance(meta, dict):
+        return meta
+    runs = meta.get("subagents")
+    if not isinstance(runs, list):
+        return meta
+    slim = [{k: v for k, v in r.items() if k not in _SUBAGENT_HEAVY}
+            if isinstance(r, dict) else r for r in runs]
+    return {**meta, "subagents": slim}
+
+
 def _msg_dict(m: TravelMessage) -> dict:
     return {
         "id": m.id,
         "role": m.role,
         "content": m.content,
         "reasoning": m.reasoning,
-        "meta": json.loads(m.meta_json) if m.meta_json else None,
+        "meta": _light_meta(json.loads(m.meta_json) if m.meta_json else None),
         "created_at": m.created_at.isoformat() if m.created_at else None,
     }
 
@@ -293,6 +310,36 @@ def get_messages(cid: str, db: Session = Depends(get_db),
         .order_by(TravelMessage.created_at)
     ).scalars().all()
     return {"messages": [_msg_dict(m) for m in msgs], "running": _is_running(msgs)}
+
+
+@router.get("/{cid}/subagents/{run_id}")
+def get_subagent_detail(cid: str, run_id: str, db: Session = Depends(get_db),
+                        user: TravelUser = Depends(get_current_user)):
+    """某个子代理的**完整**派发内容与回复（Phase 94，点开面板某一条时才调）。
+
+    数据源就是 `SubagentTracker` 写的那条 progress 消息的 meta——不另建表：
+    子代理详情的生命周期与那条消息完全一致（会话删了它也就没了），
+    单独存一张表只会多一处要同步删除的地方。
+    """
+    _owned(db, cid, user)
+    rows = db.execute(
+        select(TravelMessage)
+        .where(TravelMessage.conversation_id == cid, TravelMessage.role == "progress")
+        .order_by(TravelMessage.created_at.desc())
+    ).scalars().all()
+    for m in rows:
+        if not m.meta_json:
+            continue
+        try:
+            runs = (json.loads(m.meta_json) or {}).get("subagents")
+        except Exception:  # noqa: BLE001 — 坏 meta 不该让整个接口 500
+            continue
+        if not isinstance(runs, list):
+            continue
+        for r in runs:
+            if isinstance(r, dict) and r.get("id") == run_id:
+                return r
+    raise HTTPException(status_code=404, detail="subagent run not found")
 
 
 def _streaming(m: TravelMessage) -> bool:

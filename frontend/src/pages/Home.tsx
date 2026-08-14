@@ -52,6 +52,10 @@ interface SubagentRun {
   status: 'running' | 'done' | 'failed'
   tokens: number
   elapsed_s: number
+  // Phase 94：完整派发内容与回复。**轮询返回的列表里没有这两项**（后端剥掉了），
+  // 点开某一条时才走 /subagents/{id} 取，避免 800ms 轮询每次都拖几十 KB。
+  prompt_full?: string
+  output?: string
 }
 
 interface Msg {
@@ -1163,7 +1167,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
                     }}
                   />
                 ))}
-                {subagentRuns.length > 0 && <SubagentPanel runs={subagentRuns} />}
+                {subagentRuns.length > 0 && cid && <SubagentPanel runs={subagentRuns} cid={cid} />}
                 {showThinkingWorkspace && (
                   <ThinkingWorkspace
                     stage={thinkingStage}
@@ -2410,8 +2414,73 @@ function Composer({
 
 /** 子代理面板（Phase 88）：深度研究会并发派多个子代理，这里让它们可见。
  *  折叠时只占一行（「N 个子代理」+ 运行中计数），展开看每个在查什么、多久、多少 token。 */
-function SubagentPanel({ runs }: { runs: SubagentRun[] }) {
+/** 子代理详情抽屉（Phase 94）：完整的派发内容与回复。
+ *  内容按需拉取——列表行里没有全文，见 SubagentRun 的注释。 */
+function SubagentDetail({ cid, run, onClose }: {
+  cid: string
+  run: SubagentRun
+  onClose: () => void
+}) {
+  const [tab, setTab] = useState<'input' | 'output'>('input')
+  const [full, setFull] = useState<SubagentRun | null>(null)
+  const [err, setErr] = useState('')
+
+  useEffect(() => {
+    let alive = true
+    setFull(null)
+    setErr('')
+    authFetch(`${API}/chat/${cid}/subagents/${run.id}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((d) => alive && setFull(d))
+      .catch(() => alive && setErr('取不到这条子代理的详情'))
+    return () => {
+      alive = false
+    }
+  }, [cid, run.id])
+
+  // 运行中的子代理还没有回复，默认停在「输入」页，不给一个空白的输出页
+  const output = full?.output || ''
+  const body = tab === 'input' ? full?.prompt_full || '' : output
+
+  return (
+    // 复用轨迹详情的抽屉骨架——同一类「点开看原始输入输出」的东西，
+    // 不该有两套长得不一样的壳
+    <div className="traj-detail-mask" onClick={onClose}>
+      <div className="traj-detail subagent-drawer" onClick={(e) => e.stopPropagation()}
+        role="dialog" aria-label="子代理详情">
+        <div className="traj-detail-head">
+          <span className={`subagent-badge status-${run.status}`}>{run.name}</span>
+          <b>{run.title}</b>
+          <button className="modal-close" onClick={onClose} aria-label="关闭">✕</button>
+        </div>
+        <div className="traj-detail-tabs">
+          <button className={tab === 'input' ? 'active' : ''} onClick={() => setTab('input')}>
+            派发内容
+          </button>
+          <button className={tab === 'output' ? 'active' : ''} onClick={() => setTab('output')}>
+            回复{run.status === 'running' ? '（运行中）' : ''}
+          </button>
+        </div>
+        <div className="traj-detail-body">
+          {err && <p className="traj-empty">{err}</p>}
+          {!err && !full && <p className="traj-empty">加载中…</p>}
+          {!err && full && !body && (
+            <p className="traj-empty">
+              {tab === 'output' && run.status === 'running'
+                ? '这个子代理还在跑，回复要等它结束。'
+                : '（空）'}
+            </p>
+          )}
+          {body && <pre className="traj-pre">{body}</pre>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SubagentPanel({ runs, cid }: { runs: SubagentRun[]; cid: string }) {
   const [open, setOpen] = useState(false)
+  const [picked, setPicked] = useState<SubagentRun | null>(null)
   const active = runs.filter((r) => r.status === 'running').length
   const totalTok = runs.reduce((a, r) => a + (r.tokens || 0), 0)
 
@@ -2436,18 +2505,26 @@ function SubagentPanel({ runs }: { runs: SubagentRun[] }) {
         <ul className="subagent-list">
           {runs.map((r) => (
             <li key={r.id} className={`subagent-item status-${r.status}`}>
-              <i className="subagent-dot" aria-hidden="true" />
-              <span className="subagent-main">
-                <b>{r.title}</b>
-                <small>{r.prompt}</small>
-              </span>
-              <span className="subagent-meta">
-                <em>{fmtTok(r.tokens)} tok</em>
-                <em>{fmtSec(r.elapsed_s)}</em>
-              </span>
+              {/* 整行可点：进去看完整的派发内容与回复 */}
+              <button className="subagent-row" onClick={() => setPicked(r)}
+                aria-label={`查看子代理「${r.title}」的派发内容与回复`}>
+                <i className="subagent-dot" aria-hidden="true" />
+                <span className="subagent-main">
+                  <b>{r.title}</b>
+                  <small>{r.prompt}</small>
+                </span>
+                <span className="subagent-meta">
+                  <em>{fmtTok(r.tokens)} tok</em>
+                  <em>{fmtSec(r.elapsed_s)}</em>
+                </span>
+                <span className="subagent-open" aria-hidden="true">›</span>
+              </button>
             </li>
           ))}
         </ul>
+      )}
+      {picked && (
+        <SubagentDetail cid={cid} run={picked} onClose={() => setPicked(null)} />
       )}
     </div>
   )

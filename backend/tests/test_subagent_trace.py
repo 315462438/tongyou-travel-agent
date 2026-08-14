@@ -230,3 +230,86 @@ def test_write_failure_does_not_propagate(tracker, monkeypatch):
 ])
 def test_title_extraction(desc, expect):
     assert _title_of(desc, "api-researcher") == expect
+
+
+# ---------- 完整输入输出（Phase 94：面板可点开看详情） ----------
+
+def test_full_prompt_is_kept_not_only_the_preview(tracker):
+    """列表行只放 60 字摘要，但点开要能看到派给子代理的**完整**任务描述。"""
+    t, _ = tracker
+    rid = _uuid()
+    long_desc = "你是资深前端工程师。" + "请分析以下文件：" * 200
+    _start_task(t, rid, long_desc)
+    row = t.snapshot()[0]
+    assert len(row["prompt"]) <= 62                # 摘要仍是短的
+    assert len(row["prompt_full"]) > 1000          # 全文留着
+    assert row["prompt_full"].startswith("你是资深前端工程师。")
+
+
+def test_output_is_captured_on_success(tracker):
+    t, _ = tracker
+    rid = _uuid()
+    _start_task(t, rid, "查天气")
+    t.on_tool_end("亚庇 10 月多雨，降雨概率约 60%。", run_id=rid)
+    assert "降雨概率" in t.snapshot()[0]["output"]
+
+
+def test_output_captures_the_error_when_the_subagent_fails(tracker):
+    """失败时点开要能看到**为什么**失败，而不是一个空白的回复页。"""
+    t, _ = tracker
+    rid = _uuid()
+    _start_task(t, rid, "查天气")
+    t.on_tool_error(RuntimeError("boom"), run_id=rid)
+    row = t.snapshot()[0]
+    assert row["status"] == "failed" and "boom" in row["output"]
+
+
+@pytest.mark.parametrize("payload,expect", [
+    ("纯字符串结果", "纯字符串结果"),
+    ({"messages": [{"content": "第一条"}, {"content": "最后一条"}]}, "最后一条"),
+    ({"output": "取 output 字段"}, "取 output 字段"),
+    (None, ""),
+])
+def test_output_shapes_from_deepagents_are_all_handled(tracker, payload, expect):
+    """deepagents 子代理的返回形态不固定：字符串 / 子图状态 / 消息对象都可能。"""
+    t, _ = tracker
+    rid = _uuid()
+    _start_task(t, rid, "查天气")
+    t.on_tool_end(payload, run_id=rid)
+    assert t.snapshot()[0]["output"] == expect
+
+
+def test_absurdly_long_output_is_clipped_with_a_notice(tracker):
+    """截断要**说明自己截断了**，否则读的人会以为子代理就回了这么多。"""
+    t, _ = tracker
+    rid = _uuid()
+    _start_task(t, rid, "查天气")
+    t.on_tool_end("字" * 50000, run_id=rid)
+    out = t.snapshot()[0]["output"]
+    assert len(out) < 50000 and "已截断" in out and "50000" in out
+
+
+def test_polling_payload_drops_the_heavy_fields():
+    """`/messages` 是 800ms 一轮的轮询接口，不该每次都拖着几十 KB 全文。
+
+    详情走 `/subagents/{run_id}` 按需取——库里存的那份**必须**仍是全的，
+    剥离只发生在返回给前端的路上。
+    """
+    from app.api.chat_api import _light_meta
+
+    meta = {"subagents": [{"id": "r1", "title": "t", "prompt": "摘要",
+                           "prompt_full": "很长的全文", "output": "很长的回复"}]}
+    slim = _light_meta(meta)
+    row = slim["subagents"][0]
+    assert row["prompt"] == "摘要" and row["title"] == "t"
+    assert "prompt_full" not in row and "output" not in row
+    # 原对象不能被就地改坏——它可能还要被别处读
+    assert meta["subagents"][0]["prompt_full"] == "很长的全文"
+
+
+def test_light_meta_passes_through_unrelated_metas():
+    from app.api.chat_api import _light_meta
+
+    assert _light_meta(None) is None
+    assert _light_meta({"poster": {"x": 1}}) == {"poster": {"x": 1}}
+    assert _light_meta({"subagents": "坏数据"}) == {"subagents": "坏数据"}

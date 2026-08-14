@@ -255,3 +255,21 @@ def test_subagent_tracker_survives_langchain_callback_manager():
                  "ignore_tool", "ignore_chat_model", "ignore_retriever",
                  "ignore_parser", "ignore_custom"):
         assert getattr(tracker, attr) is False
+
+
+def test_subagent_tracker_has_all_callback_methods():
+    """2026-08-14 追加：langchain 管理器直接调用 handler 所有事件方法（不做存在性检查），
+    缺方法即刷「Error in ... callback」日志。补齐后全部存在且可调用。"""
+    from app.agent.subagent_trace import SubagentTracker
+
+    t = SubagentTracker("cid")
+    for name in (
+        "on_chain_start", "on_chain_end", "on_chain_error", "on_chain_stream",
+        "on_llm_start", "on_llm_new_token", "on_llm_end", "on_llm_error",
+        "on_chat_model_start", "on_chat_model_stream", "on_chat_model_end",
+        "on_chat_model_error",
+        "on_tool_start", "on_tool_end", "on_tool_error",
+        "on_retriever_start", "on_retriever_end", "on_retriever_error",
+        "on_agent_action", "on_agent_finish", "on_custom_event", "on_text",
+    ):
+        assert callable(getattr(t, name)), f"missing callback {name}"

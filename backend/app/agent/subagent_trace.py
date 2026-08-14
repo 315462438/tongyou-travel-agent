@@ -31,6 +31,19 @@ _FLUSH_INTERVAL_S = 1.5
 # 面板上每条的提示词摘要长度——够看出「这个子任务在干嘛」，又不至于撑破一行
 _PROMPT_PREVIEW = 60
 
+# 点开详情时看的完整输入/输出上限（Phase 94）。
+# 派给子代理的 description 常有一两千字（文件清单 + 输出要求），回复更长。
+# 截断只为兜住异常长度，正常内容应当完整可见。
+_PROMPT_FULL = 8000
+_OUTPUT_FULL = 12000
+
+
+def _clip(text: str, limit: int) -> str:
+    flat = (text or "").strip()
+    if len(flat) <= limit:
+        return flat
+    return flat[:limit] + f"\n\n…（已截断，共 {len(flat)} 字）"
+
 
 @dataclass
 class SubagentRun:
@@ -39,16 +52,24 @@ class SubagentRun:
     run_id: str
     name: str                      # subagent_type，如 api-researcher
     title: str                     # 从 description 提炼的短标题
-    prompt: str                    # description 摘要
+    prompt: str                    # description 摘要（列表行显示）
     started_at: float
     status: str = "running"        # running / done / failed
     ended_at: float | None = None
     tokens: int = 0
+    prompt_full: str = ""          # 派给子代理的完整任务描述（点开才看）
+    output: str = ""               # 子代理的完整回复（点开才看）
 
     def elapsed_s(self) -> float:
         return (self.ended_at or time.monotonic()) - self.started_at
 
     def to_dict(self) -> dict:
+        """**含完整输入输出**——写进 meta_json 存档用。
+
+        注意：`/messages` 轮询返回给前端的那份会被 `chat_api` 剥掉重字段
+        （Phase 94），详情走 `GET /api/chat/{cid}/subagents/{run_id}` 按需取。
+        4 个子代理 × 两万字如果每 800ms 轮询一次全带上，纯属浪费。
+        """
         return {
             "id": self.run_id,
             "name": self.name,
@@ -57,6 +78,8 @@ class SubagentRun:
             "status": self.status,
             "tokens": self.tokens,
             "elapsed_s": round(self.elapsed_s(), 1),
+            "prompt_full": self.prompt_full,
+            "output": self.output,
         }
 
 
@@ -156,6 +179,7 @@ class SubagentTracker:
                 run_id=rid, name=sub_type,
                 title=_title_of(desc, sub_type), prompt=_preview(desc),
                 started_at=time.monotonic(),
+                prompt_full=_clip(desc, _PROMPT_FULL),
             )
             self._order.append(rid)
             self._flush(force=True)  # 新子代理立刻可见，不等节流
@@ -163,10 +187,10 @@ class SubagentTracker:
             logger.warning("subagent tracker on_tool_start failed", exc_info=True)
 
     def on_tool_end(self, output: Any, *, run_id: UUID | None = None, **kwargs: Any) -> None:
-        self._finish(run_id, "done")
+        self._finish(run_id, "done", output=_as_text(output))
 
     def on_tool_error(self, error: BaseException, *, run_id: UUID | None = None, **kwargs: Any) -> None:
-        self._finish(run_id, "failed")
+        self._finish(run_id, "failed", output=f"{type(error).__name__}: {error}")
 
     def on_chain_start(
         self, serialized: dict[str, Any] | None, inputs: Any,
@@ -200,13 +224,87 @@ class SubagentTracker:
         except Exception:  # noqa: BLE001
             logger.warning("subagent tracker on_llm_end failed", exc_info=True)
 
-    def _finish(self, run_id: UUID | None, status: str) -> None:
+    # ---------- 未用钩子的空实现（2026-08-14） ----------
+    # langchain-core ≥1.4 的回调管理器会**直接调用** handler 上所有事件方法（不做存在性检查），
+    # 缺方法即抛 AttributeError → 「Error in ... callback」刷日志（raise_error=False 已兜住不崩，
+    # 但日志噪音 + 无法预判后续版本会不会收紧）。补上空实现，语义 = BaseCallbackHandler 默认
+    # （收到事件但不处理）。高频确认缺失的有 on_chain_end / on_llm_new_token，其余一并补齐。
+
+    def on_chain_end(self, output: Any, *, run_id: UUID | None = None, **kwargs: Any) -> None:
+        pass
+
+    def on_chain_error(
+        self, error: BaseException, *, run_id: UUID | None = None, **kwargs: Any
+    ) -> None:
+        pass
+
+    def on_chain_stream(self, chunk: Any, *, run_id: UUID | None = None, **kwargs: Any) -> None:
+        pass
+
+    def on_llm_new_token(
+        self, token: str, *, run_id: UUID | None = None, **kwargs: Any,
+    ) -> None:
+        pass
+
+    def on_llm_error(
+        self, error: BaseException, *, run_id: UUID | None = None, **kwargs: Any
+    ) -> None:
+        pass
+
+    def on_chat_model_stream(
+        self, chunk: Any, *, run_id: UUID | None = None, **kwargs: Any,
+    ) -> None:
+        pass
+
+    def on_chat_model_end(
+        self, response: Any, *, run_id: UUID | None = None, **kwargs: Any,
+    ) -> None:
+        pass
+
+    def on_chat_model_error(
+        self, error: BaseException, *, run_id: UUID | None = None, **kwargs: Any
+    ) -> None:
+        pass
+
+    def on_retriever_start(
+        self, serialized: dict[str, Any] | None, query: str,
+        *, run_id: UUID | None = None, **kwargs: Any,
+    ) -> None:
+        pass
+
+    def on_retriever_end(
+        self, documents: Any, *, run_id: UUID | None = None, **kwargs: Any,
+    ) -> None:
+        pass
+
+    def on_retriever_error(
+        self, error: BaseException, *, run_id: UUID | None = None, **kwargs: Any
+    ) -> None:
+        pass
+
+    def on_agent_action(self, action: Any, *, run_id: UUID | None = None, **kwargs: Any) -> None:
+        pass
+
+    def on_agent_finish(self, finish: Any, *, run_id: UUID | None = None, **kwargs: Any) -> None:
+        pass
+
+    def on_custom_event(
+        self, name: str, data: Any, *, run_id: UUID | None = None, **kwargs: Any,
+    ) -> None:
+        pass
+
+    def on_text(self, text: str, *, run_id: UUID | None = None, **kwargs: Any) -> None:
+        pass
+
+    def _finish(self, run_id: UUID | None, status: str, output: str = "") -> None:
         try:
             run = self.runs.get(str(run_id)) if run_id else None
             if run is None or run.status != "running":
                 return
             run.status = status
             run.ended_at = time.monotonic()
+            if output:
+                run.output = _clip(output, _OUTPUT_FULL)
             self._flush(force=True)  # 结束状态立刻可见
         except Exception:  # noqa: BLE001
             logger.warning("subagent tracker finish failed", exc_info=True)
@@ -266,6 +364,39 @@ class SubagentTracker:
                 run.status = "done"
                 run.ended_at = time.monotonic()
         self._flush(force=True)
+
+
+def _as_text(output: Any) -> str:
+    """把 `task` 工具的返回摊成可读文本。
+
+    deepagents 的子代理返回形态不固定：可能是纯字符串，也可能是
+    `{"messages": [...]}`（子图的完整状态）或 LangChain 的 `ToolMessage`。
+    取不出来就回空——面板少一段内容可以接受，观测代码抛异常绝不可以。
+    """
+    try:
+        if output is None:
+            return ""
+        if isinstance(output, str):
+            return output
+        content = getattr(output, "content", None)   # ToolMessage / AIMessage
+        if isinstance(content, str) and content:
+            return content
+        if isinstance(output, dict):
+            msgs = output.get("messages")
+            if isinstance(msgs, list) and msgs:
+                last = msgs[-1]
+                text = getattr(last, "content", None)
+                if isinstance(text, str) and text:
+                    return text
+                if isinstance(last, dict) and isinstance(last.get("content"), str):
+                    return last["content"]
+            for key in ("output", "result", "content", "text"):
+                if isinstance(output.get(key), str) and output[key]:
+                    return output[key]
+        return str(output)
+    except Exception:  # noqa: BLE001
+        logger.warning("subagent output stringify failed", exc_info=True)
+        return ""
 
 
 def _token_count(response: Any) -> int:

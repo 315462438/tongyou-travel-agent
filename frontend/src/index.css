@@ -5999,11 +5999,31 @@ body { color: var(--tx-ink); background: var(--tx-bg); }
   display: flex; flex-direction: column; gap: 2px;
   max-height: 320px; overflow-y: auto;   /* 子代理多时面板本身滚动，不顶开对话 */
 }
-.subagent-item {
-  display: flex; align-items: flex-start; gap: 9px;
+.subagent-item { border-radius: 10px; }
+/* 整行是个按钮：点开看完整派发内容与回复（Phase 94）。
+   清掉 button 的原生外观，否则会在深色/移动端露出系统按钮底色。 */
+.subagent-row {
+  width: 100%; display: flex; align-items: flex-start; gap: 9px;
   padding: 8px 10px; border-radius: 10px;
+  background: none; border: 0; appearance: none; -webkit-appearance: none;
+  font: inherit; color: inherit; text-align: left; cursor: pointer;
 }
-.subagent-item:hover { background: rgba(127, 127, 150, .05); }
+.subagent-row:hover { background: rgba(127, 127, 150, .05); }
+.subagent-row:focus-visible { outline: 2px solid var(--brand, #4f46e5); outline-offset: -2px; }
+.subagent-open {
+  flex: none; align-self: center; font-size: 15px; line-height: 1;
+  color: var(--muted, #9ca3af); opacity: 0; transition: opacity .12s;
+}
+.subagent-row:hover .subagent-open, .subagent-row:focus-visible .subagent-open { opacity: 1; }
+
+/* 详情抽屉复用轨迹抽屉的骨架，只补一个类型徽章 */
+.subagent-drawer .subagent-badge {
+  flex: none; font-size: 11px; padding: 2px 7px; border-radius: 999px;
+  background: rgba(79, 70, 229, .1); color: var(--brand, #4f46e5);
+}
+.subagent-drawer .subagent-badge.status-failed {
+  background: rgba(220, 38, 38, .1); color: #dc2626;
+}
 .subagent-dot {
   width: 8px; height: 8px; border-radius: 50%; flex: none; margin-top: 5px;
   background: var(--muted, #9ca3af);
