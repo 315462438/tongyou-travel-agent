@@ -119,6 +119,11 @@ def migrate_and_bootstrap(engine: Engine) -> None:
             "ALTER TABLE travel_trip_packing_state ADD COLUMN IF NOT EXISTS updated_by VARCHAR(32) DEFAULT ''",
             # Phase 87b：记账支持「花费日期」（补记昨天的账很常见）。同上，表已存在必须显式加列。
             "ALTER TABLE travel_trip_expense ADD COLUMN IF NOT EXISTS spent_at VARCHAR(10) DEFAULT ''",
+            # Phase 91 surface 投影：压缩改为「追加遮蔽事件」而非覆盖会话字段。
+            # 老规矩——表已存在，create_all 不会加列，必须显式写在这里。
+            "ALTER TABLE travel_message ADD COLUMN IF NOT EXISTS surface_op VARCHAR(12) DEFAULT 'append'",
+            "ALTER TABLE travel_message ADD COLUMN IF NOT EXISTS shadow_from_id VARCHAR(32)",
+            "ALTER TABLE travel_message ADD COLUMN IF NOT EXISTS shadow_to_id VARCHAR(32)",
             # 已按 naive 建过列的部署（本次上线即中招）就地转换：Postgres 会按会话时区
             # 把 naive 值解读成本地时间再转 UTC，正好把之前存歪的值掰回来。
             """DO $$

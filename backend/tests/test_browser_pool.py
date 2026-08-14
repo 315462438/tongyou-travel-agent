@@ -147,3 +147,33 @@ def test_launch_failure_rolls_back():
     # 槽位已释放，换个能启动的用户可用
     pool._launch = lambda port, profile_dir: FakeProc()
     assert pool.acquire("u2").startswith("http://127.0.0.1:")
+
+
+def test_acquire_cancel_check_aborts_queueing():
+    """2026-08-13：排队等待期间 cancel_check 抛异常 → acquire 立即中止（停止按钮生效）。
+
+    修复前排队要等到 BrowserAcquireTimeout（acquire_timeout_s）才有反应。
+    """
+    pool, launches = make_pool(max_size=2, acquire_timeout_s=30)
+    pool.acquire("u1")
+    pool.acquire("u2")  # 池满且都 busy
+
+    class Stopped(Exception):
+        pass
+
+    def cancel_check():
+        raise Stopped("user clicked stop")
+
+    with pytest.raises(Stopped):
+        pool.acquire("u3", cancel_check=cancel_check)
+    # 异常不能破坏池状态：之后正常 acquire 仍然可用
+    pool.release("u1")
+    assert pool.acquire("u1")  # 释放后可再次拿到
+
+
+def test_acquire_cancel_check_none_keeps_behavior():
+    """不传 cancel_check 时行为不变（默认路径）。"""
+    pool, launches = make_pool(max_size=1, acquire_timeout_s=2)
+    pool.acquire("u1")
+    with pytest.raises(BrowserAcquireTimeout):
+        pool.acquire("u2")  # 等 2s 超时（原行为）

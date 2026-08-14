@@ -126,6 +126,16 @@ def test_lane_assignment_splits_model_from_tools():
     assert _lane_of({"type": "EVENT", "name": "user_message"}) == "input"
 
 
+def test_turn_root_is_the_user_input_not_a_tool():
+    """轮的外壳 span 装的是用户原话。
+
+    它是 SPAN，名字里又没有 tool/search 之类的关键词，会掉进「SPAN 兜底归 tools」，
+    界面上就给用户自己的提问打了个 TOOL 标签（线上截图实见）。
+    """
+    root = {"type": "SPAN", "name": "conversation_turn", "input": "武汉交通如何"}
+    assert _lane_of(root) == "input"
+
+
 def test_lane_falls_back_without_crashing():
     assert _lane_of({}) == "input"
     assert _lane_of({"type": "SPAN", "name": ""}) == "tools"

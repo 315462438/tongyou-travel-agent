@@ -134,16 +134,21 @@ class BrowserPool:
 
     # ---------- 公开 API ----------
 
-    def acquire(self, user_id: str, on_wait=None) -> str:
+    def acquire(self, user_id: str, on_wait=None, cancel_check=None) -> str:
         """确保 user_id 有一个存活空闲的 Chrome，标记 busy 并返回其 browser_url。
 
         池满且都 busy 时阻塞排队（首次等待回调 on_wait(position)），超时抛 BrowserAcquireTimeout。
+        cancel_check：可选同步回调，排队等待期间周期性调用（2026-08-13）——用户点停止时
+        抛异常让 acquire 立即中止（异常会随锁释放向上传播），否则排队最长要等
+        browser_acquire_timeout_s（120s）且期间停止按钮无效。
         """
         self._ensure_reaper()
         deadline = time.monotonic() + self.acquire_timeout_s
         notified = False
         with self._cond:
             while True:
+                if cancel_check is not None:
+                    cancel_check()  # 每轮循环（含唤醒后）检查停止
                 inst = self._insts.get(user_id)
                 if inst is not None:
                     if inst.starting or inst.busy:  # 同用户另一轮次在用/在启动 → 等

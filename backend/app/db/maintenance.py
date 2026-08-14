@@ -39,18 +39,28 @@ def repair_interrupted_conversations(db: Session, skip_cids: set[str] | None = N
         ).scalar_one_or_none()
         if last is None:
             continue
-        if last.role == "assistant":
+
+        # 2026-08-14：先扫**所有**未终稿的流式消息，而不是只看最后一条。
+        # 线上真实卡死：重复提交起了两个并发轮，一个正常出稿、另一个留下流式占位，
+        # 之后又落了 progress 和报错消息 —— 最后一条不是流式的，旧实现直接 continue，
+        # 那条占位就永远挂着，`_is_running` 一直判运行中，输入框和停止按钮全锁死。
+        for m in db.execute(
+            select(TravelMessage)
+            .where(TravelMessage.conversation_id == conv.id, TravelMessage.role == "assistant")
+            .order_by(TravelMessage.created_at)
+        ).scalars():
             try:
-                meta = json.loads(last.meta_json) if last.meta_json else {}
+                meta = json.loads(m.meta_json) if m.meta_json else {}
             except Exception:  # noqa: BLE001
                 meta = {}
             if not meta.get("streaming"):
                 continue
-            # 被打断的流式消息：就地终稿（保留已生成内容 + 中断说明）
-            last.content = (last.content + "\n\n" if last.content else "") + INTERRUPTED_TEXT
-            last.meta_json = None
+            m.content = (m.content + "\n\n" if m.content else "") + INTERRUPTED_TEXT
+            m.meta_json = None
             repaired += 1
-            continue
+
+        if last.role == "assistant":
+            continue  # 已终稿或刚被上面修好，不再追加中断说明
         db.add(TravelMessage(
             conversation_id=conv.id, role="assistant", content=INTERRUPTED_TEXT,
         ))

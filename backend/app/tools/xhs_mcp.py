@@ -181,10 +181,32 @@ async def collect_xhs_sources(
     """
     if not enabled():
         return []
+
+    # 2026-08-14 整轮总预算：搜索+全部详情合起来不超过 xhs_collect_timeout_s。
+    # 单次 40s 超时 + 连续失败熔断都挡不住「半死」MCP（失败-成功交替/每篇卡在超时边缘），
+    # 最坏 2×40s 搜索 + 7×40s 详情 ≈ 5 分钟纯等待；超预算整轮放弃，必应兜底。
+    try:
+        return await asyncio.wait_for(
+            _collect_within_budget(query, limit, on_note),
+            timeout=settings.xhs_collect_timeout_s,
+        )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "xhs collect exceeded total budget %.0fs for %r, dropping xhs sources",
+            settings.xhs_collect_timeout_s, query,
+        )
+        return []
+    except asyncio.CancelledError:
+        raise  # 用户停止：不得被吞
+
+
+async def _collect_within_budget(query: str, limit: int | None, on_note) -> list[dict]:
     n = limit or settings.xhs_notes_per_turn
     feeds = await search_notes(query)
     out: list[dict] = []
     attempts = 0
+    consecutive_failures = 0  # 2026-08-13 熔断：MCP 垮了（500/超时）时连续失败要快速放弃，
+    # 否则每篇详情都等 40s 超时，5-7 篇 ≈ 3-5 分钟纯等待，且期间停止按钮无检查点。
     for f in feeds:
         if len(out) >= n or attempts >= n + 2:
             break
@@ -195,7 +217,20 @@ async def collect_xhs_sources(
             except Exception:  # noqa: BLE001 — 进度回调绝不能影响采集
                 pass
         det = await note_detail(f["feed_id"], f["xsec_token"])
-        if det is None or len(det["desc"]) < 100:  # 太短的笔记（纯图/广告位）不当来源
+        if det is None:  # MCP 故障（超时/500/未登录）
+            consecutive_failures += 1
+            if consecutive_failures >= 2:
+                logger.warning(
+                    "xhs collect circuit broken: %d consecutive failures for %r",
+                    consecutive_failures, query,
+                )
+                break
+            continue
+        # 2026-08-14 名实修复：只要 MCP 有响应（含短笔记）就算健康，**重置连续计数**。
+        # 旧代码漏了重置 → 实际是「累计 2 次失败」，健康 MCP 下删帖/登录墙/解析失败
+        # 零星撞上 2 次就会误熔断丢料；「连续」才是 MCP 故障的强信号。
+        consecutive_failures = 0
+        if len(det["desc"]) < 100:  # 太短的笔记（纯图/广告位）不当来源，但不计故障
             continue
         source_title = det["title"][:40]
         images = [{

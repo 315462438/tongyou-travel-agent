@@ -165,6 +165,12 @@ _TRAJECTORY_MAX_TURNS = 12
 _LINE_CHARS = 160
 
 
+# 轮的外壳 span（`observability.turn_trace`）——它的 input 就是用户原话，
+# 不是一次工具调用。不特判的话会被下面的「SPAN 兜底归 tools」吞进工具泳道，
+# 界面上给用户自己的提问打了个 TOOL 标签。
+_TURN_ROOT_NAMES = {"conversation_turn"}
+
+
 def _lane_of(node: dict) -> str:
     """把观测归到三条泳道：输入 / 模型 / 工具。
 
@@ -173,6 +179,8 @@ def _lane_of(node: dict) -> str:
     """
     kind = (node.get("type") or "").upper()
     name = (node.get("name") or "").lower()
+    if name in _TURN_ROOT_NAMES:
+        return "input"
     if kind in ("GENERATION", "EMBEDDING"):
         return "model"
     if kind == "SPAN" and any(k in name for k in ("tool", "search", "fetch", "page", "amap", "xhs")):
@@ -236,10 +244,12 @@ def get_session_trajectory(
                     "latency": trace.get("latency"),
                     "route": meta.get("route") if isinstance(meta, dict) else None,
                 })
-                for node in _simplify(_fetch_observations(client, base, trace["id"])):
+                for idx, node in enumerate(_simplify(_fetch_observations(client, base, trace["id"]))):
                     events.append({
                         "id": node["id"],
                         "turnId": trace.get("id"),
+                        "turnNo": len(turns),          # 第几轮（1 起）
+                        "step": idx + 1,               # 轮内第几步
                         "lane": _lane_of(node),
                         "type": node["type"],
                         "name": node["name"] or node["type"],
@@ -249,6 +259,10 @@ def get_session_trajectory(
                         "tokens": (node.get("usage") or {}).get("total"),
                         "input": _one_line(node["input"]),
                         "output": _one_line(node["output"]),
+                        # 完整 payload 供详情面板的 Preview / Raw 标签
+                        "inputFull": node["input"],
+                        "outputFull": node["output"],
+                        "usage": node.get("usage") or {},
                     })
     except Exception:  # noqa: BLE001
         logger.warning("trajectory fetch failed for %s", cid, exc_info=True)

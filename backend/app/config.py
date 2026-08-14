@@ -218,6 +218,10 @@ class Settings(BaseSettings):
     # 空 = 不启用（本地开发默认跳过）。攻略/路线/美食来源优先小红书，必应降为兜底。
     xhs_mcp_url: str = ""  # 服务器 .env: http://127.0.0.1:18060/mcp
     xhs_mcp_timeout_s: int = 40  # 单次 MCP 调用整体超时（搜索页冷加载可超 25s，实测掐死过）
+    # 2026-08-14：整轮 xhs 采集总预算（搜索+全部详情）。单次 40s 超时 + 连续失败熔断都挡不住
+    # 「半死」MCP（失败-成功交替 / 每篇卡在超时边缘）：最坏 2×40s 搜索 + 7×40s 详情 ≈ 5 分钟。
+    # 超预算整轮放弃（返回已收集结果），必应兜底——采集不能成为无限等待窗口。
+    xhs_collect_timeout_s: float = 150
     xhs_notes_per_turn: int = 5  # guide 每轮最多取几篇笔记详情做来源（单城）
     xhs_notes_per_city: int = 2  # 多城行程逐城各取几篇（最多 3 城）
     xhs_min_for_light_search: int = 1  # 拿到 ≥N 篇 → 必应轻量化（1 查询 4 抓取）

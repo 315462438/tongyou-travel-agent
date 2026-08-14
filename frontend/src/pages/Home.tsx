@@ -1,4 +1,5 @@
 import { isValidElement, lazy, memo, Suspense, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { BrandIcon, BrandWordmark } from '../components/Brand'
@@ -359,6 +360,8 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
   }, [notify])
   const [showSkills, setShowSkills] = useState(false)
   const [traceFor, setTraceFor] = useState<string | null>(null)  // 打开调用链抽屉的 turn_id
+  // 发送门闩（Phase 92）：同步生效，堵住 setRunning 提交前的那段窗口
+  const sendingRef = useRef(false)
   // Phase 90：对话 / 轨迹 双视图。轨迹按需加载（只在切过去时才打 Langfuse）
   const [chatTab, setChatTab] = useState<'chat' | 'traj'>('chat')
   const toggleTrace = useCallback((turnId: string) => {
@@ -672,7 +675,11 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
 
   const send = async (text: string, options: { deepReasoning?: boolean } = {}) => {
     const content = normalizePrompt(text)
-    if (!content || running) return
+    // `running` 是 React 状态，setRunning 要到下一次渲染才生效；而它本身又在 await 之后
+    // 才设置——两次快速点击都会读到 false 从而都发出去（线上实测双发）。
+    // 用 ref 做**同步**门闩：赋值立即可见，覆盖整个 await 窗口。
+    if (!content || running || sendingRef.current) return
+    sendingRef.current = true
     const requestDeep = options.deepReasoning ?? deep
     try {
       let conv = cid
@@ -687,6 +694,13 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content, deep_reasoning: requestDeep, sandbox_enabled: sandbox }),
       })
+      if (res.status === 409) {
+        // 后端说这轮还在跑（多标签页、或门闩之外的重复提交）。
+        // 静默忽略——用户看到的就是"没反应"，而不是一句吓人的报错。
+        setRunning(true)
+        poll(conv)
+        return
+      }
       if (!res.ok) throw new Error('发送失败')
       setInput('')
       setMessages((m) => [...m, { id: 'tmp', role: 'user', content }])
@@ -699,6 +713,8 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
       poll(conv)
     } catch {
       notify('消息发送失败，内容已为你保留', 'error')
+    } finally {
+      sendingRef.current = false
     }
   }
 
@@ -1112,7 +1128,10 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
               </div>
             )}
             {chatTab === 'traj' && cid ? (
-              <div className="thread"><div className="thread-inner"><TrajectoryView cid={cid} /></div></div>
+              <div className="thread"><div className="thread-inner">
+                <SurfacePanel cid={cid} tick={running ? 1 : 0} />
+                <TrajectoryView cid={cid} running={running} />
+              </div></div>
             ) : (
             <div className="thread" ref={threadRef} onScroll={onThreadScroll} onWheel={onThreadWheel}>
               <div className="thread-inner">
@@ -1746,6 +1765,8 @@ function SkillPanel({ onClose }: { onClose: () => void }) {
 interface TrajEvent {
   id: string
   turnId: string
+  turnNo: number
+  step: number
   lane: 'input' | 'model' | 'tools'
   type: string
   name: string
@@ -1756,6 +1777,115 @@ interface TrajEvent {
   tokens: number | null
   input: string
   output: string
+  inputFull: string
+  outputFull: string
+  usage: Record<string, number>
+}
+
+interface SurfaceEntry {
+  id: string
+  role: string
+  chars: number
+  surfaceOp: string
+  inSurface: boolean
+  shadowedBy: string | null
+  at: string
+  preview: string
+  truncated: boolean
+}
+
+interface SurfaceStats {
+  logged: number; loggedChars: number
+  surface: number; surfaceChars: number
+  shadowed: number; shadowedChars: number
+  summaries: { id: string; chars: number; preview: string }[]
+  nonContext: number
+  entries: SurfaceEntry[]
+}
+
+/** 日志 vs 投影（Phase 91）：压缩到底压掉了什么，一眼可见。 */
+const ROLE_LABEL: Record<string, string> = {
+  user: '用户', assistant: '助手', summary: '摘要',
+}
+
+function SurfacePanel({ cid, tick }: { cid: string; tick: number }) {
+  const [s, setS] = useState<SurfaceStats | null>(null)
+  const [open, setOpen] = useState(false)
+  const [expanded, setExpanded] = useState<string | null>(null)
+
+  useEffect(() => {
+    let alive = true
+    authFetch(`${API}/chat/${cid}/surface`)
+      .then(async (r) => { if (alive && r.ok) setS(await r.json()) })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [cid, tick])
+  if (!s) return null
+  const kc = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n))
+
+  return (
+    <div className={`surface-panel${open ? ' open' : ''}`}>
+      <button className="surface-summary" onClick={() => setOpen((v) => !v)}
+        aria-expanded={open} aria-label="展开查看每条日志与遮蔽情况">
+        <span className="surface-cell">
+          <b>{s.logged}</b><small>日志条数</small>
+        </span>
+        <i className="surface-arrow" aria-hidden="true">→</i>
+        <span className="surface-cell">
+          <b>{s.surface}</b><small>进上下文</small>
+        </span>
+        {s.shadowed > 0 && (
+          <span className="surface-cell shadowed">
+            <b>{s.shadowed}</b><small>被摘要遮蔽</small>
+          </span>
+        )}
+        <span className="surface-cell chars">
+          <b>{kc(s.surfaceChars)}</b>
+          <small>字 / 日志 {kc(s.loggedChars)}</small>
+        </span>
+        <span className="surface-caret" aria-hidden="true">{open ? '︿' : '﹀'}</span>
+      </button>
+
+      {open && (
+        <div className="surface-detail">
+          <p className="surface-note">
+            日志只增不减；被摘要遮蔽的条目**不进模型上下文，但原文仍在**，随时可回放。
+            {s.nonContext > 0 && ` 另有 ${s.nonContext} 条进度/动作消息本就不参与上下文。`}
+          </p>
+          <ul className="surface-entries">
+            {s.entries.map((e, i) => (
+              <li key={e.id}
+                className={`surface-entry role-${e.role}${e.inSurface ? '' : ' shadowed'}`}>
+                <button className="surface-entry-head"
+                  onClick={() => setExpanded(expanded === e.id ? null : e.id)}>
+                  <span className="surface-no">{i + 1}</span>
+                  <span className={`surface-role role-${e.role}`}>
+                    {ROLE_LABEL[e.role] || e.role}
+                  </span>
+                  <span className="surface-preview">{e.preview || '（空）'}</span>
+                  <span className="surface-entry-meta">
+                    {!e.inSurface && <em className="tag-shadowed">已遮蔽</em>}
+                    {e.surfaceOp === 'replace' && <em className="tag-replace">遮蔽者</em>}
+                    <em>{e.chars} 字</em>
+                  </span>
+                </button>
+                {expanded === e.id && (
+                  <div className="surface-entry-body">
+                    <pre className="traj-pre">{e.preview}{e.truncated ? '\n…（预览截断，完整内容见对话流）' : ''}</pre>
+                    <div className="surface-entry-facts">
+                      <span>投影：{e.inSurface ? '进上下文' : '被遮蔽'}</span>
+                      <span>surface_op：{e.surfaceOp}</span>
+                      {e.at && <span>{e.at.slice(0, 19).replace('T', ' ')}</span>}
+                    </div>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
 }
 
 const LANES: { key: TrajEvent['lane']; label: string }[] = [
@@ -1767,17 +1897,28 @@ const LANES: { key: TrajEvent['lane']; label: string }[] = [
 /** 会话轨迹：三泳道密度条 + 按时间排的事件流。
  *  回答的是「这个会话一路上都发生了什么、时间花在哪」——
  *  与「调用链」抽屉（单轮内部树）互补。 */
-function TrajectoryView({ cid }: { cid: string }) {
+function TrajectoryView({ cid, running }: { cid: string; running: boolean }) {
   const [data, setData] = useState<{
     enabled: boolean; events: TrajEvent[]; turns: { id: string; route: string | null }[]; spanMs: number
   } | null>(null)
   const [loading, setLoading] = useState(true)
   const [q, setQ] = useState('')
   const [failed, setFailed] = useState(false)
+  const [picked, setPicked] = useState<TrajEvent | null>(null)
+  const [tick, setTick] = useState(0)
+  const [live, setLive] = useState(true)
+
+  // 实时轨迹：运行中每 4s 拉一次（Langfuse 埋点有落库延迟，更快没意义）；
+  // 空闲时停轮询，避免一直打 Langfuse。
+  useEffect(() => {
+    if (!live || !running) return
+    const t = window.setInterval(() => setTick((v) => v + 1), 4000)
+    return () => window.clearInterval(t)
+  }, [live, running])
 
   useEffect(() => {
     let alive = true
-    setLoading(true)
+    if (tick === 0) setLoading(true)   // 只有首次显示「正在读取」，刷新时不闪
     setFailed(false)
     authFetch(`${API}/chat/${cid}/trajectory`)
       .then(async (r) => {
@@ -1788,7 +1929,7 @@ function TrajectoryView({ cid }: { cid: string }) {
       .catch(() => alive && setFailed(true))
       .finally(() => alive && setLoading(false))
     return () => { alive = false }
-  }, [cid])
+  }, [cid, tick])
 
   if (loading) return <div className="traj-empty">正在读取轨迹…</div>
   if (failed) return <div className="traj-empty">轨迹服务暂时不可用。</div>
@@ -1816,6 +1957,11 @@ function TrajectoryView({ cid }: { cid: string }) {
         <span className="traj-stat">{data.events.length} 个事件</span>
         <span className="traj-stat">累计 {fmtMs(totalMs)}</span>
         <span className="traj-stat">跨度 {fmtMs(span)}</span>
+        <button className={`traj-live${live && running ? ' on' : ''}`}
+          onClick={() => { setLive((v) => !v); setTick((v) => v + 1) }}
+          title={running ? '运行中每 4 秒自动刷新' : '当前空闲，点一下手动刷新'}>
+          {live && running ? '● 实时' : '↻ 刷新'}
+        </button>
         <input className="traj-search" placeholder="搜索工具名 / 内容…"
           value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
@@ -1844,9 +1990,11 @@ function TrajectoryView({ cid }: { cid: string }) {
 
       <ul className="traj-list">
         {shown.map((e) => (
-          <li key={e.id} className={`traj-row lane-${e.lane}`}>
+          <li key={e.id} className={`traj-row lane-${e.lane}${picked?.id === e.id ? ' picked' : ''}`}
+            onClick={() => setPicked(e)} role="button" tabIndex={0}
+            onKeyDown={(k) => k.key === 'Enter' && setPicked(e)}>
             <span className={`traj-badge lane-${e.lane}`}>
-              {e.lane === 'model' ? 'MODEL' : e.lane === 'tools' ? 'TOOL' : 'IN'}
+              {e.lane === 'model' ? 'MODEL' : e.lane === 'tools' ? 'TOOL' : 'USER'}
             </span>
             <span className="traj-body">
               <b>{e.name}{e.model ? ` · ${e.model}` : ''}</b>
@@ -1861,7 +2009,61 @@ function TrajectoryView({ cid }: { cid: string }) {
         ))}
         {!shown.length && <li className="traj-empty">没有匹配「{q}」的事件。</li>}
       </ul>
+      {picked && <TrajDetail ev={picked} onClose={() => setPicked(null)} />}
     </div>
+  )
+}
+
+/** 轨迹详情：Summary / Preview / Raw 三视图（借鉴 dsh 的节点详情面板）。 */
+function TrajDetail({ ev, onClose }: { ev: TrajEvent; onClose: () => void }) {
+  const [tab, setTab] = useState<'summary' | 'preview' | 'raw'>('preview')
+  const raw = JSON.stringify(
+    { name: ev.name, type: ev.type, model: ev.model, durMs: ev.durMs, usage: ev.usage,
+      input: ev.inputFull, output: ev.outputFull }, null, 2)
+
+  return createPortal(
+    <div className="traj-detail-mask" onClick={onClose}>
+      <div className="traj-detail" onClick={(e) => e.stopPropagation()}>
+        <div className="traj-detail-head">
+          <span className={`traj-badge lane-${ev.lane}`}>
+            {ev.lane === 'model' ? 'MODEL' : ev.lane === 'tools' ? 'TOOL' : 'USER'}
+          </span>
+          <b>Turn {ev.turnNo} · Step {ev.step}</b>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="traj-detail-tabs">
+          {(['summary', 'preview', 'raw'] as const).map((t) => (
+            <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>
+              {t === 'summary' ? 'Summary' : t === 'preview' ? 'Preview' : 'Raw'}
+            </button>
+          ))}
+        </div>
+        <div className="traj-detail-body">
+          {tab === 'summary' && (
+            <dl className="traj-kv">
+              <dt>名称</dt><dd>{ev.name}</dd>
+              <dt>类型</dt><dd>{ev.type}</dd>
+              {ev.model && <><dt>模型</dt><dd>{ev.model}</dd></>}
+              <dt>耗时</dt><dd>{ev.durMs ? `${ev.durMs} ms` : '—'}</dd>
+              <dt>Token</dt>
+              <dd>{Object.keys(ev.usage || {}).length
+                ? Object.entries(ev.usage).map(([k, v]) => `${k} ${v}`).join(' · ')
+                : '—'}</dd>
+            </dl>
+          )}
+          {tab === 'preview' && (
+            <>
+              <div className="traj-detail-label">输入</div>
+              <pre className="traj-pre">{ev.inputFull || '（空）'}</pre>
+              <div className="traj-detail-label">输出</div>
+              <pre className="traj-pre">{ev.outputFull || '（空）'}</pre>
+            </>
+          )}
+          {tab === 'raw' && <pre className="traj-pre">{raw}</pre>}
+        </div>
+      </div>
+    </div>,
+    document.body,
   )
 }
 

@@ -81,7 +81,20 @@ class TravelConversation(Base):
 
 
 class TravelMessage(Base):
-    """对话消息。role: user / assistant / progress"""
+    """对话消息 = 会话的**只追加日志**。role: user / assistant / progress / action / summary
+
+    Phase 91（借鉴 dsh 的 surface 投影）：模型看到的历史不是这张表本身，而是从它
+    **投影**出来的 surface（见 `orchestrator.derive_surface`）。投影规则由
+    `surface_op` 决定：
+
+    - `append`（默认）：正常进入 surface；
+    - `replace`：**遮蔽** `shadow_from_id`..`shadow_to_id` 这段（含两端），
+      用本条顶替。压缩因此不再覆盖任何东西——摘要是追加的一条新消息，
+      被它折叠的原始消息全部留在表里，可完整回放。
+
+    改造前 `update_history_summary` 是就地改写 `conversation.history_summary`，
+    每轮全量重写会把上一轮的摘要冲掉，无法回答「三天前那轮压缩后模型看到了什么」。
+    """
 
     __tablename__ = "travel_message"
 
@@ -89,12 +102,17 @@ class TravelMessage(Base):
     conversation_id: Mapped[str] = mapped_column(
         String(32), ForeignKey("travel_conversation.id"), index=True
     )
-    role: Mapped[str] = mapped_column(String(16))  # user / assistant / progress
+    role: Mapped[str] = mapped_column(String(16))  # user / assistant / progress / action / summary
     content: Mapped[str] = mapped_column(Text, default="")
     # 该条 assistant 消息对应的模型思考过程（可折叠展示）
     reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
     # 附加数据：攻略结构化、来源链接、任务状态等（JSON）
     meta_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Phase 91 surface 投影：append（默认）/ replace
+    surface_op: Mapped[str] = mapped_column(String(12), default="append")
+    # replace 时遮蔽的消息区间（含两端）。按 created_at 定位，不依赖自增序号。
+    shadow_from_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    shadow_to_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=_now)
 
 

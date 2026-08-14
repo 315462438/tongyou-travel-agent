@@ -34,9 +34,12 @@ class ChromeMCP:
         snapshot = await chrome.call("take_snapshot", {})
     """
 
-    def __init__(self, browser_url: str | None = None, *, user_id: str = "", on_queue=None):
+    def __init__(self, browser_url: str | None = None, *, user_id: str = "", on_queue=None,
+                 cancel_check=None):
         self.user_id = user_id
         self.on_queue = on_queue  # 排队等待浏览器时的回调 on_queue(position)
+        # 2026-08-13：排队期间周期性调用的取消检查（同步回调，抛异常中止 acquire）
+        self.cancel_check = cancel_check
         self._pool = None
         self._holds_pool = False
         # pool 模式下 browser_url 由 acquire 决定（延后到 __aenter__）
@@ -55,7 +58,9 @@ class ChromeMCP:
             from app.tools.browser_pool import get_pool
 
             self._pool = get_pool()
-            self.browser_url = await asyncio.to_thread(self._pool.acquire, self.user_id, self.on_queue)
+            self.browser_url = await asyncio.to_thread(
+                self._pool.acquire, self.user_id, self.on_queue, self.cancel_check,
+            )
             self._holds_pool = True
         else:
             # 全局串行：等上一个 MCP 会话彻底结束（在线程池里阻塞等待，不卡事件循环）
@@ -198,7 +203,9 @@ class ChromeMCP:
                 elif attempt == 1 and self._use_pool:
                     # 池模式：杀掉该用户僵死的 Chrome 并重拉（profile 保登录）
                     await asyncio.to_thread(self._pool.restart, self.user_id)
-                    self.browser_url = await asyncio.to_thread(self._pool.acquire, self.user_id, None)
+                    self.browser_url = await asyncio.to_thread(
+                        self._pool.acquire, self.user_id, None, self.cancel_check,
+                    )
                     await self.close()
                     await self.connect()
                 elif attempt == 1 and settings.remote_browser:

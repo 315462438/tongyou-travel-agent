@@ -658,6 +658,41 @@ def _history_text(cid: str, rounds: int | None = None) -> str:
     return recent
 
 
+def derive_surface(cid: str, roles: tuple[str, ...] = ("user", "assistant", "summary")) -> list:
+    """日志 → surface 投影（Phase 91，借鉴 dsh 的 deriveMessages）。
+
+    读全量消息，按 `surface_op` 决定谁进 surface：
+    - `replace` 的消息**遮蔽** `shadow_from_id`..`shadow_to_id` 区间（含两端），自己顶上；
+    - 其余按顺序进入。
+
+    被遮蔽的原始消息**仍在表里**——这正是与「就地覆盖摘要」的本质区别：
+    压缩之后仍能完整回放当时的原文。
+
+    返回 ORM 行（调用方决定投影成什么形态）。
+    """
+    with get_session() as db:
+        rows = db.execute(
+            select(TravelMessage)
+            .where(TravelMessage.conversation_id == cid, TravelMessage.role.in_(roles))
+            .order_by(TravelMessage.created_at)
+        ).scalars().all()
+
+    order = {m.id: i for i, m in enumerate(rows)}
+    shadowed: set[str] = set()
+    for m in rows:
+        if m.surface_op != "replace":
+            continue
+        lo = order.get(m.shadow_from_id or "", 0)
+        hi = order.get(m.shadow_to_id or "", -1)
+        if hi < lo:
+            continue  # 区间无效（被遮蔽的消息已不存在）→ 这条 replace 退化成普通追加
+        for i in range(lo, hi + 1):
+            # 不允许遮蔽自己或它之后的消息，否则会把新内容也吞掉
+            if rows[i].id != m.id and i < order[m.id]:
+                shadowed.add(rows[i].id)
+    return [m for m in rows if m.id not in shadowed]
+
+
 def _full_history_messages(cid: str) -> list[dict]:
     """全量对话历史 → 真实交替角色消息，**逐字不截断**（Phase 33，深度研究跨轮上下文）。
 
@@ -666,14 +701,11 @@ def _full_history_messages(cid: str) -> list[dict]:
     自动前缀缓存可跨轮命中。超长防线在调用方（超 deep_research_history_max_chars
     回退窄窗形态）。
     """
-    with get_session() as db:
-        rows = db.execute(
-            select(TravelMessage)
-            .where(TravelMessage.conversation_id == cid, TravelMessage.role.in_(("user", "assistant")))
-            .order_by(TravelMessage.created_at)
-        ).scalars().all()
+    # Phase 91：走 surface 投影——被摘要遮蔽的早期消息不再进上下文，
+    # 但它们仍在表里（可回放）。summary 消息以 user 角色注入（模型侧当背景资料读）。
+    rows = derive_surface(cid)
     return [
-        {"role": m.role, "content": m.content or ""}
+        {"role": "user" if m.role == "summary" else m.role, "content": m.content or ""}
         for m in rows if (m.content or "").strip()
     ]
 
@@ -689,15 +721,28 @@ def _assemble_history(cid: str, current_user_text: str = "") -> tuple[list[dict]
 
     返回 (历史消息, 摘要文本)；与本轮重复的落库用户消息去重。
     """
-    msgs = _full_history_messages(cid)
+    # Phase 91：从 surface 投影取。摘要是日志里的一条 role='summary' 消息
+    # （不再读 conversation.history_summary 那个会被逐轮覆盖的字段）。
+    rows = derive_surface(cid)
+    summary = next((m.content or "" for m in reversed(rows) if m.role == "summary"), "")
+    msgs = [
+        {"role": m.role, "content": m.content or ""}
+        for m in rows if m.role in ("user", "assistant") and (m.content or "").strip()
+    ]
     if current_user_text and msgs and msgs[-1]["role"] == "user" \
             and msgs[-1]["content"].strip() == current_user_text.strip():
         msgs = msgs[:-1]
     if sum(len(m["content"]) for m in msgs) <= settings.history_full_max_chars:
-        return msgs, ""
-    with get_session() as db:
-        conv = db.get(TravelConversation, cid)
-        summary = (conv.history_summary or "").strip() if conv else ""
+        # 装得下：日志里有摘要说明确实遮蔽过早期消息，要注入；没有就不注入。
+        # 这里**不读**存量字段——不超限时没有遮蔽，注入摘要只会与全文重复。
+        return msgs, summary
+    if not summary:
+        # 存量兼容：Phase 91 之前的摘要写在 conversation.history_summary 上，日志里
+        # 还没有 summary 消息。只在超限分支回退，与改造前的行为完全一致；
+        # 不回退的话，上线会把所有老会话的摘要丢掉。
+        with get_session() as db:
+            conv = db.get(TravelConversation, cid)
+            summary = (conv.history_summary or "").strip() if conv else ""
     return msgs[-settings.history_rounds * 2:], summary
 
 
@@ -816,42 +861,65 @@ _HISTORY_SUMMARY_MAX_MSGS = 60  # 极长会话只折叠最早 60 条，再早的
 
 
 def update_history_summary(cid: str) -> None:
-    """轮末旁路：把近 N 轮之外的早期消息折叠成结构化摘要，整体覆盖存进会话行。
+    """轮末旁路压缩：把近 N 轮之外的早期消息折叠成摘要，**追加**一条遮蔽事件（Phase 91）。
 
-    与记忆提炼同时机（回复已生成，不加轮内延迟）；每轮全量重写（幂等，避免增量拼接
-    漂移）；失败只记日志——摘要是增强，不能影响主链路。
+    改造前是就地改写 `conversation.history_summary`，每轮全量重写会把上一轮的摘要
+    冲掉——事后无法回答「三天前那轮压缩后模型看到的历史长什么样」。
+
+    现在：摘要作为一条 `role='summary'`、`surface_op='replace'` 的消息追加进日志，
+    遮蔽区间就是它折叠掉的那些原始消息。原文一条不删，可完整回放。
+
+    幂等：投影里已被遮蔽的部分不会再参与下一次压缩，所以每轮只折叠**新落出近窗**的那些。
+    失败只记日志——摘要是增强，不能影响主链路。
     """
     from app.llm.client import get_llm
 
     keep = settings.history_rounds * 2
     try:
+        # 从 surface 出发：已被遮蔽的早期消息不再重复折叠，只处理新落出近窗的
+        surface = derive_surface(cid)
+        live = [m for m in surface if m.role in ("user", "assistant")]
+        if len(live) <= keep:
+            return  # 近窗装得下，不折叠
+        # ⚠️ 也必须真的超字数才折叠。Phase 91 之前摘要只在超限分支被读，所以「轮次多但
+        # 字数少」的会话仍是全文注入；改造后摘要进了投影会无条件生效，不加这条件
+        # 就会把本来装得下的对话白白降级成摘要（保真度回归）。
+        if sum(len(m.content or "") for m in live) <= settings.history_full_max_chars:
+            return
+        old = live[:-keep][:_HISTORY_SUMMARY_MAX_MSGS]
+        if not old:
+            return
+        listing = "\n".join(
+            f"{'用户' if m.role == 'user' else '助手'}：{(m.content or '')[:300]}" for m in old
+        )
+        # 已有的摘要一并交给模型，让新摘要覆盖「旧摘要 + 新折叠的这批」的全部信息
+        prior = [m for m in surface if m.role == "summary"]
+        if prior:
+            listing = f"（此前的摘要）{prior[-1].content}\n\n{listing}"
+
+        from pydantic import BaseModel
+
+        class _Summary(BaseModel):
+            summary: str
+
+        r = get_llm().classify(listing, _Summary, system=HISTORY_SUMMARY_SYSTEM)
+        text = (r.summary or "").strip()
+        if not text:
+            return
+
+        # 遮蔽区间 = 这批被折叠的原始消息 + 上一条摘要（新摘要已包含它的信息）
+        shadow_from = (prior[-1].id if prior else old[0].id)
         with get_session() as db:
-            msgs = db.execute(
-                select(TravelMessage)
-                .where(TravelMessage.conversation_id == cid,
-                       TravelMessage.role.in_(("user", "assistant")))
-                .order_by(TravelMessage.created_at)
-            ).scalars().all()
+            db.add(TravelMessage(
+                conversation_id=cid, role="summary", content=text[:2000],
+                surface_op="replace", shadow_from_id=shadow_from, shadow_to_id=old[-1].id,
+            ))
             conv = db.get(TravelConversation, cid)
-            if conv is None or len(msgs) <= keep:
-                return  # 短会话：近窗装得下，不折叠
-            if len(msgs) == (conv.history_summary_count or 0):
-                return  # 没有新消息落出近窗，摘要还新鲜
-            old = msgs[:-keep][:_HISTORY_SUMMARY_MAX_MSGS]
-            listing = "\n".join(
-                f"{'用户' if m.role == 'user' else '助手'}：{(m.content or '')[:300]}" for m in old
-            )
-
-            from pydantic import BaseModel
-
-            class _Summary(BaseModel):
-                summary: str
-
-            r = get_llm().classify(listing, _Summary, system=HISTORY_SUMMARY_SYSTEM)
-            if (r.summary or "").strip():
-                conv.history_summary = r.summary.strip()[:2000]
-                conv.history_summary_count = len(msgs)
-                db.commit()
+            if conv is not None:
+                # 兼容字段：仍写一份最新摘要，老代码/回退路径读它不会炸
+                conv.history_summary = text[:2000]
+                conv.history_summary_count = len(live)
+            db.commit()
     except Exception:  # noqa: BLE001
         logger.warning("history summary update failed for %s", cid, exc_info=True)
 
@@ -1128,6 +1196,9 @@ async def collect_sources(
     user_text: str = "",
 ) -> tuple[list[dict], bool]:
     """采集来源。返回 (sources, is_revision)。sources 为空表示没抓到料。"""
+    from app.agent.cancel import TurnCancelled, check as _cancel_check, wait_cancellable
+
+    _cancel_check(cid)  # 2026-08-13：进入即响应停止（LangGraph 重试/恢复也走这里）
     existing_sources, last_dest = _last_sources_and_dest(cid)
     same_dest = bool(last_dest) and bool(pref.destination) and last_dest == pref.destination
     # 沿途中转轮不复用旧来源：destination 同为终点城市时 decide_revision 会判「复用」，
@@ -1184,37 +1255,56 @@ async def collect_sources(
         _progress(cid, "正在并行搜集小红书笔记与网页资料…")
     elif search_mode == "skip":
         _progress(cid, "小红书资料充足，跳过网页搜索")
-    await _expire_stale_logins(cid, user_id)  # 建浏览器会话前做（可能重启 Chrome）
+    # 2026-08-13 修复：浏览器块（acquire 排队/启动/抓取）全程包 try——任何非取消异常都在
+    # 这里消化，**绝不冒进 LangGraph 的 arun_with_retry**（线上实测：xhs MCP 500 +
+    # BrowserAcquireTimeout 让 collect 节点被重试 3 次，每次再等 2-5 分钟，用户看到"无限
+    # 死循环"；异常被消化后走 apologize 分支正常终止，残留占位由 apologize 终稿）。
     web_sources: list[dict] = []
-    if need_browser:
-        try:
-            async with ChromeMCP(user_id=user_id, on_queue=_queue_cb(cid)) as chrome:
-                browser = BrowserTool(chrome=chrome)
-                if hotel_needed:
-                    site_sources += await _collect_from_routed_site(cid, pref, "hotel", browser, user_id, user_text)
-                if intent != "hotel":
-                    site_sources += await _collect_from_routed_site(cid, pref, intent, browser, user_id, user_text)
-                if search_mode != "skip":
-                    web_sources = await _search_and_collect(
-                        cid, pref, intent, browser, user_id, light=True,
-                    )
-                if xhs_task is not None:
-                    got = await xhs_task
-                    xhs_task = None
-                    site_sources += got
-                    if not got and web_sources:
-                        # xhs 0 篇 → 补跑 full 的后续查询（queries[1:]），弥补 light 档缺口
-                        _progress(cid, "小红书暂无可用笔记，正在补充网页搜索…")
-                        extra = await _search_and_collect_queries(
-                            cid, pref, _build_queries(pref, intent)[1:], browser, max_fetch=4,
+    try:
+        await _expire_stale_logins(cid, user_id)  # 建浏览器会话前做（可能重启 Chrome）
+        if need_browser:
+            try:
+                async with ChromeMCP(
+                    user_id=user_id, on_queue=_queue_cb(cid),
+                    cancel_check=lambda: _cancel_check(cid),
+                ) as chrome:
+                    browser = BrowserTool(chrome=chrome)
+                    if hotel_needed:
+                        site_sources += await _collect_from_routed_site(cid, pref, "hotel", browser, user_id, user_text)
+                    if intent != "hotel":
+                        site_sources += await _collect_from_routed_site(cid, pref, intent, browser, user_id, user_text)
+                    if search_mode != "skip":
+                        web_sources = await _search_and_collect(
+                            cid, pref, intent, browser, user_id, light=True,
                         )
-                        web_sources += extra
-        except MCPConnectionError as e:
-            _progress(cid, f"浏览器连接失败：{e}")
+                    if xhs_task is not None:
+                        got = await wait_cancellable(cid, xhs_task)  # 等 xhs 期间响应停止
+                        xhs_task = None
+                        site_sources += got
+                        if not got and web_sources:
+                            # xhs 0 篇 → 补跑 full 的后续查询（queries[1:]），弥补 light 档缺口
+                            _progress(cid, "小红书暂无可用笔记，正在补充网页搜索…")
+                            extra = await _search_and_collect_queries(
+                                cid, pref, _build_queries(pref, intent)[1:], browser, max_fetch=4,
+                            )
+                            web_sources += extra
+            except TurnCancelled:
+                raise  # 停止优先：不得被下面的广捕获吞掉
+            except MCPConnectionError as e:
+                _progress(cid, f"浏览器连接失败：{e}")
+            except Exception as e:  # noqa: BLE001 — BrowserAcquireTimeout 等：消化，不重试
+                logger.warning("browser collect degraded cid=%s: %s", cid, e)
+                _progress(cid, "浏览器采集遇到问题，已跳过网页部分，先用已有资料")
+    except TurnCancelled:
+        raise
+    except Exception:  # noqa: BLE001 — _expire_stale_logins 等兜底，同样不冒进重试
+        logger.warning("collect setup degraded cid=%s", cid, exc_info=True)
     if xhs_task is not None:
-        # 浏览器块未收尾（连接失败）时也要收 xhs 结果，避免 Task 泄漏
+        # 浏览器块未收尾（连接失败/未开浏览器）时也要收 xhs 结果，避免 Task 泄漏
         try:
-            site_sources += await xhs_task
+            site_sources += await wait_cancellable(cid, xhs_task)
+        except TurnCancelled:
+            raise
         except Exception:  # noqa: BLE001
             logger.warning("xhs collect join failed cid=%s", cid, exc_info=True)
     sources = site_sources + web_sources
@@ -1590,18 +1680,22 @@ def reuse_recent_xhs_sources(
 
 async def _collect_xhs(cid: str, pref: Preference) -> list[dict]:
     """小红书笔记来源（Phase 59）：MCP 搜索 + 取详情。未启用/失败返回 []，回退必应全量。"""
+    from app.agent.cancel import TurnCancelled, check as _cancel_check
     from app.tools import xhs_mcp
 
     if not xhs_mcp.enabled() or not pref.destination:
         return []
     sources: list[dict] = []
     for query, limit in _xhs_query_plan(pref):
+        _cancel_check(cid)  # 2026-08-13：每轮查询前检查停止（xhs 采集曾是无检查点窗口）
         _progress(cid, f"📕 正在小红书搜索：{query[:30]}")
         # 逐篇播进度：每篇详情 ~20s，静止的「当前动作」会被当成卡死（走查 P1-2）
         def _on_note(i: int, total: int, title: str) -> None:
             _progress(cid, f"📕 正在读第 {i} 篇小红书笔记{f'：《{title}》' if title else ''}")
         try:
             sources += await xhs_mcp.collect_xhs_sources(query, limit=limit, on_note=_on_note)
+        except TurnCancelled:
+            raise  # 2026-08-13：停止必须在广捕获前放行，否则被吞掉
         except Exception:  # noqa: BLE001
             logger.warning("xhs collect failed for %r", query, exc_info=True)
     if sources:
@@ -2068,7 +2162,9 @@ def run_conversation_turn(
         _ensure_stopped_message(cid)  # 用户主动停止：已生成部分已终稿，无终稿则补一条
     except Exception:  # noqa: BLE001
         logger.error("conversation %s failed: %s", cid, traceback.format_exc())
-        _add_message(cid, "assistant", "抱歉，处理过程中出错了，请重试。")
+        # 2026-08-13：失败也要收尾残留的 streaming 占位（quick_take 提前建的），
+        # 否则 `_is_running` 永远判运行中、前端无限转圈、停止按钮形同虚设。
+        _ensure_stopped_message(cid, "抱歉，处理过程中出错了，请重试。")
     finally:
         clear_cancel(cid)
         _clear_inflight(cid)
@@ -2097,8 +2193,12 @@ def _clear_inflight(cid: str) -> None:
         logger.warning("clear inflight failed", exc_info=True)
 
 
-def _ensure_stopped_message(cid: str) -> None:
-    """停止后收尾：若最后没有终稿 assistant，补一条「已停止」；否则清理临时进度。"""
+def _ensure_stopped_message(cid: str, text: str = "已停止本轮。") -> None:
+    """收尾：若最后没有终稿 assistant（含残留 streaming 占位），就地终稿/补一条 `text`。
+
+    2026-08-13 泛化：停止与**异常失败**共用——异常路径同样可能留下 quick_take 建的
+    空 streaming 占位，不终稿的话 `_is_running` 永远判运行中、前端无限转圈。
+    """
     from app.db.models import TravelMessage as _M
 
     with get_session() as db:
@@ -2112,11 +2212,11 @@ def _ensure_stopped_message(cid: str) -> None:
             last_id, last_content, last_reasoning = last.id, last.content, last.reasoning
         need = last is None or last.role != "assistant" or streaming
     if streaming and last_id:
-        # 2026-08-13：占位可能还是空的（guide 快答先行后、collect 阶段被停止）——
+        # 占位可能还是空的（guide 快答先行后、collect 阶段被停止/失败）——
         # 空占位也要就地终稿，否则 streaming 标记残留，前端永远判「运行中」。
         _finalize_streaming_message(
-            last_id, last_content or "已停止本轮。", last_reasoning or "", meta={},
+            last_id, last_content or text, last_reasoning or "", meta={},
         )
     elif need:
-        _add_message(cid, "assistant", "已停止本轮。")
+        _add_message(cid, "assistant", text)
     clear_plain_progress(cid)

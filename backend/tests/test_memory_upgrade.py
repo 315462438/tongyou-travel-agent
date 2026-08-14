@@ -153,6 +153,11 @@ def test_update_history_summary_folds_old_rounds(monkeypatch, db):
 
     _patch_session(monkeypatch, db)
     _add_msgs(db, "c1", n_rounds=8)  # 超过近窗 5 轮
+    # Phase 91：压缩现在还要求**真的装不下**才折叠（否则遮蔽会把本来能全文注入的
+    # 对话白白降级成摘要）。测试消息很短，把上限压低来触发。
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "history_full_max_chars", 10)
 
     class _LLM:
         def classify(self, prompt, schema, system=""):
@@ -163,9 +168,19 @@ def test_update_history_summary_folds_old_rounds(monkeypatch, db):
     monkeypatch.setattr("app.llm.client.get_llm", lambda: _LLM())
     orchestrator.update_history_summary("c1")
 
+    # Phase 91：摘要是**追加**进日志的一条 replace 消息，原文一条不删
+    from app.db.models import TravelMessage
+
+    summaries = db.query(TravelMessage).filter_by(conversation_id="c1", role="summary").all()
+    assert len(summaries) == 1
+    assert "预算 5000" in summaries[0].content
+    assert summaries[0].surface_op == "replace"
+    assert summaries[0].shadow_from_id and summaries[0].shadow_to_id
+    # 被折叠的原始消息仍在表里（这正是与「就地覆盖」的本质区别）
+    assert db.query(TravelMessage).filter_by(conversation_id="c1", role="user").count() == 8
+
     conv = db.get(TravelConversation, "c1")
-    assert "预算 5000" in conv.history_summary
-    assert conv.history_summary_count == 16
+    assert "预算 5000" in conv.history_summary  # 兼容字段仍写一份，老路径读它不炸
 
 
 def test_update_history_summary_skips_short_conversation(monkeypatch, db):

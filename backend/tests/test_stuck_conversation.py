@@ -181,3 +181,44 @@ def test_clear_plain_progress(db):
     assert ("progress", "正在搜索") not in contents  # 纯叙述被删
     assert ("progress", "需登录") in contents          # handoff 卡片保留
     assert ("assistant", "攻略") in contents
+
+
+def test_repair_finds_streaming_placeholder_that_is_not_last(db):
+    """2026-08-14 线上卡死：重复提交起两个并发轮，一个正常出稿、另一个留下流式占位，
+    之后又落了 progress 和报错消息——最后一条不是流式的。
+
+    旧实现只看最后一条，那条占位就永远挂着，`_is_running` 一直判运行中，
+    输入框和停止按钮全锁死（用户只能靠手工改库解开）。
+    """
+    import json
+
+    from sqlalchemy import select
+
+    conv = TravelConversation(id="orphan", title="orphan")
+    db.add(conv)
+    base = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=5)
+    rows = [
+        ("user", "问", None, 0),
+        ("assistant", "正常出稿的攻略", None, 1),
+        ("assistant", "", json.dumps({"streaming": True}), 2),   # ← 卡住的占位
+        ("progress", "正在生成…", None, 3),
+        ("assistant", "抱歉，处理过程中出错了", None, 4),        # 最后一条不是流式
+    ]
+    for role, content, meta, i in rows:
+        db.add(TravelMessage(conversation_id="orphan", role=role, content=content,
+                             meta_json=meta, created_at=base + timedelta(seconds=i)))
+    db.commit()
+
+    assert repair_interrupted_conversations(db) == 1
+
+    stuck = db.execute(
+        select(TravelMessage).where(TravelMessage.conversation_id == "orphan")
+        .order_by(TravelMessage.created_at)
+    ).scalars().all()[2]
+    assert stuck.meta_json is None            # 不再是流式 → 前端解锁
+    assert INTERRUPTED_TEXT in stuck.content
+    # 不该因为「最后一条是 assistant」而再追加一条中断说明
+    assert len(db.execute(
+        select(TravelMessage).where(TravelMessage.conversation_id == "orphan")
+    ).scalars().all()) == 5
+    assert repair_interrupted_conversations(db) == 0  # 幂等

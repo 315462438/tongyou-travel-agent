@@ -109,6 +109,20 @@ def send_message(
     db: Session = Depends(get_db), user: TravelUser = Depends(get_current_user),
 ):
     conv = _owned(db, cid, user)
+    # 并发轮防护（Phase 92）：同一会话同时只允许一轮在跑。
+    # 没有这道门时，发送按钮连点两下 = 两条用户消息 + **两个并发的 run_conversation_turn**：
+    # 各建各的流式占位、进度交错、记忆提炼跑两遍、finalize 互相覆盖，
+    # 而 cancel 是按 cid 的，停止按钮也说不清停的是哪一轮（线上实测双发）。
+    # 复用 `_is_running`——它自带 turn_stale_min 过期兜底，后台任务被杀不会永久锁死输入框。
+    existing = db.execute(
+        select(TravelMessage)
+        .where(TravelMessage.conversation_id == cid, TravelMessage.role != "summary")
+        .order_by(TravelMessage.created_at)
+    ).scalars().all()
+    if _is_running(existing):
+        # 409 而不是 400：这是**状态冲突**，前端据此静默忽略重复点击（不弹错误吓人）
+        raise HTTPException(409, "这轮还在进行中，等它结束再发下一条")
+
     user_msg = TravelMessage(conversation_id=cid, role="user", content=req.content)
     db.add(user_msg)
     # 首条用户消息作为会话标题
@@ -193,13 +207,89 @@ def handoff_screenshot(cid: str, db: Session = Depends(get_db)):
     return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
+# 逐条预览长度：够看清是哪一条即可，全文去对话流看（被遮蔽的原文也还在那儿）
+_SURFACE_PREVIEW = 300
+
+
+@router.get("/{cid}/surface")
+def get_surface_stats(cid: str, db: Session = Depends(get_db),
+                      user: TravelUser = Depends(get_current_user)):
+    """日志 vs 投影（Phase 91）：这个会话记了多少条、其中多少条进了模型上下文。
+
+    回答的是「压缩到底压掉了什么」——只追加日志里被遮蔽的消息仍然在，
+    但不再进上下文。前端把这两个数并排显示，压缩是否生效一眼可见。
+    """
+    from app.agent.orchestrator import derive_surface
+    from app.db.models import TravelMessage
+
+    _owned(db, cid, user)
+    rows = db.execute(
+        select(TravelMessage)
+        .where(TravelMessage.conversation_id == cid)
+        .order_by(TravelMessage.created_at)
+    ).scalars().all()
+
+    logged = [m for m in rows if m.role in ("user", "assistant", "summary")]
+    surface = derive_surface(cid)
+    surface_ids = {m.id for m in surface}
+    shadowed = [m for m in logged if m.id not in surface_ids]
+    summaries = [m for m in surface if m.role == "summary"]
+
+    # 谁被谁遮蔽：把 replace 事件的区间摊平成 消息id → 遮蔽它的摘要id
+    order = {m.id: i for i, m in enumerate(logged)}
+    shadowed_by: dict[str, str] = {}
+    for m in logged:
+        if m.surface_op != "replace":
+            continue
+        lo, hi = order.get(m.shadow_from_id or "", 0), order.get(m.shadow_to_id or "", -1)
+        for i in range(lo, min(hi, order.get(m.id, 0) - 1) + 1):
+            shadowed_by[logged[i].id] = m.id
+
+    return {
+        # 日志侧：只追加，永不删除
+        "logged": len(logged),
+        "loggedChars": sum(len(m.content or "") for m in logged),
+        # 投影侧：模型实际看到的
+        "surface": len(surface),
+        "surfaceChars": sum(len(m.content or "") for m in surface),
+        # 被遮蔽的（压缩掉的原文，仍可回放）
+        "shadowed": len(shadowed),
+        "shadowedChars": sum(len(m.content or "") for m in shadowed),
+        "summaries": [
+            {"id": m.id, "chars": len(m.content or ""), "preview": (m.content or "")[:120]}
+            for m in summaries
+        ],
+        # 其余角色（进度/隐藏动作）不参与上下文，单独计数避免看起来「丢了」
+        "nonContext": len(rows) - len(logged),
+        # 逐条明细：展开后能看到日志里到底有什么、哪几条被谁遮蔽了
+        "entries": [
+            {
+                "id": m.id,
+                "role": m.role,
+                "chars": len(m.content or ""),
+                "surfaceOp": m.surface_op or "append",
+                "inSurface": m.id in surface_ids,
+                "shadowedBy": shadowed_by.get(m.id),
+                "at": m.created_at.isoformat() if m.created_at else "",
+                # 预览够看清是哪一条；要读全文去对话流（被遮蔽的原文也还在那儿）
+                "preview": (m.content or "")[:_SURFACE_PREVIEW],
+                "truncated": len(m.content or "") > _SURFACE_PREVIEW,
+            }
+            for m in logged
+        ],
+    }
+
+
 @router.get("/{cid}/messages")
 def get_messages(cid: str, db: Session = Depends(get_db),
                  user: TravelUser = Depends(get_current_user)):
     _owned(db, cid, user)
     msgs = db.execute(
         select(TravelMessage)
-        .where(TravelMessage.conversation_id == cid)
+        .where(TravelMessage.conversation_id == cid,
+               # Phase 91：summary 是投影产物（压缩摘要），不是对话气泡。
+               # 不排掉的话它会当成一条消息渲染进对话流里。要看它去「轨迹」页。
+               TravelMessage.role != "summary")
         .order_by(TravelMessage.created_at)
     ).scalars().all()
     return {"messages": [_msg_dict(m) for m in msgs], "running": _is_running(msgs)}

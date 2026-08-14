@@ -173,3 +173,19 @@ def test_stop_no_last_adds_message(monkeypatch):
     orch._ensure_stopped_message("c")
     assert calls["finalized"] == []
     assert calls["added"] == ["已停止本轮。"]
+
+
+def test_stop_empty_placeholder_with_custom_text(monkeypatch):
+    """2026-08-13 泛化：异常失败路径用自定义文案终稿残留占位（否则前端永远判运行中）。"""
+    last = _FakeLast("assistant", json.dumps({"streaming": True}), content="")
+    calls = _wire_stop(monkeypatch, last)
+    orch._ensure_stopped_message("c", "抱歉，处理过程中出错了，请重试。")
+    assert calls["finalized"] == [("m1", "抱歉，处理过程中出错了，请重试。")]
+    assert calls["added"] == []
+
+
+def test_stop_no_last_with_custom_text(monkeypatch):
+    calls = _wire_stop(monkeypatch, None)
+    orch._ensure_stopped_message("c", "抱歉，处理过程中出错了，请重试。")
+    assert calls["finalized"] == []
+    assert calls["added"] == ["抱歉，处理过程中出错了，请重试。"]
