@@ -95,6 +95,21 @@ class SubagentTracker:
     # LangChain 用它判断是否需要在后台线程里跑同步回调；我们全是内存操作，直接标可跑
     run_inline = True
 
+    # 2026-08-14 线上崩（SubagentTracker 缺属性 → deep research 每次必炸）：
+    # langchain-core ≥1.4 的回调管理器对**每个** handler 无条件执行
+    # `getattr(handler, ignore_condition_name)`（chain 事件 → "ignore_chain"）和
+    # `handler.raise_error`——鸭子类型缺属性直接 AttributeError 冒泡炸掉 agent.astream。
+    # 这里补上与 `BaseCallbackHandler` 一致的默认值（False = 不忽略任何事件、回调异常不传播）。
+    raise_error = False
+    ignore_chain = False
+    ignore_agent = False
+    ignore_llm = False
+    ignore_chat_model = False
+    ignore_tool = False
+    ignore_retriever = False
+    ignore_parser = False
+    ignore_custom = False
+
     def __init__(self, cid: str) -> None:
         self.cid = cid
         self.runs: dict[str, SubagentRun] = {}

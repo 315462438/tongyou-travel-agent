@@ -150,6 +150,9 @@ def test_run_deep_research_streaming_finalizes(monkeypatch):
 
     monkeypatch.setattr(settings, "docker_sandbox_enabled", False)
     monkeypatch.setattr(settings, "deep_research_stream", True)
+    # 2026-08-14：快答先行（Phase 71）会真实调 LLM + _add_message，与「只走 finalize」的
+    # 断言冲突（本机网络通时 LLM 返回内容即触发）。本测试只关心流式终稿路径，关闭无关增强。
+    monkeypatch.setattr(settings, "deep_research_quick_take", False)
 
     class _Chunk:
         def __init__(self, content, id="m1", type="ai", reasoning=""):

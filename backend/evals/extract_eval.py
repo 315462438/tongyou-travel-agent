@@ -84,6 +84,13 @@ async def run_one(s: Sample) -> dict:
 
 
 async def _main(args) -> int:
+    from evals.runlock import single_run
+
+    with single_run("extract"):
+        return await _run_all(args)
+
+
+async def _run_all(args) -> int:
     samples = load_samples(args.only)
     if not samples:
         print("没有匹配的样本", file=sys.stderr)

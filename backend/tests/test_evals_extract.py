@@ -74,6 +74,21 @@ def test_missing_landmark_is_reported():
     assert "ext_missing_landmark" in got
 
 
+def test_city_landmark_counts_when_it_lands_in_overnight_city():
+    """多城行程的**城市名**落在 `overnight_city` 而不是 stop 名里，是完全正常的。
+
+    只看 stop 名会随机漏报：实测同一份马来西亚攻略连跑四次，「仙本那」只有一次
+    进了 stop 名，其余都在日标题/过夜城市里。要问的是「在对象图里有没有被表示」。
+    """
+    trip = _trip(
+        days=[DayObject(day=1, overnight_city="仙本那"),
+              DayObject(day=2), DayObject(day=3)],
+        stops=[StopObject(day=d, order=1, name=f"某地{d}") for d in (1, 2, 3)],
+    )
+    sample = Sample(id="t", days=[1, 2, 3], must_stops=["仙本那"], expects_cost=True)
+    assert "ext_missing_landmark" not in _codes(trip, sample)
+
+
 # ---------- Phase 67 不变式 ----------
 
 @pytest.mark.parametrize("name", ["合计", "总计约3450元", "小计", "共计"])

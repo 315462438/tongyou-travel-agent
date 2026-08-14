@@ -1,0 +1,110 @@
+{
+  "tag": "extract-baseline",
+  "results": [
+    {
+      "id": "tiantangzhai_3d_short",
+      "note": "最短样本（3.8k 字）。守单次调用路径与最短正文下的逐日覆盖。",
+      "elapsed_s": 108.2,
+      "metrics": {
+        "days": 3,
+        "stops": 10,
+        "expenses": 10,
+        "lodgings": 0,
+        "foods": 5,
+        "reservations": 0,
+        "headcount": 2,
+        "lanes": [
+          "cost",
+          "itinerary"
+        ],
+        "failed_days": []
+      },
+      "findings": [],
+      "passed": true
+    },
+    {
+      "id": "wuhan_3d",
+      "note": "单城 3 天。预算表标题写「2人3天」而表身是总额——守人数被认出来。",
+      "elapsed_s": 96.4,
+      "metrics": {
+        "days": 3,
+        "stops": 15,
+        "expenses": 13,
+        "lodgings": 0,
+        "foods": 6,
+        "reservations": 3,
+        "headcount": 2,
+        "lanes": [
+          "cost",
+          "itinerary"
+        ],
+        "failed_days": []
+      },
+      "findings": [],
+      "passed": true
+    },
+    {
+      "id": "chongqing_5d_drive",
+      "note": "自驾多点 5 天，「两大一小」。守 3 人被认出（不是 2，也不是 1）。",
+      "elapsed_s": 117.2,
+      "metrics": {
+        "days": 5,
+        "stops": 23,
+        "expenses": 16,
+        "lodgings": 4,
+        "foods": 4,
+        "reservations": 0,
+        "headcount": 3,
+        "lanes": [
+          "cost",
+          "itinerary"
+        ],
+        "failed_days": []
+      },
+      "findings": [],
+      "passed": true
+    },
+    {
+      "id": "malaysia_7d_overseas",
+      "note": "海外多城 7 天，12k 字——**超过 ontology_single_call_max_days(6)，走分块路径**。\nDay 6 正文里有「路线A/路线B」二选一分支，守分支不把一天拆成两天。\n",
+      "elapsed_s": 124.7,
+      "metrics": {
+        "days": 7,
+        "stops": 34,
+        "expenses": 29,
+        "lodgings": 4,
+        "foods": 6,
+        "reservations": 1,
+        "headcount": 2,
+        "lanes": [
+          "cost",
+          "itinerary"
+        ],
+        "failed_days": []
+      },
+      "findings": [],
+      "passed": true
+    },
+    {
+      "id": "yushu_10d_long",
+      "note": "最长天数（10 天跨 3 地）。守分块路径不丢天、failed_days 为空。",
+      "elapsed_s": 150.1,
+      "metrics": {
+        "days": 10,
+        "stops": 43,
+        "expenses": 30,
+        "lodgings": 1,
+        "foods": 6,
+        "reservations": 1,
+        "headcount": 2,
+        "lanes": [
+          "cost",
+          "itinerary"
+        ],
+        "failed_days": []
+      },
+      "findings": [],
+      "passed": true
+    }
+  ]
+}

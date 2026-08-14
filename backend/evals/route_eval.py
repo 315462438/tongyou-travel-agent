@@ -168,10 +168,20 @@ def render(tag: str, results: list[dict], summary: dict) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", default="", help="按 id 或期望通道逗号分隔筛选")
-    ap.add_argument("--repeat", type=int, default=1, help="每条跑几次，>1 才能看出摇摆")
+    # 立集当天实测：连跑两次 --repeat 1，准确率都是 91.4%，但**错的不是同一批条目**
+    # （一次 0 硬错 3 软错，一次 2 硬错 1 软错）。单次跑不能当基线——拿它做前后对照，
+    # 会把模型的抖动读成「改动带来的回归」。定基线一律 --repeat 3 起。
+    ap.add_argument("--repeat", type=int, default=1, help="每条跑几次；定基线用 3 起")
     ap.add_argument("--tag", default="run")
     args = ap.parse_args()
 
+    from evals.runlock import single_run
+
+    with single_run("routes"):
+        return _run_all(args)
+
+
+def _run_all(args) -> int:
     from app.llm.client import get_llm
 
     cases = load_cases(args.only)

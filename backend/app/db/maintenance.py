@@ -88,31 +88,77 @@ def resume_inflight_turns() -> set[str]:
         rows = db.execute(select(TravelInflightTurn)).scalars().all()
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         turns = [
-            (r.cid, r.turn_id)
+            (r.cid, r.turn_id, r.started_at)
             for r in rows
             if r.started_at and (now - r.started_at) < timedelta(minutes=10)  # 太老的不续跑
         ]
 
-    def _resume_one(cid: str, turn_id: str) -> None:
+    def _resume_one(cid: str, turn_id: str, started_at) -> None:
         from app.agent.cancel import clear_cancel
         from app.agent.graph import resume_turn
         from app.agent.orchestrator import _clear_inflight
 
-        try:
-            _delete_orphan_streaming(cid)  # 删上一轮未终稿流式消息，避免续跑重复
-            ok = asyncio.run(resume_turn(turn_id))
-            if not ok:
-                _append_interrupted(cid)  # 无 checkpoint 可续 → 提示重发
-        except Exception:  # noqa: BLE001
-            logger.warning("resume turn %s failed", turn_id, exc_info=True)
-            _append_interrupted(cid)
-        finally:
+        def _cleanup() -> None:
             clear_cancel(cid)
             _clear_inflight(cid)
 
-    for cid, turn_id in turns:
+        # 2026-08-14 线上：16:18 部署重启 → 续跑旧轮，用户 16:21 已重发新轮次 →
+        # 续跑失败时把「被服务重启中断」提示插进正在运行的新轮次中间，造成「老是被中断」。
+        # 用户 turn 之后已发新 user 消息 = 已重发 → 放弃续跑、只清残留占位与登记，不写提示。
+        if _user_sent_after(cid, started_at):
+            logger.info("resume skipped for %s: user already re-sent after %s", cid, started_at)
+            try:
+                _delete_orphan_streaming(cid)  # 清旧轮未终稿流式占位，防 running 锁死
+            except Exception:  # noqa: BLE001
+                logger.warning("delete orphan streaming failed cid=%s", cid, exc_info=True)
+            _cleanup()
+            return
+
+        try:
+            _delete_orphan_streaming(cid)  # 删上一轮未终稿流式消息，避免续跑重复
+            # 2026-08-14：续跑限时 60s——checkpoint 在 collect 中途的 guide 轮续跑要重新采集
+            # （分钟级），与用户重发/新请求抢浏览器与 LLM；超时放弃，交还用户决定。
+            ok = asyncio.run(asyncio.wait_for(resume_turn(turn_id), timeout=60))
+            if not ok:
+                _append_interrupted(cid)  # 无 checkpoint 可续 → 提示重发
+        except asyncio.TimeoutError:
+            logger.warning("resume turn %s timed out after 60s", turn_id)
+            _maybe_interrupted(cid, started_at)
+        except Exception:  # noqa: BLE001
+            logger.warning("resume turn %s failed", turn_id, exc_info=True)
+            _maybe_interrupted(cid, started_at)
+        finally:
+            _cleanup()
+
+
+def _maybe_interrupted(cid: str, started_at) -> None:
+    """续跑失败后的提示：用户已重发新轮次就不写，避免提示插进新轮次中间。"""
+    if _user_sent_after(cid, started_at):
+        logger.info("interrupted note skipped for %s: user already re-sent", cid)
+        return
+    _append_interrupted(cid)
+
+
+def _user_sent_after(cid: str, after) -> bool:
+    """会话里是否有晚于 `after` 的 user 消息（用户已重发新轮次）。纯查询，供续跑判定。"""
+    from app.db.models import TravelMessage as _M
+    from app.db.session import get_session
+
+    if after is None:
+        return False
+    # 列无时区：aware 要剥掉 tzinfo 再与 naive 比较（与 resume_inflight_turns 的 now 一致）
+    after_naive = after.replace(tzinfo=None) if after.tzinfo else after
+    with get_session() as db:
+        row = db.execute(
+            select(_M.id)
+            .where(_M.conversation_id == cid, _M.role == "user", _M.created_at > after_naive)
+            .limit(1)
+        ).scalar_one_or_none()
+        return row is not None
+
+    for cid, turn_id, started_at in turns:
         resuming.add(cid)
-        threading.Thread(target=_resume_one, args=(cid, turn_id), daemon=True).start()
+        threading.Thread(target=_resume_one, args=(cid, turn_id, started_at), daemon=True).start()
 
     # 过期的在途登记直接清掉（交给 repair 提示重发）
     if rows:

@@ -235,3 +235,23 @@ def test_explicit_itinerary_overrides_classifier_direct(monkeypatch):
     monkeypatch.setattr(settings, "direct_answer_enabled", True)
     text = "规划武汉到拉萨15天的轻松行程，包括路线、酒店和预算安排"
     assert resolve_route(text, FakeLLM("direct")) == ("guide", False)
+
+
+def test_subagent_tracker_survives_langchain_callback_manager():
+    """2026-08-14 线上崩：langchain-core ≥1.4 的回调管理器对每个 handler 无条件读
+    ignore_chain/raise_error 等属性，SubagentTracker（鸭子类型不继承基类）缺属性 →
+    AttributeError 冒泡炸掉 agent.astream，深度研究每次必败。钉住真实管理器触发不抛。"""
+    from langchain_core.callbacks import CallbackManager
+
+    from app.agent.subagent_trace import SubagentTracker
+
+    tracker = SubagentTracker("cid")
+    manager = CallbackManager(handlers=[tracker])
+    manager.on_chain_start(serialized={}, inputs={}, run_id=None)
+    manager.on_llm_start(serialized={}, prompts=[], run_id=None)
+    manager.on_tool_start(serialized={"name": "task"}, input_str="", run_id=None)
+    # 属性契约：与 BaseCallbackHandler 默认一致（False = 不忽略任何事件、回调异常不传播）
+    for attr in ("raise_error", "ignore_chain", "ignore_agent", "ignore_llm",
+                 "ignore_tool", "ignore_chat_model", "ignore_retriever",
+                 "ignore_parser", "ignore_custom"):
+        assert getattr(tracker, attr) is False

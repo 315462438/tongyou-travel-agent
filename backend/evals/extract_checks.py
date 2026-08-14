@@ -64,11 +64,33 @@ def check_stops_per_day(trip, s: Sample) -> list[Finding]:
     return [Finding("ext_empty_day", f"这些天没有任何停留点：Day {empty}")] if empty else []
 
 
+def _place_surface(trip) -> str:
+    """对象图里所有「地点」出现的地方。
+
+    2026-08-14 修正：原来只看 `stops[].name`，于是多城行程的**城市名**会随机漏报——
+    「仙本那」是城市不是 POI，它合理地落在 `day.overnight_city` / 日标题里，
+    抽到哪儿取决于模型当次的措辞。实测同一份马来西亚攻略连跑四次，
+    仙本那只有一次进了 stop 名。
+
+    要问的问题是「这个地方**在对象图里有没有被表示**」，不是「它在不在某个特定字段」。
+    """
+    parts = [x.name for x in trip.stops]
+    parts += [trip.destination, trip.title]
+    for d in trip.days:
+        parts += [d.title, d.subtitle, d.overnight_city]
+    parts += [f"{h.name} {h.city}" for h in trip.lodgings]
+    return " | ".join(p for p in parts if p)
+
+
 def check_must_stops(trip, s: Sample) -> list[Finding]:
-    """守：正文里加粗写着的主地标被漏掉。子串匹配——名字带后缀（「黄鹤楼公园」）也算命中。"""
-    names = " | ".join(x.name for x in trip.stops)
-    missing = [w for w in s.must_stops if w and w not in names]
-    return [Finding("ext_missing_landmark", f"主地标未被抽成停留点：{missing}")] if missing else []
+    """守：正文里的主地标在对象图里一点痕迹都没有。
+
+    子串匹配——名字带后缀（「黄鹤楼公园」）也算命中。
+    """
+    surface = _place_surface(trip)
+    missing = [w for w in s.must_stops if w and w not in surface]
+    return [Finding("ext_missing_landmark", f"主地标在对象图里完全没有出现：{missing}")] \
+        if missing else []
 
 
 def check_total_not_an_item(trip) -> list[Finding]:

@@ -85,6 +85,10 @@ SSH 密钥登录已配置（`ssh ubuntu@42.194.202.233` 免密）。
   本地开发 `BROWSER_POOL_ENABLED` 不设
   → 回退单调试 Chrome（`CHROME_DEBUG_URL` + start_chrome.sh）+ 全局串行。
   见 docs/pitfalls/snap-chromium多实例与小内存.md。
+- **xhs-mcp 容器**：**启动配置已固化**在 `/home/ubuntu/xhs-mcp/docker-compose.yml`
+  （2026-08-14 从运行中容器导出；此前无任何启动脚本，容器重建会丢配置）。重建：
+  `cd /home/ubuntu/xhs-mcp && docker compose up -d`。内存限制 **1.5GiB**（800MiB 下容器内
+  chrome 搜索高峰会 OOM——16:21/16:23 两次内核杀进程，深度研究期间 xhs 不稳）。
 
 **重新部署**：本地 `frontend` 改动后 `npm run build && cp -r dist/. ../backend/static/`，
 ⚠️ **末尾的 `/.` 不能省**——`cp -r dist ../backend/static` 在 static/ 已存在时会把整个 dist

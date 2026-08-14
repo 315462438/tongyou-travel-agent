@@ -17,5 +17,9 @@ langgraph-checkpoint-postgres>=2.0
 psycopg-pool>=3.2
 deepagents>=0.6
 langchain-deepseek>=1.0
+# 2026-08-14 锁死：langchain-core 1.4.x 的回调管理器开始对 handler 无条件读
+# ignore_chain/raise_error 等属性，鸭子类型 handler（SubagentTracker）缺属性即炸。
+# 锁住当前实测工作版本，防 `>=` 漂移升级再踩（升级需显式改这里并重测）。
+langchain-core==1.4.9
 langfuse>=4.14
 pyyaml>=6.0  # evals 评估集读 queries.yaml

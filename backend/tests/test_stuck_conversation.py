@@ -222,3 +222,37 @@ def test_repair_finds_streaming_placeholder_that_is_not_last(db):
         select(TravelMessage).where(TravelMessage.conversation_id == "orphan")
     ).scalars().all()) == 5
     assert repair_interrupted_conversations(db) == 0  # 幂等
+
+
+# ---------- 2026-08-14：续跑与用户重发冲突 ----------
+
+def test_user_sent_after_detects_resend(db, monkeypatch):
+    """用户 turn 之后又发了新 user 消息 → 判定为已重发（续跑应放弃）。"""
+    from datetime import datetime, timedelta, timezone
+
+    from app.db.maintenance import _user_sent_after
+
+    monkeypatch.setattr("app.db.session.get_session", lambda: db)
+    t0 = datetime.now(timezone.utc).replace(tzinfo=None)
+    db.add(TravelConversation(id="c", title="c"))
+    db.add(TravelMessage(conversation_id="c", role="user", content="a", created_at=t0))
+    db.add(TravelMessage(conversation_id="c", role="user", content="b", created_at=t0 + timedelta(seconds=10)))
+    db.commit()
+    assert _user_sent_after("c", t0 + timedelta(seconds=5)) is True   # 重发了
+    assert _user_sent_after("c", t0 + timedelta(seconds=20)) is False  # 之后没再发
+    assert _user_sent_after("c", None) is False
+
+
+def test_user_sent_after_ignores_progress(db, monkeypatch):
+    """只有 user 消息才算重发——续跑自己的 progress 不算。"""
+    from datetime import datetime, timedelta, timezone
+
+    from app.db.maintenance import _user_sent_after
+
+    monkeypatch.setattr("app.db.session.get_session", lambda: db)
+    t0 = datetime.now(timezone.utc).replace(tzinfo=None)
+    db.add(TravelConversation(id="c", title="c"))
+    db.add(TravelMessage(conversation_id="c", role="user", content="a", created_at=t0))
+    db.add(TravelMessage(conversation_id="c", role="progress", content="p", created_at=t0 + timedelta(seconds=10)))
+    db.commit()
+    assert _user_sent_after("c", t0 + timedelta(seconds=5)) is False

@@ -1,0 +1,613 @@
+{
+  "tag": "routes-baseline",
+  "summary": {
+    "total": 35,
+    "scored": 35,
+    "hit": 33,
+    "soft": 2,
+    "hard": 0,
+    "errors": 0,
+    "error_ids": [],
+    "accuracy": 0.943,
+    "hard_rate": 0.0,
+    "unstable": [
+      "d_traffic",
+      "d_visa_free_known"
+    ],
+    "confusion": {
+      "direct": {
+        "direct": 12,
+        "research": 1,
+        "guide": 1
+      },
+      "guide": {
+        "guide": 15
+      },
+      "research": {
+        "research": 6
+      }
+    }
+  },
+  "results": [
+    {
+      "id": "d_traffic",
+      "text": "武汉交通如何",
+      "note": "线上真实案例。城市交通是常识，不需要抓实时页面。",
+      "expect": "direct",
+      "tolerate": [
+        "guide"
+      ],
+      "votes": [
+        "direct",
+        "guide",
+        "direct"
+      ],
+      "got": "direct",
+      "grade": "hit",
+      "stable": false,
+      "elapsed_s": 3.34
+    },
+    {
+      "id": "d_ticket_advice",
+      "text": "鼓浪屿要提前订票吗",
+      "note": "ROUTE_SYSTEM 原文举的例子，必须稳。",
+      "expect": "direct",
+      "tolerate": [],
+      "votes": [
+        "direct",
+        "direct",
+        "direct"
+      ],
+      "got": "direct",
+      "grade": "hit",
+      "stable": true,
+      "elapsed_s": 1.18
+    },
+    {
+      "id": "d_kid_tips",
+      "text": "带娃去三亚要注意什么",
+      "note": "建议类，同上。",
+      "expect": "direct",
+      "tolerate": [],
+      "votes": [
+        "direct",
+        "direct",
+        "direct"
+      ],
+      "got": "direct",
+      "grade": "hit",
+      "stable": true,
+      "elapsed_s": 1.18
+    },
+    {
+      "id": "d_followup_term",
+      "text": "你刚说的八市是什么",
+      "note": "对上文的追问。判成 guide 会去联网搜「八市」，答非所问。",
+      "expect": "direct",
+      "tolerate": [],
+      "votes": [
+        "direct",
+        "direct",
+        "direct"
+      ],
+      "got": "direct",
+      "grade": "hit",
+      "stable": true,
+      "elapsed_s": 1.1
+    },
+    {
+      "id": "d_followup_why",
+      "text": "为什么你建议第二天才去黄鹤楼",
+      "note": "追问自己的方案。这类必须秒回，联网毫无意义。",
+      "expect": "direct",
+      "tolerate": [],
+      "votes": [
+        "direct",
+        "direct",
+        "direct"
+      ],
+      "got": "direct",
+      "grade": "hit",
+      "stable": true,
+      "elapsed_s": 1.15
+    },
+    {
+      "id": "d_thanks",
+      "text": "谢谢，这个安排挺好的",
+      "note": "闲聊。开着深度推理开关问这句也不该跑重流水线。",
+      "expect": "direct",
+      "tolerate": [],
+      "votes": [
+        "direct",
+        "direct",
+        "direct"
+      ],
+      "got": "direct",
+      "grade": "hit",
+      "stable": true,
+      "elapsed_s": 1.31
+    },
+    {
+      "id": "d_pack",
+      "text": "十月去西北穿什么衣服",
+      "note": "穿搭经验。看着像「查天气」，但用户要的是经验不是实时预报。",
+      "expect": "direct",
+      "tolerate": [],
+      "votes": [
+        "direct",
+        "direct",
+        "direct"
+      ],
+      "got": "direct",
+      "grade": "hit",
+      "stable": true,
+      "elapsed_s": 1.24
+    },
+    {
+      "id": "d_altitude",
+      "text": "第一次去高原怎么防高反",
+      "note": "常识问答。",
+      "expect": "direct",
+      "tolerate": [],
+      "votes": [
+        "direct",
+        "direct",
+        "direct"
+      ],
+      "got": "direct",
+      "grade": "hit",
+      "stable": true,
+      "elapsed_s": 1.25
+    },
+    {
+      "id": "d_visa_free_known",
+      "text": "去香港需要港澳通行证吗",
+      "note": "稳定的证件常识。判 research 会绕一大圈。",
+      "expect": "direct",
+      "tolerate": [
+        "research"
+      ],
+      "votes": [
+        "research",
+        "research",
+        "direct"
+      ],
+      "got": "research",
+      "grade": "soft",
+      "stable": false,
+      "elapsed_s": 3.21
+    },
+    {
+      "id": "d_etiquette",
+      "text": "在日本泡温泉有什么礼仪",
+      "note": "文化常识。",
+      "expect": "direct",
+      "tolerate": [],
+      "votes": [
+        "direct",
+        "direct",
+        "direct"
+      ],
+      "got": "direct",
+      "grade": "hit",
+      "stable": true,
+      "elapsed_s": 1.42
+    },
+    {
+      "id": "d_selfdrive_tired",
+      "text": "自驾一天开五小时会不会太累",
+      "note": "对节奏的判断，不涉外部数据。",
+      "expect": "direct",
+      "tolerate": [],
+      "votes": [
+        "direct",
+        "direct",
+        "direct"
+      ],
+      "got": "direct",
+      "grade": "hit",
+      "stable": true,
+      "elapsed_s": 1.35
+    },
+    {
+      "id": "d_meaning",
+      "text": "你说的「特种兵式旅游」是什么意思",
+      "note": "名词解释。",
+      "expect": "direct",
+      "tolerate": [],
+      "votes": [
+        "direct",
+        "direct",
+        "direct"
+      ],
+      "got": "direct",
+      "grade": "hit",
+      "stable": true,
+      "elapsed_s": 1.02
+    },
+    {
+      "id": "g_plan_basic",
+      "text": "帮我规划厦门三天两晚",
+      "note": "最典型的规划。`is_explicit_itinerary_request` 也会兜底成 guide。",
+      "expect": "guide",
+      "tolerate": [],
+      "votes": [
+        "guide",
+        "guide",
+        "guide"
+      ],
+      "got": "guide",
+      "grade": "hit",
+      "stable": true,
+      "elapsed_s": 1.44
+    },
+    {
+      "id": "g_plan_prefs",
+      "text": "十月国庆想去成都玩4天3晚，两个人，预算5000左右，爱吃辣",
+      "note": "带偏好的规划。",
+      "expect": "guide",
+      "tolerate": [],
+      "votes": [
+        "guide",
+        "guide",
+        "guide"
+      ],
+      "got": "guide",
+      "grade": "hit",
+      "stable": true,
+      "elapsed_s": 1.68
+    },
+    {
+      "id": "g_hotel",
+      "text": "帮我查一下成都市中心性价比高的酒店",
+      "note": "查酒店 = 需要实时房态，必须联网。",
+      "expect": "guide",
+      "tolerate": [],
+      "votes": [
+        "guide",
+        "guide",
+        "guide"
+      ],
+      "got": "guide",
+      "grade": "hit",
+      "stable": true,
+      "elapsed_s": 1.37
+    },
+    {
+      "id": "g_hotel_price",
+      "text": "三亚湾附近800以内的海景房有哪些",
+      "note": "房态+价格。判 direct 会编出不存在的酒店。",
+      "expect": "guide",
+      "tolerate": [],
+      "votes": [
+        "guide",
+        "guide",
+        "guide"
+      ],
+      "got": "guide",
+      "grade": "hit",
+      "stable": true,
+      "elapsed_s": 1.15
+    },
+    {
+      "id": "g_revise",
+      "text": "把第二天的行程换成室内的",
+      "note": "修改行程。看着像追问，但要重出结构化正文。",
+      "expect": "guide",
+      "tolerate": [],
+      "votes": [
+        "guide",
+        "guide",
+        "guide"
+      ],
+      "got": "guide",
+      "grade": "hit",
+      "stable": true,
+      "elapsed_s": 1.47
+    },
+    {
+      "id": "g_add_day",
+      "text": "再加一天，想去周边古镇",
+      "note": "增量修改，同上。",
+      "expect": "guide",
+      "tolerate": [],
+      "votes": [
+        "guide",
+        "guide",
+        "guide"
+      ],
+      "got": "guide",
+      "grade": "hit",
+      "stable": true,
+      "elapsed_s": 1.92
+    },
+    {
+      "id": "g_food_guide",
+      "text": "出一份武汉两天的美食攻略，要接地气的本地馆子",
+      "note": "要产出结构化攻略（店名/人均/排队），不是泛泛建议。",
+      "expect": "guide",
+      "tolerate": [],
+      "votes": [
+        "guide",
+        "guide",
+        "guide"
+      ],
+      "got": "guide",
+      "grade": "hit",
+      "stable": true,
+      "elapsed_s": 1.44
+    },
+    {
+      "id": "g_waypoint",
+      "text": "合肥出发终点武汉，自驾途经有什么古镇可以逛",
+      "note": "沿途中转。目的地不是单点，容易被判 research。",
+      "expect": "guide",
+      "tolerate": [],
+      "votes": [
+        "guide",
+        "guide",
+        "guide"
+      ],
+      "got": "guide",
+      "grade": "hit",
+      "stable": true,
+      "elapsed_s": 2.58
+    },
+    {
+      "id": "g_realtime_ticket",
+      "text": "国庆去三亚的机票现在大概多少钱",
+      "note": "实时价格。判 direct 就是凭空编价格，这是硬错。",
+      "expect": "guide",
+      "tolerate": [
+        "research"
+      ],
+      "votes": [
+        "guide",
+        "guide",
+        "guide"
+      ],
+      "got": "guide",
+      "grade": "hit",
+      "stable": true,
+      "elapsed_s": 1.59
+    },
+    {
+      "id": "g_open_status",
+      "text": "现在稻城亚丁封山了吗",
+      "note": "实时状态查询。",
+      "expect": "guide",
+      "tolerate": [],
+      "votes": [
+        "guide",
+        "guide",
+        "guide"
+      ],
+      "got": "guide",
+      "grade": "hit",
+      "stable": true,
+      "elapsed_s": 2.03
+    },
+    {
+      "id": "g_multi_city",
+      "text": "帮我规划武汉、开封、洛阳6天动车游",
+      "note": "多城但意图明确是「规划」，不是「对比选哪个」。",
+      "expect": "guide",
+      "tolerate": [],
+      "votes": [
+        "guide",
+        "guide",
+        "guide"
+      ],
+      "got": "guide",
+      "grade": "hit",
+      "stable": true,
+      "elapsed_s": 1.49
+    },
+    {
+      "id": "g_overseas_plan",
+      "text": "10.1-10.7 去马来西亚，吉隆坡仙本那亚庇，帮我排行程含往返",
+      "note": "海外多城规划。",
+      "expect": "guide",
+      "tolerate": [],
+      "votes": [
+        "guide",
+        "guide",
+        "guide"
+      ],
+      "got": "guide",
+      "grade": "hit",
+      "stable": true,
+      "elapsed_s": 1.38
+    },
+    {
+      "id": "r_compare_two",
+      "text": "厦门和青岛哪个更适合带三岁小孩去",
+      "note": "二选一决策。降级 guide 会被当成单目的地反问「想去哪」——那才是坏体验。",
+      "expect": "research",
+      "tolerate": [
+        "guide"
+      ],
+      "votes": [
+        "research",
+        "research",
+        "research"
+      ],
+      "got": "research",
+      "grade": "hit",
+      "stable": true,
+      "elapsed_s": 1.57
+    },
+    {
+      "id": "r_budget_where",
+      "text": "一万块钱两个人十天能去哪几个国家",
+      "note": "预算反推目的地，典型开放式研究。",
+      "expect": "research",
+      "tolerate": [
+        "guide"
+      ],
+      "votes": [
+        "research",
+        "research",
+        "research"
+      ],
+      "got": "research",
+      "grade": "hit",
+      "stable": true,
+      "elapsed_s": 1.65
+    },
+    {
+      "id": "r_visa_policy",
+      "text": "现在中国护照去欧洲哪些国家免签，签证要多久",
+      "note": "政策查询 + 多国横向。",
+      "expect": "research",
+      "tolerate": [
+        "guide"
+      ],
+      "votes": [
+        "research",
+        "research",
+        "research"
+      ],
+      "got": "research",
+      "grade": "hit",
+      "stable": true,
+      "elapsed_s": 1.94
+    },
+    {
+      "id": "r_help_choose",
+      "text": "十一假期七天，帮我在川西、青海、新疆里挑一个",
+      "note": "帮我选。",
+      "expect": "research",
+      "tolerate": [
+        "guide"
+      ],
+      "votes": [
+        "research",
+        "research",
+        "research"
+      ],
+      "got": "research",
+      "grade": "hit",
+      "stable": true,
+      "elapsed_s": 1.79
+    },
+    {
+      "id": "r_cost_model",
+      "text": "帮我算一下一家三口去日本七天大概要花多少，分项列出来",
+      "note": "成本测算。",
+      "expect": "research",
+      "tolerate": [
+        "guide"
+      ],
+      "votes": [
+        "research",
+        "research",
+        "research"
+      ],
+      "got": "research",
+      "grade": "hit",
+      "stable": true,
+      "elapsed_s": 3.4
+    },
+    {
+      "id": "r_season_compare",
+      "text": "川西是四月去好还是十月去好，各有什么优劣",
+      "note": "时节对比。偏经验，direct 也答得了；但没有要规划，判 guide 是错的。",
+      "expect": "research",
+      "tolerate": [
+        "direct"
+      ],
+      "votes": [
+        "research",
+        "research",
+        "research"
+      ],
+      "got": "research",
+      "grade": "hit",
+      "stable": true,
+      "elapsed_s": 1.97
+    },
+    {
+      "id": "b_bare_city",
+      "text": "成都",
+      "note": "纯地名。信息极少，靠 ROUTE_SYSTEM 的「拿不准一律 guide」兜住。",
+      "expect": "guide",
+      "tolerate": [],
+      "votes": [
+        "guide",
+        "guide",
+        "guide"
+      ],
+      "got": "guide",
+      "grade": "hit",
+      "stable": true,
+      "elapsed_s": 1.94
+    },
+    {
+      "id": "b_looks_like_chat",
+      "text": "好的，那就按这个来吧",
+      "note": "确认语。判 guide 会莫名其妙重跑一遍流水线。",
+      "expect": "direct",
+      "tolerate": [],
+      "votes": [
+        "direct",
+        "direct",
+        "direct"
+      ],
+      "got": "direct",
+      "grade": "hit",
+      "stable": true,
+      "elapsed_s": 1.35
+    },
+    {
+      "id": "b_question_in_plan",
+      "text": "你安排的这家酒店现在还有房吗",
+      "note": "形式是追问、实质要查房态。判 direct 就是编。",
+      "expect": "guide",
+      "tolerate": [],
+      "votes": [
+        "guide",
+        "guide",
+        "guide"
+      ],
+      "got": "guide",
+      "grade": "hit",
+      "stable": true,
+      "elapsed_s": 0.0
+    },
+    {
+      "id": "b_long_but_direct",
+      "text": "我下个月要带父母去旅游，他们腿脚不太好走不了太多路，也不太能吃辣，我想问一下这种情况下安排行程一般要注意些什么",
+      "note": "长文本但要的是经验建议，没提目的地。守「长 ≠ 规划」。",
+      "expect": "direct",
+      "tolerate": [
+        "guide"
+      ],
+      "votes": [
+        "guide",
+        "guide",
+        "guide"
+      ],
+      "got": "guide",
+      "grade": "soft",
+      "stable": true,
+      "elapsed_s": 0.0
+    },
+    {
+      "id": "b_short_but_plan",
+      "text": "排个杭州两日",
+      "note": "短文本但明确是规划。守「短 ≠ 闲聊」。",
+      "expect": "guide",
+      "tolerate": [],
+      "votes": [
+        "guide",
+        "guide",
+        "guide"
+      ],
+      "got": "guide",
+      "grade": "hit",
+      "stable": true,
+      "elapsed_s": 1.55
+    }
+  ]
+}
