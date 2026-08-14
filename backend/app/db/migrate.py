@@ -17,6 +17,49 @@ from app.db.models import Base, TravelUser, _uuid
 logger = logging.getLogger(__name__)
 
 
+# 手写的索引（不由模型声明）。新增 `CREATE INDEX IF NOT EXISTS` 必须登记在这里，
+# 否则「schema 已是最新」的判定会漏掉它、整块 DDL 被跳过 —— 有测试钉住这条
+# （`test_migrate_lock.py::test_every_handwritten_index_is_registered` 扫本文件源码核对）。
+_EXPECTED_INDEXES: tuple[tuple[str, str], ...] = (
+    ("travel_conversation", "ix_conv_user"),
+    ("travel_memory", "ix_mem_user"),
+    ("travel_memory", "ix_mem_key"),
+    ("travel_conversation", "ix_conv_dest"),
+)
+
+# DDL 抢不到锁时等多久就放弃。**迁移必须是让路的一方**：它可以下次启动再来，
+# 用户那一轮跑了几分钟、还烧了 LLM 调用，被杀掉是纯损失。
+_DDL_LOCK_TIMEOUT = "5s"
+
+
+def pending_schema_changes(engine: Engine) -> list[str]:
+    """列出「模型里有、库里还没有」的表/列/索引。空 = 这次启动一条 DDL 都不用跑。
+
+    2026-08-14 线上事故：`ALTER TABLE ... ADD COLUMN IF NOT EXISTS` **即使列早已存在
+    也要拿 AccessExclusiveLock**，而这里有 40+ 条、全在一个事务里。于是每次重启都会
+    和正在跑的那一轮抢锁 —— PG 判定死锁，杀掉的是**用户那一轮**（当天连炸三次，
+    用户侧表现是「思考卡在第 1 步不动」，因为后台任务已经死了）。
+
+    判据从 `Base.metadata` 推导，不维护平行清单：migrate.py 里每条 ADD COLUMN 之所以
+    存在，就是因为模型上有那一列。索引是手写的，另用 `_EXPECTED_INDEXES` 登记。
+    """
+    from sqlalchemy import inspect
+
+    insp = inspect(engine)
+    existing_tables = set(insp.get_table_names())
+    pending: list[str] = []
+    for table in Base.metadata.sorted_tables:
+        if table.name not in existing_tables:
+            pending.append(f"table:{table.name}")
+            continue
+        cols = {c["name"] for c in insp.get_columns(table.name)}
+        pending += [f"{table.name}.{c.name}" for c in table.columns if c.name not in cols]
+    for tbl, idx in _EXPECTED_INDEXES:
+        if tbl in existing_tables and idx not in {i["name"] for i in insp.get_indexes(tbl)}:
+            pending.append(f"index:{idx}")
+    return pending
+
+
 def migrate_and_bootstrap(engine: Engine) -> None:
     with engine.begin() as conn:
         # 站点登录表结构变了（加 user_id 进主键）→ 重建（临时数据可弃）
@@ -24,7 +67,17 @@ def migrate_and_bootstrap(engine: Engine) -> None:
 
     Base.metadata.create_all(engine)  # 建新表（user/session/site_login）+ 补缺表
 
+    pending = pending_schema_changes(engine)
+    if not pending:
+        # 绝大多数重启走这条路：一条 ALTER 都不发，也就不存在和在途请求抢锁
+        logger.info("schema is up to date, skipping DDL")
+        _bootstrap_admin_and_backfill(engine)
+        return
+    logger.info("applying schema changes (%d): %s", len(pending), pending[:12])
+
     with engine.begin() as conn:
+        # 抢不到锁就放弃这一轮迁移（下次启动重来），不要把用户那一轮拖进死锁
+        conn.execute(text(f"SET LOCAL lock_timeout = '{_DDL_LOCK_TIMEOUT}'"))
         # 存量表补 user_id 列
         conn.execute(text("ALTER TABLE travel_conversation ADD COLUMN IF NOT EXISTS user_id VARCHAR(32)"))
         conn.execute(text("ALTER TABLE travel_memory ADD COLUMN IF NOT EXISTS user_id VARCHAR(32)"))
@@ -145,7 +198,15 @@ def migrate_and_bootstrap(engine: Engine) -> None:
         ):
             conn.execute(text(ddl))
 
-    # 引导 admin，并把无主历史归给它
+    _bootstrap_admin_and_backfill(engine)
+
+
+def _bootstrap_admin_and_backfill(engine: Engine) -> None:
+    """引导 admin，并把无主历史归给它。
+
+    只写数据不改结构（行级锁），所以和 DDL 分开、无论有没有 schema 变更都要跑：
+    新用户注册后这些回填仍需保证「不留无主行」。
+    """
     from app.db.session import get_session
 
     with get_session() as db:
