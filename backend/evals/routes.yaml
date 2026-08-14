@@ -1,0 +1,213 @@
+# 路由分类评估集（2026-08-14）
+#
+# 测的是 `deep_research.decide_route()` 的 direct / guide / research 三分类。
+# 为什么值得单独立集：**分错的代价直接落在用户身上**——
+#   guide 被判成 direct → 该联网查的没查，用户拿到一段凭参数知识编的回答
+#   direct 被判成 guide → 问「武汉交通如何」要等两分钟看一段常识
+# 而这是单次 v4-flash 调用，几十条跑一遍不到一分钟、成本可以忽略，没有理由不测。
+#
+# 字段：
+#   id        唯一标识
+#   text      用户原话
+#   expect    期望通道
+#   tolerate  可接受的次优答案。ROUTE_SYSTEM 自己写着「拿不准时一律选 guide」，
+#             且 research 在服务器未启用时本来就退化成 guide——这类降级不算错，
+#             但也不算对，报表里单列成「软错」。
+#   note      这条守什么边界
+#
+# 记号：判错分两类
+#   硬错（hard）= 落在 tolerate 之外，用户会直接感知到坏结果
+#   软错（soft）= 落在 tolerate 里，是设计允许的保守降级
+
+# ---------- direct：不需要联网就能答好 ----------
+
+- id: d_traffic
+  text: 武汉交通如何
+  expect: direct
+  tolerate: [guide]
+  note: 线上真实案例。城市交通是常识，不需要抓实时页面。
+
+- id: d_ticket_advice
+  text: 鼓浪屿要提前订票吗
+  expect: direct
+  note: ROUTE_SYSTEM 原文举的例子，必须稳。
+
+- id: d_kid_tips
+  text: 带娃去三亚要注意什么
+  expect: direct
+  note: 建议类，同上。
+
+- id: d_followup_term
+  text: 你刚说的八市是什么
+  expect: direct
+  note: 对上文的追问。判成 guide 会去联网搜「八市」，答非所问。
+
+- id: d_followup_why
+  text: 为什么你建议第二天才去黄鹤楼
+  expect: direct
+  note: 追问自己的方案。这类必须秒回，联网毫无意义。
+
+- id: d_thanks
+  text: 谢谢，这个安排挺好的
+  expect: direct
+  note: 闲聊。开着深度推理开关问这句也不该跑重流水线。
+
+- id: d_pack
+  text: 十月去西北穿什么衣服
+  expect: direct
+  note: 穿搭经验。看着像「查天气」，但用户要的是经验不是实时预报。
+
+- id: d_altitude
+  text: 第一次去高原怎么防高反
+  expect: direct
+  note: 常识问答。
+
+- id: d_visa_free_known
+  text: 去香港需要港澳通行证吗
+  expect: direct
+  tolerate: [research]
+  note: 稳定的证件常识。判 research 会绕一大圈。
+
+- id: d_etiquette
+  text: 在日本泡温泉有什么礼仪
+  expect: direct
+  note: 文化常识。
+
+- id: d_selfdrive_tired
+  text: 自驾一天开五小时会不会太累
+  expect: direct
+  note: 对节奏的判断，不涉外部数据。
+
+- id: d_meaning
+  text: 你说的「特种兵式旅游」是什么意思
+  expect: direct
+  note: 名词解释。
+
+# ---------- guide：需要联网检索并产出结构化内容 ----------
+
+- id: g_plan_basic
+  text: 帮我规划厦门三天两晚
+  expect: guide
+  note: 最典型的规划。`is_explicit_itinerary_request` 也会兜底成 guide。
+
+- id: g_plan_prefs
+  text: 十月国庆想去成都玩4天3晚，两个人，预算5000左右，爱吃辣
+  expect: guide
+  note: 带偏好的规划。
+
+- id: g_hotel
+  text: 帮我查一下成都市中心性价比高的酒店
+  expect: guide
+  note: 查酒店 = 需要实时房态，必须联网。
+
+- id: g_hotel_price
+  text: 三亚湾附近800以内的海景房有哪些
+  expect: guide
+  note: 房态+价格。判 direct 会编出不存在的酒店。
+
+- id: g_revise
+  text: 把第二天的行程换成室内的
+  expect: guide
+  note: 修改行程。看着像追问，但要重出结构化正文。
+
+- id: g_add_day
+  text: 再加一天，想去周边古镇
+  expect: guide
+  note: 增量修改，同上。
+
+- id: g_food_guide
+  text: 出一份武汉两天的美食攻略，要接地气的本地馆子
+  expect: guide
+  note: 要产出结构化攻略（店名/人均/排队），不是泛泛建议。
+
+- id: g_waypoint
+  text: 合肥出发终点武汉，自驾途经有什么古镇可以逛
+  expect: guide
+  note: 沿途中转。目的地不是单点，容易被判 research。
+
+- id: g_realtime_ticket
+  text: 国庆去三亚的机票现在大概多少钱
+  expect: guide
+  tolerate: [research]
+  note: 实时价格。判 direct 就是凭空编价格，这是硬错。
+
+- id: g_open_status
+  text: 现在稻城亚丁封山了吗
+  expect: guide
+  note: 实时状态查询。
+
+- id: g_multi_city
+  text: 帮我规划武汉、开封、洛阳6天动车游
+  expect: guide
+  note: 多城但意图明确是「规划」，不是「对比选哪个」。
+
+- id: g_overseas_plan
+  text: 10.1-10.7 去马来西亚，吉隆坡仙本那亚庇，帮我排行程含往返
+  expect: guide
+  note: 海外多城规划。
+
+# ---------- research：开放式研究/多方案决策 ----------
+
+- id: r_compare_two
+  text: 厦门和青岛哪个更适合带三岁小孩去
+  expect: research
+  tolerate: [guide]
+  note: 二选一决策。降级 guide 会被当成单目的地反问「想去哪」——那才是坏体验。
+
+- id: r_budget_where
+  text: 一万块钱两个人十天能去哪几个国家
+  expect: research
+  tolerate: [guide]
+  note: 预算反推目的地，典型开放式研究。
+
+- id: r_visa_policy
+  text: 现在中国护照去欧洲哪些国家免签，签证要多久
+  expect: research
+  tolerate: [guide]
+  note: 政策查询 + 多国横向。
+
+- id: r_help_choose
+  text: 十一假期七天，帮我在川西、青海、新疆里挑一个
+  expect: research
+  tolerate: [guide]
+  note: 帮我选。
+
+- id: r_cost_model
+  text: 帮我算一下一家三口去日本七天大概要花多少，分项列出来
+  expect: research
+  tolerate: [guide]
+  note: 成本测算。
+
+- id: r_season_compare
+  text: 川西是四月去好还是十月去好，各有什么优劣
+  expect: research
+  tolerate: [direct]
+  note: 时节对比。偏经验，direct 也答得了；但没有要规划，判 guide 是错的。
+
+# ---------- 容易翻车的边界 ----------
+
+- id: b_bare_city
+  text: 成都
+  expect: guide
+  note: 纯地名。信息极少，靠 ROUTE_SYSTEM 的「拿不准一律 guide」兜住。
+
+- id: b_looks_like_chat
+  text: 好的，那就按这个来吧
+  expect: direct
+  note: 确认语。判 guide 会莫名其妙重跑一遍流水线。
+
+- id: b_question_in_plan
+  text: 你安排的这家酒店现在还有房吗
+  expect: guide
+  note: 形式是追问、实质要查房态。判 direct 就是编。
+
+- id: b_long_but_direct
+  text: 我下个月要带父母去旅游，他们腿脚不太好走不了太多路，也不太能吃辣，我想问一下这种情况下安排行程一般要注意些什么
+  expect: direct
+  tolerate: [guide]
+  note: 长文本但要的是经验建议，没提目的地。守「长 ≠ 规划」。
+
+- id: b_short_but_plan
+  text: 排个杭州两日
+  expect: guide
+  note: 短文本但明确是规划。守「短 ≠ 闲聊」。

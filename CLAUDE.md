@@ -142,6 +142,22 @@ cd backend && .venv/bin/python -m pytest tests/ -q     # 全部单测
 cd backend && .venv/bin/python -m pytest tests/test_action_guard.py -q   # 单个文件
 ```
 
+**评估集**（`backend/evals/`，真实 LLM 调用，不进 CI，定位是大改动前后的手动对照）：
+
+```bash
+cd backend
+.venv/bin/python -m evals.route_eval   --tag before   # 路由三分类，35 条 ~1 分钟
+.venv/bin/python -m evals.fetch_samples               # 抽取样本（不进 git，校验 sha256）
+.venv/bin/python -m evals.extract_eval --tag before   # 本体抽取，5 篇固定攻略
+.venv/bin/python -m evals.runner --user … --tag before  # 端到端输出质量，一轮 ~1 小时
+.venv/bin/python -m evals.compare evals/runs/{before,after}.json
+```
+
+⚠️ **本机连不上 `api.deepseek.com`**（服务器可以）——评估要在服务器上跑：
+`ssh ubuntu@42.194.202.233 'cd /home/ubuntu/travel-agent/backend && .venv/bin/python -m evals.…'`。
+断网时报表会打「🚨 N 条没跑成」并退出码 2，**不会**把它算成模型判错
+（见 `docs/pitfalls/评估器把断网算成了模型判错.md`）。
+
 ## Architecture (backend)
 
 **Phase 1 — 单页分析**（`POST /api/agent/run`）：`travel_task` 落库 → BackgroundTasks →
@@ -412,6 +428,32 @@ React Bits `Aurora`（低透明、pointer-events none、低动态偏好不挂载
 反馈切换只更新一条，取消反馈或删除目标时同步撤销；所有读写按当前用户隔离。点击好友通知直达
 好友页，接力通知直达对应目的地；未读数每 30 秒及窗口聚焦时刷新。坑见
 `docs/pitfalls/事件通知必须与业务同事务且按事件去重.md`。
+
+**Phase 93 — 评估集扩建（路由 + 本体抽取 + 过程验证换证据源）**：`evals/` 原本只测攻略正文
+（11 条 query、三层验证、一轮 1 小时），本体层与路由分流落在射程外。新增两个**轻量离线集**，
+不动原来那个重家伙：① `evals/routes.yaml` + `route_eval.py`——`decide_route` 三分类 35 条，
+判错分**硬错**（落在 tolerate 外，用户直接感知）与**软错**（ROUTE_SYSTEM 自己写着「拿不准一律
+选 guide」的保守降级），闸门只看硬错；`--repeat` 看**摇摆**（摇摆比稳定判错更危险，单列不进
+准确率）。首轮基线 91.4%（32/35）、硬错 0、guide 行满分。② `evals/extract.yaml` +
+`extract_eval.py`/`extract_checks.py`——输入是 5 篇**固定的真实攻略**（天数 3/3/5/7/10，后两者
+超 `ontology_single_call_max_days`(6) 走分块路径），只调 `build_trip_object` 一步。样本
+**不进 git**（`fetch_samples.py` 按 message_id 拉 + 校验 sha256——输入漂了而期望没改是最难查的
+评估失真）。检查项对着下游具体后果：`ext_total_as_item`（合计行进逐项 → **总额翻倍**，Phase 67
+不变式）/`ext_headcount`（「两人合计」认成 1 人 → 人均翻倍）/`ext_empty_lane_registered`
+（空结果登记了 lane → **被缓存固化永不重试**）等。③ 过程验证（`verify.py`）主证据源从
+**进度气泡文案正则**换成 **Langfuse 轨迹 span 名**（文案是 UI 字符串改一句就静默失效，span 名是
+代码常量），文案降为回退；规则⑥改成「两源都空才算失效」，另加规则⑦：轨迹可用但文案模式全打空
+时**警告不失败**（Langfuse 一停用这层会无声退化）。配套补齐缺失 span：`xhs_search`/`xhs_detail`
+（xhs_mcp）、`amap_city_brief`（orchestrator）、`site_ctrip`/`site_xhs`（site_router，为此拆成
+外壳+`_collect_via_site`，span **含登录等待**——那常是整轮最慢的一段）——**这些工具此前在轨迹
+面板里也是隐形的**。⚠️ 立集当天踩的坑：生产 `decide_route` 把 API 异常兜底成 guide，评估直接
+复用它 → 断网和「模型判成 guide」返回值完全一样，报出「准确率 42.9%、模型偏向 guide」的**假
+结论**。现在评估侧自己接异常标 `run_error`，准确率分母只算跑成的条数，退出码 2≠1。一般化：
+**凡生产有「失败静默降级」的地方，评估都不能复用那条路径**。计划
+`docs/task_plans/评估集扩建-路由与本体抽取-2026-08-14.md`，用例
+`docs/test_cases/评估集扩建-验收用例.md`，坑
+`docs/pitfalls/评估器把断网算成了模型判错.md`。**刻意不做**：不把 61 篇踩坑逐条变检查项
+（大半是基础设施，塞进输出质量闸门只稀释信号）、不扩 `queries.yaml`、不做 LLM 打分、不进 CI。
 
 **Phase 87 — 协同行程板 PRD 改造**：按《好友协同旅游-高保真架构图-改造版》重构行程板界面
 结构并补四个协作模块。**PRD 的 P0「地基」在本项目已存在**（账号 Phase 15、持久化 PG、

@@ -42,3 +42,10 @@ backend/static/
 /tmp/
 backend/*.db
 backend/*.sqlite3
+
+# ---- 评估集样本 ----
+# 抽取评估的输入是真实线上攻略正文（真实用户会话的产物）。已核对不含手机号/
+# 证件号/邮箱，但没有必要把用户内容放进代码仓库。用 `python -m evals.fetch_samples`
+# 按 extract.yaml 里登记的 message_id + sha256 拉取。
+backend/evals/samples/*.md
+!backend/evals/samples/README.md

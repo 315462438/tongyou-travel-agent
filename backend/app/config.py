@@ -181,6 +181,13 @@ class Settings(BaseSettings):
     # 133.5s / 107.6s。快模型在拆金额这类任务上会反复推演，反而更慢。留空 = model_extractor。
     ontology_cost_model: str = ""
     ontology_cost_max_tokens: int = 8000
+    # 长行程的 cost 路改用更大的输出预算。2026-08-14 抽取评估集首轮跑出来的真实缺陷：
+    # itinerary 路天数多会分块，**cost 路从来不分块**——7 天海外攻略（12k 字、跨 3 地、
+    # 逐项几十条）在 8000 上限处 JSON 中途截断 → 整条 cost 路失败 → 线上预算面板全空。
+    # 上面那组「8000 最快」的实测是在 3-5 天短攻略上量的，长行程不适用。
+    # 判据用**天数**，与 ontology_single_call_max_days 同口径（天数是输出规模的代理）。
+    ontology_cost_long_days: int = 6
+    ontology_cost_long_max_tokens: int = 16000
     # 天数 <= 这个值时 itinerary 路一次抽完（最快）；超过才拆成画像+逐日分块，
     # 否则输出会顶破 token 上限。判据是**天数**（输出规模的代理），不是输入字符数。
     ontology_single_call_max_days: int = 6

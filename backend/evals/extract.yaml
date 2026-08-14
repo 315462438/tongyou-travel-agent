@@ -1,0 +1,73 @@
+# 本体抽取评估集（2026-08-14）
+#
+# 为什么单独立一个集：`app/ontology/extract.py` 是**全系统唯一**一处从攻略正文抽结构，
+# 海报 / 预算 / 行程导入三个消费端全挂在它下面——抽歪一次，三处一起歪。
+# 而 `tests/test_ontology.py` 那 41 条**全是 mock 掉 LLM 的**，测的是投影与缓存失效，
+# 没有一条在测「真模型抽得准不准」。
+#
+# 和 `queries.yaml` 的分工：
+#   queries.yaml  端到端跑真实流水线（含浏览器），一轮约 1 小时 → 大改动前后的对照闸门
+#   extract.yaml  输入是**固定的攻略正文**，只调抽取那一步 → 秒级、几分钱，可以常跑
+#
+# 样本文件不进 git，跑之前先 `python -m evals.fetch_samples` 拉下来（会校验 sha256）。
+#
+# 字段：
+#   id             样本名，对应 samples/{id}.md
+#   message_id     线上 travel_message.id（fetch_samples 按它拉）
+#   sha256         正文哈希前 16 位，防样本悄悄漂移
+#   days           正文里实际存在的 Day 编号——抽取结果必须**逐日覆盖**
+#   must_stops     必须被抽成 stop 的地标（子串匹配；每个都是正文里的加粗主项）
+#   expect_headcount  预算口径的人数。**这是最容易错的一项**：多数攻略的预算表写的是
+#                  「两人合计」，抽取要认出人数，否则下游按人均展示会翻倍
+#   expects_cost   预算表存在时必须抽出开销条目
+#   note           这条样本是为了守住什么
+
+- id: tiantangzhai_3d_short
+  message_id: 0fbcdc73bcea4a48af916ab2f4276251
+  sha256: 5e886deca1c93967
+  days: [1, 2, 3]
+  must_stops: [天堂寨, 白马大峡谷]
+  # 表头写「人均」，但表身写着「两人分摊」——headcount 是**同行人数**，不是金额口径。
+  # 首轮基线我把这条填成 1，被模型的 2 打脸；核对正文后确认模型是对的，改期望。
+  # （新评估集的第一轮，找到的多半是评估自己的错。）
+  expect_headcount: 2
+  expects_cost: true
+  note: 最短样本（3.8k 字）。守单次调用路径、守「人均口径的表 + 两人同行」不被混为一谈。
+
+- id: wuhan_3d
+  message_id: d7e51e675d12441ba522627fb0dc6c6e
+  sha256: 8a27c9b9bacf0c2d
+  days: [1, 2, 3]
+  must_stops: [黄鹤楼, 东湖, 江汉关]
+  expect_headcount: 2
+  expects_cost: true
+  note: 单城 3 天。预算表标题写「2人3天」而表身是总额——守人数被认出来。
+
+- id: chongqing_5d_drive
+  message_id: 91ed6889bff14e27a4720fed5bfb082b
+  sha256: d91cedecd17c7f2e
+  days: [1, 2, 3, 4, 5]
+  must_stops: [南天湖, 仙女山, 金佛山]
+  expect_headcount: 3
+  expects_cost: true
+  note: 自驾多点 5 天，「两大一小」。守 3 人被认出（不是 2，也不是 1）。
+
+- id: malaysia_7d_overseas
+  message_id: e082a54c678b4640a08592236a594ebe
+  sha256: 85303e5853ed76a9
+  days: [1, 2, 3, 4, 5, 6, 7]
+  must_stops: [吉隆坡, 仙本那, 亚庇]
+  expect_headcount: 2
+  expects_cost: true
+  note: |
+    海外多城 7 天，12k 字——**超过 ontology_single_call_max_days(6)，走分块路径**。
+    Day 6 正文里有「路线A/路线B」二选一分支，守分支不把一天拆成两天。
+
+- id: yushu_10d_long
+  message_id: b823fb8c54ca48e78e1adf715b524808
+  sha256: abb379f70f7072e3
+  days: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+  must_stops: [重庆, 成都, 青城山]
+  expect_headcount: 2
+  expects_cost: true
+  note: 最长天数（10 天跨 3 地）。守分块路径不丢天、failed_days 为空。

@@ -115,8 +115,14 @@ def run_one(base: str, token: str, q: Query, poll_s: float, timeout_s: int) -> d
             break
 
     elapsed = time.monotonic() - t0
+    # 过程验证的主证据源（Phase 90 的轨迹接口）。Langfuse 落库有几秒延迟，
+    # 拉不到就是空列表，verify 那边会自动退回进度文案，不影响这一轮的结论。
+    try:
+        traj = (_http(f"{base}/api/chat/{cid}/trajectory", token).get("events") or [])
+    except Exception:  # noqa: BLE001 — 轨迹是增强证据，拿不到不该让整条评估失败
+        traj = []
     findings = run_checks(guide, q)
-    report, verified = build_report(guide, meta, progress, q, elapsed)
+    report, verified = build_report(guide, meta, progress, q, elapsed, traj)
     return {
         "id": q.id, "category": q.category, "text": q.text, "note": q.note,
         "conversation_id": cid,
@@ -125,9 +131,10 @@ def run_one(base: str, token: str, q: Query, poll_s: float, timeout_s: int) -> d
         "verified": verified,
         # 结构化三层结果：控制台判定、退出码、compare.py 都读它，
         # 不再各自用 findings 另算一套（那会让过程层的失败无声溜过去）
-        "verification": verify_all(guide, meta, progress, q),
+        "verification": verify_all(guide, meta, progress, q, traj),
         "verification_report": report,
         "progress": progress,
+        "trajectory_tools": [e.get("name") for e in traj if (e.get("lane") or "") == "tools"],
         "excerpt": guide[:400],
     }
 

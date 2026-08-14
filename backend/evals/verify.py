@@ -70,6 +70,26 @@ _STEP_PATTERNS: tuple[tuple[str, str], ...] = (
 _TRAIL_MIN = 3
 
 
+# 2026-08-14：过程验证换用 **Langfuse 轨迹的 span 名** 当主证据源。
+#
+# 为什么换：`_STEP_PATTERNS` 匹配的是**进度气泡文案**——那是 UI 层的字符串，
+# 改一句文案就可能让整层静默失效（规则⑥就是为此加的补丁）。span 名是代码里的常量，
+# 改它必然是有意的。配套在 xhs_mcp / orchestrator / site_router 补了缺的 span，
+# 这些工具此前在轨迹面板里也是隐形的。
+#
+# 进度文案降为**回退**：Langfuse 未启用、或该轮没落到 trace 时仍按老路子走，
+# 所以 `_STEP_PATTERNS` 不能删，也仍需要跟着文案更新。
+_SPAN_TO_TOOL: tuple[tuple[str, str], ...] = (
+    ("xhs_search", "xhs_search"),
+    ("xhs_detail", "xhs_detail"),
+    ("amap_city_brief", "amap_city_brief"),
+    ("site_ctrip", "ctrip_hotels"),
+    ("site_xhs", "xhs_search"),
+    ("web_search", "web_search"),
+    ("open_page", "open_page"),
+)
+
+
 def tool_sequence(progress_texts: list[str]) -> list[str]:
     """从进度轨迹还原本轮的工具调用顺序（连续重复的合并成一条）。"""
     seq: list[str] = []
@@ -80,6 +100,31 @@ def tool_sequence(progress_texts: list[str]) -> list[str]:
                     seq.append(name)
                 break
     return seq
+
+
+def tool_sequence_from_trajectory(events: list[dict]) -> list[str]:
+    """从 `GET /api/chat/{cid}/trajectory` 的事件流还原工具调用顺序。
+
+    只认 tools 泳道的 span——generation 是模型调用不是工具，
+    轮的外壳 `conversation_turn` 归 input 泳道，天然被排除在外。
+    """
+    seq: list[str] = []
+    for ev in events or []:
+        if (ev.get("lane") or "") != "tools":
+            continue
+        name = (ev.get("name") or "").strip()
+        tool = next((t for prefix, t in _SPAN_TO_TOOL if name.startswith(prefix)), "")
+        if tool and (not seq or seq[-1] != tool):
+            seq.append(tool)
+    return seq
+
+
+def resolve_sequence(progress: list[str], trajectory: list[dict] | None) -> tuple[list[str], str]:
+    """返回 (工具序列, 证据来源)。轨迹有货就用轨迹，否则回退进度文案。"""
+    from_traj = tool_sequence_from_trajectory(trajectory or [])
+    if from_traj:
+        return from_traj, "trajectory"
+    return tool_sequence(progress), "progress"
 
 
 # ---------- 第一层：结果验证（环境真值） ----------
@@ -126,9 +171,14 @@ def verify_result(guide: str, meta: dict, q: Query) -> VerificationResult:
 
 # ---------- 第二层：过程验证（业务规则） ----------
 
-def verify_process(progress: list[str], meta: dict, q: Query) -> VerificationResult:
-    """过程守没守住我们自己定的纪律。规则全部来自本周确立的设计约束。"""
-    seq = tool_sequence(progress)
+def verify_process(progress: list[str], meta: dict, q: Query,
+                   trajectory: list[dict] | None = None) -> VerificationResult:
+    """过程守没守住我们自己定的纪律。规则全部来自本周确立的设计约束。
+
+    `trajectory` 来自 `GET /api/chat/{cid}/trajectory`（Phase 90）。给了就用它当主证据，
+    没给（Langfuse 未启用等）退回进度文案——见 `_SPAN_TO_TOOL` 上方的说明。
+    """
+    seq, seq_src = resolve_sequence(progress, trajectory)
     sources = meta.get("sources") or []
     sites = {s.get("site") for s in sources}
     reused = "reuse_recent_sources" in seq
@@ -155,17 +205,20 @@ def verify_process(progress: list[str], meta: dict, q: Query) -> VerificationRes
     if q.category == "waypoint" and reused:
         violations.append("沿途中转轮复用了旧来源（语料不是一回事）")
         codes.append("proc_waypoint_reused")
-    # ⑥ 元规则：轨迹识别不出来 = 这一层已经失效，必须报，不能静默放行。
-    #    _STEP_PATTERNS 匹配的是进度气泡文案（很容易被顺手改掉），一旦全部落空，
-    #    上面 5 条里依赖 seq 的规则会一条都打不着，整层退化成「无条件通过」。
+    # ⑥ 元规则：工具序列还原不出来 = 这一层已经失效，必须报，不能静默放行。
+    #    两个证据源都空才算失效——轨迹能用时，进度文案过期不影响闸门。
     if len(progress) >= _TRAIL_MIN and not seq:
         violations.append(
-            f"{len(progress)} 条进度轨迹一条都没匹配上 _STEP_PATTERNS——"
-            "过程验证已失效（多半是进度文案改了，需同步更新模式）"
+            f"{len(progress)} 条进度轨迹既没匹配上 _STEP_PATTERNS、轨迹里也没有工具 span——"
+            "过程验证已失效（多半是进度文案改了或 Langfuse 没启用）"
         )
         codes.append("proc_unrecognized_trail")
-    elif len(progress) >= _TRAIL_MIN and "generate_guide" not in seq:
+    elif len(progress) >= _TRAIL_MIN and seq_src == "progress" and "generate_guide" not in seq:
         warnings.append("轨迹里没识别到生成阶段（generate_guide），模式可能部分过期")
+    # ⑦ 主证据源在用轨迹时，顺带体检一下**回退路径**：文案模式已经全部打空的话，
+    #    Langfuse 一旦停用，这一层会毫无征兆地退化。不判失败，但要有人看见。
+    if seq_src == "trajectory" and len(progress) >= _TRAIL_MIN and not tool_sequence(progress):
+        warnings.append("回退路径失效：进度文案一条都没匹配上 _STEP_PATTERNS，需同步更新")
 
     return VerificationResult(
         passed=not violations,
@@ -174,6 +227,7 @@ def verify_process(progress: list[str], meta: dict, q: Query) -> VerificationRes
         warnings=warnings,
         evidence={
             "tool_sequence": seq,
+            "sequence_source": seq_src,
             "reused_sources": reused,
             "web_search_skipped": "web_search_skipped" in seq,
             "continued_generation": "continue_generation" in seq,
@@ -225,11 +279,12 @@ def verify_quality(guide: str, q: Query) -> VerificationResult:
 
 # ---------- 汇总成一份报告 ----------
 
-def verify_all(guide: str, meta: dict, progress: list[str], q: Query) -> dict:
+def verify_all(guide: str, meta: dict, progress: list[str], q: Query,
+               trajectory: list[dict] | None = None) -> dict:
     """跑完三层，返回结构化结果——快照要存它，compare.py 才对照得了过程层。"""
     layers = {
         "result": verify_result(guide, meta, q),
-        "process": verify_process(progress, meta, q),
+        "process": verify_process(progress, meta, q, trajectory),
         "quality": verify_quality(guide, q),
     }
     return {
@@ -244,19 +299,21 @@ def verify_all(guide: str, meta: dict, progress: list[str], q: Query) -> dict:
 
 def build_report(
     guide: str, meta: dict, progress: list[str], q: Query, elapsed_s: float,
+    trajectory: list[dict] | None = None,
 ) -> tuple[str, bool]:
     """返回 (Markdown 报告, 三层是否全通过)。"""
     result = verify_result(guide, meta, q)
-    process = verify_process(progress, meta, q)
+    process = verify_process(progress, meta, q, trajectory)
     quality = verify_quality(guide, q)
+    seq, seq_src = resolve_sequence(progress, trajectory)
     head = (guide.strip().split("\n")[0] if guide.strip() else "（空）")[:60]
     body = "\n".join([
         f"### {q.id}　<sub>{q.note}</sub>",
         "",
         f"**最终回复**：{head}…（{len(guide)} 字，耗时 {elapsed_s:.0f}s）",
         "",
-        "**工具调用顺序**：",
-        *[f"- {s}" for s in (tool_sequence(progress) or ["（无轨迹）"])],
+        f"**工具调用顺序**（证据来自{'轨迹 span' if seq_src == 'trajectory' else '进度文案'}）：",
+        *[f"- {s}" for s in (seq or ["（无轨迹）"])],
         "",
         "**结果验证**：", "```", result.render(), "```",
         "",

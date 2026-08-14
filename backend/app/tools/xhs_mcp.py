@@ -142,12 +142,18 @@ async def search_notes(keyword: str) -> list[dict]:
     """
     if not enabled():
         return []
-    for attempt in range(2):
-        try:
-            return _parse_feeds(await _call_tool("search_feeds", {"keyword": keyword}))
-        except Exception:  # noqa: BLE001 — 超时/未登录/服务挂了都静默降级
-            logger.warning("xhs search_notes failed for %r (attempt %d)", keyword, attempt + 1,
-                           exc_info=attempt == 1)
+    from app import observability as obs
+
+    with obs.span("xhs_search", input_data=keyword) as _s:
+        for attempt in range(2):
+            try:
+                feeds = _parse_feeds(await _call_tool("search_feeds", {"keyword": keyword}))
+                if _s is not None:
+                    _s.update(output={"feeds": len(feeds)})
+                return feeds
+            except Exception:  # noqa: BLE001 — 超时/未登录/服务挂了都静默降级
+                logger.warning("xhs search_notes failed for %r (attempt %d)", keyword,
+                               attempt + 1, exc_info=attempt == 1)
     return []
 
 
@@ -155,13 +161,19 @@ async def note_detail(feed_id: str, xsec_token: str) -> dict | None:
     """取笔记详情 → {title, desc}；失败返回 None。"""
     if not enabled():
         return None
-    try:
-        return _parse_detail(await _call_tool(
-            "get_feed_detail", {"feed_id": feed_id, "xsec_token": xsec_token}
-        ))
-    except Exception:  # noqa: BLE001
-        logger.warning("xhs note_detail failed for %s", feed_id, exc_info=True)
-        return None
+    from app import observability as obs
+
+    with obs.span("xhs_detail", input_data=feed_id) as _s:
+        try:
+            det = _parse_detail(await _call_tool(
+                "get_feed_detail", {"feed_id": feed_id, "xsec_token": xsec_token}
+            ))
+            if _s is not None:
+                _s.update(output={"chars": len((det or {}).get("desc") or "")})
+            return det
+        except Exception:  # noqa: BLE001
+            logger.warning("xhs note_detail failed for %s", feed_id, exc_info=True)
+            return None
 
 
 async def collect_xhs_sources(

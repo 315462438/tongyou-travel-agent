@@ -1718,11 +1718,16 @@ async def _collect_amap(cid: str, pref: Preference) -> list[dict]:
 
     if not enabled() or not pref.destination:
         return []
+    from app import observability as obs
+
     cities = split_cities(pref.destination)[:settings.amap_max_cities] or [pref.destination]
     sources: list[dict] = []
     for city in cities:
         try:
-            source = await build_amap_source(city)
+            with obs.span("amap_city_brief", input_data=city) as _s:
+                source = await build_amap_source(city)
+                if _s is not None:
+                    _s.update(output={"ok": bool(source)})
         except Exception:  # noqa: BLE001 — 单城失败不拖垮其余城市
             logger.warning("amap source failed for %s", city, exc_info=True)
             continue

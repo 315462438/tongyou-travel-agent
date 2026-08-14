@@ -170,11 +170,15 @@ def test_dest_in_page_matches_any_city_of_multi_city_trip():
 
 
 def test_site_relevance_message_does_not_claim_risk_control():
-    """没有证据就不能说站点风控。"""
+    """没有证据就不能说站点风控。
+
+    2026-08-14：`collect_via_site` 拆成了「外壳（挂 span）+ `_collect_via_site`（实现）」，
+    进度文案在实现里。这里跟着看实现——**断言的是文案，不是函数怎么切的**。
+    """
     import inspect
 
     from app.agent import site_router
 
-    src = inspect.getsource(site_router.collect_via_site)
+    src = inspect.getsource(site_router._collect_via_site)
     assert "风控拦截" not in src
     assert "不是目标城市的内容" in src

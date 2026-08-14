@@ -253,6 +253,29 @@ async def collect_via_site(
         （如小红书「安全限制」）可能被页面分类器判成可读内容混进来源，必须挡掉
     返回 sources: [{title, url, summary}]；失败/超时返回 []。
     """
+    from app import observability as obs
+
+    # span 名带站点（`site_ctrip` / `site_xhs`），轨迹面板与评估集的过程验证都按它认工具。
+    # 含登录等待在内——那段等待本来就该在轨迹里看得见，它常常就是整轮最慢的一段。
+    with obs.span(f"site_{target.site}", input_data=target.url):
+        return await _collect_via_site(
+            target, browser, progress=progress, summarize=summarize,
+            screenshot_path=screenshot_path, is_relevant=is_relevant,
+            user_id=user_id, cid=cid,
+        )
+
+
+async def _collect_via_site(
+    target: SiteTarget,
+    browser,
+    *,
+    progress,
+    summarize,
+    screenshot_path: str | None = None,
+    is_relevant=None,
+    user_id: str = "",
+    cid: str = "",
+) -> list[dict]:
     if cid:
         cancel_check(cid)  # 停止按钮：打开站点前检查
     page = await browser.open_page(target.url)

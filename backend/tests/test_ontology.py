@@ -241,9 +241,11 @@ class _FakeLLM:
     def __init__(self, fail_on: type | None = None):
         self.fail_on = fail_on
         self.calls: list[str] = []
+        self.max_tokens: dict[str, int] = {}  # schema 名 → 这一路要的输出预算
 
     def parse(self, prompt, schema, *, model=None, system=None, max_tokens=None):
         self.calls.append(schema.__name__)
+        self.max_tokens[schema.__name__] = max_tokens
         if self.fail_on is not None and schema is self.fail_on:
             raise RuntimeError("boom")
         if schema is TripItineraryExtraction:
@@ -333,6 +335,27 @@ def test_failed_day_chunk_does_not_void_the_whole_trip(monkeypatch):
     assert trip.failed_days == [1, 2]
     assert trip.destination == "杭州"  # 画像仍在
     assert [e.name for e in trip.expenses] == ["灵隐寺门票"]  # 花费仍在
+
+
+def test_cost_lane_gets_a_bigger_output_budget_on_long_trips(monkeypatch):
+    """**抽取评估集首轮跑出来的真实缺陷**（2026-08-14）。
+
+    itinerary 路天数多会分块，**cost 路从来不分块**——7 天海外攻略（12k 字、跨 3 地、
+    逐项几十条）在 8000 token 处 JSON 中途截断，整路失败，线上预算面板全空。
+    「8000 最快」那组实测是在 3-5 天短攻略上量的，长行程不适用。
+    """
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "ontology_cost_long_days", 1)  # _GUIDE 有 2 天 → 算长
+    llm = _FakeLLM()
+    asyncio.run(build_trip_object(llm, _GUIDE))
+    assert llm.max_tokens["TripCostExtraction"] == settings.ontology_cost_long_max_tokens
+
+    monkeypatch.setattr(settings, "ontology_cost_long_days", 9)  # 2 天 → 算短
+    llm2 = _FakeLLM()
+    asyncio.run(build_trip_object(llm2, _GUIDE))
+    assert llm2.max_tokens["TripCostExtraction"] == settings.ontology_cost_max_tokens, \
+        "短行程必须维持原来的 8000（那是实测最快的档，别为了长行程把它一起拖慢）"
 
 
 def test_failed_cost_lane_keeps_stops():

@@ -130,6 +130,70 @@ def test_partially_stale_patterns_warn_without_failing():
     assert r.warnings and "generate_guide" in r.warnings[0]
 
 
+# ---------- 证据源升级：轨迹 span 优先于进度文案（2026-08-14） ----------
+
+def _traj(*names) -> list[dict]:
+    """构造 /trajectory 的事件流。lane 由后端 `_lane_of` 给，这里照它的口径造。"""
+    out = [{"name": "conversation_turn", "lane": "input"}]
+    for n in names:
+        out.append({"name": n, "lane": "model" if n.startswith("OpenAI") else "tools"})
+    return out
+
+
+def test_tool_sequence_from_trajectory_maps_span_names():
+    from evals.verify import tool_sequence_from_trajectory
+
+    seq = tool_sequence_from_trajectory(
+        _traj("amap_city_brief", "xhs_search", "xhs_detail", "xhs_detail", "site_ctrip"))
+    assert seq == ["amap_city_brief", "xhs_search", "xhs_detail", "ctrip_hotels"]
+
+
+def test_trajectory_ignores_model_and_turn_root():
+    """generation 是模型调用不是工具；轮的外壳更不是。"""
+    from evals.verify import tool_sequence_from_trajectory
+
+    assert tool_sequence_from_trajectory(_traj("OpenAI-generation")) == []
+
+
+def test_trajectory_beats_stale_progress_wording():
+    """**这次改造的核心**：进度文案全改了，只要轨迹里有工具 span，这一层照常成立。
+
+    改造前：文案一改 → _STEP_PATTERNS 全落空 → 整层失效（靠规则⑥兜住报红）。
+    改造后：span 名是代码常量，改它必然是有意的。
+    """
+    from evals.verify import resolve_sequence
+
+    stale = ["正在琢磨你的需求…", "正在翻小红书…", "正在写方案…"]
+    seq, src = resolve_sequence(stale, _traj("xhs_search", "web_search"))
+    assert src == "trajectory" and seq == ["xhs_search", "web_search"]
+
+    r = verify_process(stale, {"sources": [{"site": "xhs"}]}, Q, _traj("xhs_search"))
+    assert r.passed, "轨迹给得出工具序列时不该再判「模式过期」"
+    assert "proc_unrecognized_trail" not in r.codes
+
+
+def test_stale_progress_still_warns_even_when_trajectory_works():
+    """但回退路径失效要有人看见——Langfuse 一停用，这层就会毫无征兆地退化。"""
+    stale = ["正在琢磨你的需求…", "正在翻小红书…", "正在写方案…"]
+    r = verify_process(stale, {"sources": [{"site": "xhs"}]}, Q, _traj("xhs_search"))
+    assert any("回退路径失效" in w for w in r.warnings)
+
+
+def test_falls_back_to_progress_when_trajectory_is_empty():
+    """Langfuse 未启用 / 落库有延迟 → 轨迹是空的，必须退回老路子而不是判失效。"""
+    from evals.verify import resolve_sequence
+
+    seq, src = resolve_sequence(TRAIL, [])
+    assert src == "progress" and "xhs_search" in seq
+
+
+def test_both_sources_dead_still_fails_the_layer():
+    """两个证据源都空 = 这一层真的失效了，规则⑥仍须报红。"""
+    stale = ["正在琢磨你的需求…", "正在翻小红书…", "正在写方案…", "快好了…"]
+    r = verify_process(stale, {"sources": [{"site": "xhs"}]}, Q, _traj())
+    assert not r.passed and "proc_unrecognized_trail" in r.codes
+
+
 # ---------- 第三层：质量 ----------
 
 def test_quality_is_dimension_wise_not_a_single_score():

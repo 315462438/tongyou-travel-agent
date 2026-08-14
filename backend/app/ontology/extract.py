@@ -198,12 +198,18 @@ async def build_trip_object(
         # 2026-08-13 实测：这一路在 v4-pro@8000 最快（64.3s），
         # 而 v4-flash 无论 8000（133.5s）还是 16000（107.6s）都更慢——
         # 快模型在这类「逐项拆金额」任务上会反复推演，反而拖长。
+        #
+        # 2026-08-14：上面那组数是在 3-5 天短攻略上量的。**cost 路不分块**（不像
+        # itinerary 路天数多会拆），7 天海外攻略的逐项开销在 8000 处 JSON 中途截断
+        # → 整路失败 → 预算面板全空。长行程改用更大预算，短行程维持原速。
+        long_trip = len(sections) > settings.ontology_cost_long_days
         return await _parse(
             f"{hint}只抽花费与需预约项，不要输出地点清单：\n\n"
             + wrap_external(text[:cap], source="guide"),
             TripCostExtraction,
             model=settings.ontology_cost_model or settings.model_extractor,
-            max_tokens=settings.ontology_cost_max_tokens,
+            max_tokens=(settings.ontology_cost_long_max_tokens if long_trip
+                        else settings.ontology_cost_max_tokens),
         )
 
     async def _itinerary():
