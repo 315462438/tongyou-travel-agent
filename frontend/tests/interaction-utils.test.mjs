@@ -306,3 +306,86 @@ test('预算盲盒必须有出发地和预算，并要求把大交通算完整',
   assert.match(prompt, /不能为了卡预算而漏掉往返大交通/)
   assert.match(prompt, /预算超支时的降级方案/)
 })
+
+test('打字机：无积压立即完成，终稿/隐藏直接追平全量', async () => {
+  const { typewriterStep } = await import('../src/interaction.ts')
+  // 无积压 → done
+  assert.deepEqual(typewriterStep({ shown: 5 }, 'abcde'), { shown: 5, done: true })
+  // inactive → 直接追平
+  assert.deepEqual(typewriterStep({ shown: 2 }, 'abcde', { inactive: true }), { shown: 5, done: true })
+  // 空目标 → done
+  assert.deepEqual(typewriterStep({ shown: 0 }, ''), { shown: 0, done: true })
+})
+
+test('打字机：积压越大揭示越快，最终追平目标且不越界', async () => {
+  const { typewriterStep } = await import('../src/interaction.ts')
+  const target = 'x'.repeat(1000)
+  // 积压 1000（>400）→ 每步 6 字符
+  let s = { shown: 0 }
+  s = typewriterStep(s, target)
+  assert.equal(s.shown, 6)
+  // 积压 300（>200）→ 每步 4 字符
+  s = { shown: 700 }
+  s = typewriterStep(s, target)
+  assert.equal(s.shown, 704)
+  // 积压 150（>100）→ 每步 2 字符
+  s = { shown: 850 }
+  s = typewriterStep(s, target)
+  assert.equal(s.shown, 852)
+  // 积压 50（≤100）→ 每步 1 字符
+  s = { shown: 950 }
+  s = typewriterStep(s, target)
+  assert.equal(s.shown, 951)
+  // 最后一步不越界
+  s = { shown: 999 }
+  assert.deepEqual(typewriterStep(s, target), { shown: 1000, done: true })
+  // 目标变短（理论上不出现）→ 对齐不越界
+  assert.deepEqual(typewriterStep({ shown: 10 }, 'abc'), { shown: 3, done: true })
+})
+
+test('消息增量合并：未变化保持原引用，变化/新增才替换', async () => {
+  const { mergeMessages } = await import('../src/interaction.ts')
+  const prev = [
+    { id: 'a', role: 'user', content: 'hello' },
+    { id: 'b', role: 'assistant', content: 'part1', meta: { streaming: true } },
+  ]
+  // 完全未变 → 返回原数组（引用相等）
+  assert.equal(mergeMessages(prev, [
+    { id: 'a', role: 'user', content: 'hello' },
+    { id: 'b', role: 'assistant', content: 'part1', meta: { streaming: true } },
+  ]), prev)
+  // 流式增长 → 只有 b 换新对象，a 保持引用
+  const next = mergeMessages(prev, [
+    { id: 'a', role: 'user', content: 'hello' },
+    { id: 'b', role: 'assistant', content: 'part1part2', meta: { streaming: true } },
+  ])
+  assert.notEqual(next, prev)
+  assert.equal(next[0], prev[0])
+  assert.notEqual(next[1], prev[1])
+  // 新增消息 → 追加且 a/b 引用不变
+  const added = mergeMessages(prev, [
+    { id: 'a', role: 'user', content: 'hello' },
+    { id: 'b', role: 'assistant', content: 'part1', meta: { streaming: true } },
+    { id: 'c', role: 'progress', content: 'x' },
+  ])
+  assert.equal(added[0], prev[0])
+  assert.equal(added[1], prev[1])
+  assert.equal(added.length, 3)
+  // 终稿：content 相同但 meta 去 streaming → 换新对象（停止场景，_ensure_stopped_message）
+  const finalized = mergeMessages(prev, [
+    { id: 'a', role: 'user', content: 'hello' },
+    { id: 'b', role: 'assistant', content: 'part1', meta: {} },
+  ])
+  assert.notEqual(finalized[1], prev[1])
+  // 空 prev → 直接返回 next
+  assert.equal(mergeMessages([], [{ id: 'x', role: 'user', content: '1' }]).length, 1)
+})
+
+test('智能规划档预期文案不能混入深度推理的 4-6 分钟（Phase 71.1 回归）', async () => {
+  const { expectedHintFor, expectedSecondsFor, inferThinkingMode } = await import('../src/interaction.ts')
+  // 按实际进度推断模式：guide 流水线绝不显示深度推理的预期
+  assert.equal(inferThinkingMode(['正在搜索：成都 旅游攻略'], true), '智能规划')
+  assert.match(expectedHintFor('智能规划'), /3-4|2-3/)
+  assert.doesNotMatch(expectedHintFor('智能规划'), /4-6|6 分钟/)
+  assert.ok(expectedSecondsFor('智能规划') < expectedSecondsFor('深度推理'))
+})

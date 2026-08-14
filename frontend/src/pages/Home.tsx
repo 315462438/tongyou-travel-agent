@@ -1,4 +1,4 @@
-import { isValidElement, lazy, Suspense, type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
+import { isValidElement, lazy, memo, Suspense, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { BrandIcon, BrandWordmark } from '../components/Brand'
@@ -10,6 +10,7 @@ import { AdminSupport, SupportChat, useSupportUnread } from '../components/Suppo
 import { useToast } from '../components/toast-context'
 import { API, authFetch, setToken } from '../api'
 import { useNotificationUnread } from '../hooks/useNotificationUnread'
+import { useTypewriter } from '../hooks/useTypewriter'
 import {
   expectedHintFor,
   expectedSecondsFor,
@@ -20,6 +21,7 @@ import {
   inferThinkingProgress,
   initialLayoutMode,
   MAX_PROMPT_LENGTH,
+  mergeMessages,
   buildBudgetRoulettePrompt,
   buildInspirationImportPrompt,
   buildJourneyPreviewPrompt,
@@ -40,6 +42,16 @@ import {
 
 const TripsOverlay = lazy(() => import('./Trips'))
 const SocialHub = lazy(() => import('../components/SocialHub'))
+
+interface SubagentRun {
+  id: string
+  name: string          // 子代理类型，如 api-researcher
+  title: string         // 从任务描述提炼的短标题
+  prompt: string        // 任务描述摘要
+  status: 'running' | 'done' | 'failed'
+  tokens: number
+  elapsed_s: number
+}
 
 interface Msg {
   id: string
@@ -70,6 +82,8 @@ interface Msg {
     hint_prompt?: string
     // Phase 76：区域型提问的候选目的地，点一下即作为下一轮提问发出
     candidates?: { name: string; reason: string; tag: string }[]
+    // Phase 88：深度研究并发派出的子代理运行态（面板置于对话最上方）
+    subagents?: SubagentRun[]
   } | null
 }
 
@@ -345,6 +359,8 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
   }, [notify])
   const [showSkills, setShowSkills] = useState(false)
   const [traceFor, setTraceFor] = useState<string | null>(null)  // 打开调用链抽屉的 turn_id
+  // Phase 90：对话 / 轨迹 双视图。轨迹按需加载（只在切过去时才打 Langfuse）
+  const [chatTab, setChatTab] = useState<'chat' | 'traj'>('chat')
   const toggleTrace = useCallback((turnId: string) => {
     setTraceFor((cur) => (cur === turnId ? null : turnId))
   }, [])
@@ -516,24 +532,42 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
   }, [])
   useEffect(() => () => stopPoll(), [stopPoll])
 
+  // 单次拉取（2026-08-13）：轮询间隔与「切回页面立即补拉」共用同一份逻辑
+  const pullOnce = useCallback(async (conv: string) => {
+    const res = await authFetch(`${API}/chat/${conv}/messages`)
+    if (!res.ok) return
+    const data = await res.json()
+    // 增量合并（2026-08-13 丝滑改造）：未变化的消息保持原对象引用，
+    // React.memo 跳过重渲染；只有流式那条/新增消息触发重渲染。
+    setMessages((prev) => mergeMessages(prev, data.messages))
+    setRunning(data.running)
+    trackChange(data.messages)
+    if (!data.running) {
+      stopPoll()
+      loadConvs()
+    }
+  }, [stopPoll, loadConvs, trackChange])
+
   const poll = useCallback(
     (conv: string) => {
       stopPoll()
-      pollRef.current = window.setInterval(async () => {
-        const res = await authFetch(`${API}/chat/${conv}/messages`)
-        if (!res.ok) return
-        const data = await res.json()
-        setMessages(data.messages)
-        setRunning(data.running)
-        trackChange(data.messages)
-        if (!data.running) {
-          stopPoll()
-          loadConvs()
-        }
-      }, 1500)
+      pollRef.current = window.setInterval(() => {
+        void pullOnce(conv)
+      }, 800)
     },
-    [stopPoll, loadConvs, trackChange],
+    [stopPoll, pullOnce],
   )
+
+  // 切回页面立即补拉一次：用户从别的标签页回来，不等下一个轮询周期（0.8s）也能秒见结果
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && cid && pollRef.current !== null) {
+        void pullOnce(cid)
+      }
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [cid, pullOnce])
 
   const selectConv = useCallback(
     async (id: string) => {
@@ -742,6 +776,15 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
     && lastVisibleMessage?.role === 'progress'
     && (lastVisibleMessage.meta?.confirm || lastVisibleMessage.meta?.handoff)
   )
+  // Phase 88：取最新一条带 subagents 的 progress 快照（后端就地更新同一条消息）
+  const subagentRuns = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const runs = messages[i].meta?.subagents
+      if (runs && runs.length) return runs
+    }
+    return [] as SubagentRun[]
+  }, [messages])
+
   const showThinkingWorkspace = running && !currentStreaming?.content.trim() && !waitingForUser
   const visibleMessages = allVisibleMessages.filter((m) => {
     if (running && m.role === 'progress' && !m.meta?.confirm && !m.meta?.handoff && !m.meta?.hint) return false
@@ -1058,6 +1101,19 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
           </div>
         ) : (
           <>
+            {cid && (
+              <div className="chat-tabs" role="tablist" aria-label="对话视图">
+                <button role="tab" aria-selected={chatTab === 'chat'}
+                  className={chatTab === 'chat' ? 'active' : ''}
+                  onClick={() => setChatTab('chat')}>对话</button>
+                <button role="tab" aria-selected={chatTab === 'traj'}
+                  className={chatTab === 'traj' ? 'active' : ''}
+                  onClick={() => setChatTab('traj')}>轨迹</button>
+              </div>
+            )}
+            {chatTab === 'traj' && cid ? (
+              <div className="thread"><div className="thread-inner"><TrajectoryView cid={cid} /></div></div>
+            ) : (
             <div className="thread" ref={threadRef} onScroll={onThreadScroll} onWheel={onThreadWheel}>
               <div className="thread-inner">
                 {visibleMessages.map((m, i) => (
@@ -1088,6 +1144,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
                     }}
                   />
                 ))}
+                {subagentRuns.length > 0 && <SubagentPanel runs={subagentRuns} />}
                 {showThinkingWorkspace && (
                   <ThinkingWorkspace
                     stage={thinkingStage}
@@ -1108,6 +1165,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
                 </button>
               )}
             </div>
+            )}
             <div className="composer-wrap">
               <Composer value={input} onChange={setInput} onSend={send} onStop={stop} running={running} deep={deep} onToggleDeep={toggleDeep} sandbox={sandbox} onToggleSandbox={toggleSandbox} chips={starterChips} />
             </div>
@@ -1682,6 +1740,131 @@ function SkillPanel({ onClose }: { onClose: () => void }) {
   )
 }
 
+
+// ---------- 会话轨迹（Phase 90，借鉴 dsh Trajectory）----------
+
+interface TrajEvent {
+  id: string
+  turnId: string
+  lane: 'input' | 'model' | 'tools'
+  type: string
+  name: string
+  model: string
+  startMs: number
+  offsetMs: number
+  durMs: number | null
+  tokens: number | null
+  input: string
+  output: string
+}
+
+const LANES: { key: TrajEvent['lane']; label: string }[] = [
+  { key: 'input', label: 'Input' },
+  { key: 'model', label: 'Model' },
+  { key: 'tools', label: 'Tools' },
+]
+
+/** 会话轨迹：三泳道密度条 + 按时间排的事件流。
+ *  回答的是「这个会话一路上都发生了什么、时间花在哪」——
+ *  与「调用链」抽屉（单轮内部树）互补。 */
+function TrajectoryView({ cid }: { cid: string }) {
+  const [data, setData] = useState<{
+    enabled: boolean; events: TrajEvent[]; turns: { id: string; route: string | null }[]; spanMs: number
+  } | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [q, setQ] = useState('')
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    let alive = true
+    setLoading(true)
+    setFailed(false)
+    authFetch(`${API}/chat/${cid}/trajectory`)
+      .then(async (r) => {
+        if (!alive) return
+        if (!r.ok) { setFailed(true); return }
+        setData(await r.json())
+      })
+      .catch(() => alive && setFailed(true))
+      .finally(() => alive && setLoading(false))
+    return () => { alive = false }
+  }, [cid])
+
+  if (loading) return <div className="traj-empty">正在读取轨迹…</div>
+  if (failed) return <div className="traj-empty">轨迹服务暂时不可用。</div>
+  if (!data?.enabled) {
+    return <div className="traj-empty">未启用可观测埋点，轨迹不可用（需要配置 Langfuse）。</div>
+  }
+  if (!data.events.length) return <div className="traj-empty">这个会话还没有轨迹记录。</div>
+
+  const kw = q.trim().toLowerCase()
+  const shown = kw
+    ? data.events.filter((e) =>
+      `${e.name} ${e.model} ${e.input} ${e.output}`.toLowerCase().includes(kw))
+    : data.events
+  const span = Math.max(data.spanMs, 1)
+  const totalMs = data.events.reduce((a, e) => a + (e.durMs || 0), 0)
+  const fmtMs = (ms: number | null) => {
+    if (!ms) return ''
+    return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`
+  }
+
+  return (
+    <div className="traj">
+      <div className="traj-head">
+        <span className="traj-stat">{data.turns.length} 轮</span>
+        <span className="traj-stat">{data.events.length} 个事件</span>
+        <span className="traj-stat">累计 {fmtMs(totalMs)}</span>
+        <span className="traj-stat">跨度 {fmtMs(span)}</span>
+        <input className="traj-search" placeholder="搜索工具名 / 内容…"
+          value={q} onChange={(e) => setQ(e.target.value)} />
+      </div>
+
+      {/* 密度条：一眼看出这段时间在等模型还是在跑工具，以及工具是否密集到不正常 */}
+      <div className="traj-lanes" aria-label="时间线概览">
+        {LANES.map((lane) => (
+          <div key={lane.key} className="traj-lane">
+            <span className="traj-lane-name">{lane.label}</span>
+            <div className="traj-lane-track">
+              {data.events.filter((e) => e.lane === lane.key).map((e) => (
+                <i
+                  key={e.id}
+                  className={`traj-tick lane-${lane.key}`}
+                  style={{
+                    left: `${(e.offsetMs / span) * 100}%`,
+                    width: `${Math.max(0.35, ((e.durMs || 0) / span) * 100)}%`,
+                  }}
+                  title={`${e.name}${e.durMs ? ` · ${fmtMs(e.durMs)}` : ''}`}
+                />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <ul className="traj-list">
+        {shown.map((e) => (
+          <li key={e.id} className={`traj-row lane-${e.lane}`}>
+            <span className={`traj-badge lane-${e.lane}`}>
+              {e.lane === 'model' ? 'MODEL' : e.lane === 'tools' ? 'TOOL' : 'IN'}
+            </span>
+            <span className="traj-body">
+              <b>{e.name}{e.model ? ` · ${e.model}` : ''}</b>
+              {e.input && <small className="traj-in">{e.input}</small>}
+              {e.output && <small className="traj-out">→ {e.output}</small>}
+            </span>
+            <span className="traj-meta">
+              {e.tokens ? <em>{e.tokens} tok</em> : null}
+              {e.durMs ? <em>{fmtMs(e.durMs)}</em> : null}
+            </span>
+          </li>
+        ))}
+        {!shown.length && <li className="traj-empty">没有匹配「{q}」的事件。</li>}
+      </ul>
+    </div>
+  )
+}
+
 // ---------- 调用链抽屉（Phase 25） ----------
 
 interface TraceNode {
@@ -2022,6 +2205,52 @@ function Composer({
   )
 }
 
+
+/** 子代理面板（Phase 88）：深度研究会并发派多个子代理，这里让它们可见。
+ *  折叠时只占一行（「N 个子代理」+ 运行中计数），展开看每个在查什么、多久、多少 token。 */
+function SubagentPanel({ runs }: { runs: SubagentRun[] }) {
+  const [open, setOpen] = useState(false)
+  const active = runs.filter((r) => r.status === 'running').length
+  const totalTok = runs.reduce((a, r) => a + (r.tokens || 0), 0)
+
+  const fmtTok = (n: number) =>
+    n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${Math.round(n / 1000)}K` : String(n)
+  const fmtSec = (s: number) => {
+    const v = Math.max(0, Math.round(s))
+    return v >= 60 ? `${Math.floor(v / 60)}分${String(v % 60).padStart(2, '0')}秒` : `${v}秒`
+  }
+
+  return (
+    <div className={`subagent-panel${open ? ' open' : ''}`}>
+      <button className="subagent-summary" onClick={() => setOpen((v) => !v)}
+        aria-expanded={open} aria-label={`${runs.length} 个子代理，${active} 个运行中`}>
+        <span className="subagent-count">{runs.length} 个子代理</span>
+        {active > 0 && <i className="subagent-active-dot" aria-hidden="true" />}
+        {active > 0 && <span className="subagent-active">{active} 运行中</span>}
+        <span className="subagent-total">{fmtTok(totalTok)} tok</span>
+        <span className="subagent-caret" aria-hidden="true">{open ? '︿' : '﹀'}</span>
+      </button>
+      {open && (
+        <ul className="subagent-list">
+          {runs.map((r) => (
+            <li key={r.id} className={`subagent-item status-${r.status}`}>
+              <i className="subagent-dot" aria-hidden="true" />
+              <span className="subagent-main">
+                <b>{r.title}</b>
+                <small>{r.prompt}</small>
+              </span>
+              <span className="subagent-meta">
+                <em>{fmtTok(r.tokens)} tok</em>
+                <em>{fmtSec(r.elapsed_s)}</em>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 function ThinkingWorkspace({
   stage,
   activity,
@@ -2167,6 +2396,10 @@ function Message({
   onToggleTrace?: (turnId: string) => void
 }) {
   const { notify } = useToast()
+  // 流式丝滑（2026-08-13）：打字机平滑只在 streaming 消息上生效（其余直接全量）。
+  // 放在所有 early return 之前，保证 hooks 调用顺序稳定。
+  const streaming = !!msg.meta?.streaming
+  const animatedContent = useTypewriter(msg.content, streaming)
   if (msg.role === 'progress') {
     if (msg.meta?.hint === 'deep_reasoning') {
       return (
@@ -2260,7 +2493,6 @@ function Message({
   }
   const preliminary = !!msg.meta?.preliminary
   const saved = msg.meta?.memories_saved?.filter((s) => s.op !== 'delete') ?? []
-  const streaming = !!msg.meta?.streaming
   // 是行程攻略（有来源且含标题）→ 提供生成手账海报入口
   const isGuide = !streaming && !!msg.meta?.sources?.length && msg.content.includes('##')
   return (
@@ -2279,14 +2511,19 @@ function Message({
       )}
       {msg.reasoning && <Reasoning text={msg.reasoning} streaming={streaming && !msg.content} />}
       {msg.content ? (
-        <GuideBody content={msg.content} />
+        <GuideBody content={animatedContent} />
       ) : streaming ? (
         <div className="progress-line">
           <span className="spinner" />
           正在生成…
         </div>
       ) : null}
-      {streaming && msg.content && <span className="stream-cursor" />}
+      {streaming && msg.content && (
+        <span className="stream-foot" aria-hidden>
+          <span className="stream-cursor" />
+          <span className="stream-chars">已生成 {msg.content.length} 字</span>
+        </span>
+      )}
       {saved.length > 0 && (
         <div className="memory-saved">
           🧠 已记住：{saved.map((s) => s.content).join('；')}
@@ -3027,7 +3264,9 @@ function PosterView({ poster }: { poster: PosterData }) {
   )
 }
 
-function GuideBody({ content }: { content: string }) {
+// memo（2026-08-13 丝滑改造）：props 只有 content，引用相等即跳过 react-markdown
+// 重解析——轮询增量合并（mergeMessages）保证未变化消息的 content 引用不变。
+const GuideBody = memo(function GuideBody({ content }: { content: string }) {
   const ref = useRef<HTMLDivElement>(null)
   const isGuide = content.includes('##') || content.length > 200
   const headings = extractGuideHeadings(content)
@@ -3085,7 +3324,7 @@ function GuideBody({ content }: { content: string }) {
       )}
     </div>
   )
-}
+})
 
 // Phase 51 批6（P1 安全）：admin 仍在用默认口令 admin123 → 顶部横幅强提示改密，改完即消
 function AdminPasswordBanner({ onDone }: { onDone?: () => void }) {

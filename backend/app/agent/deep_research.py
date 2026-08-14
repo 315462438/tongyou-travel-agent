@@ -119,13 +119,18 @@ async def _emit_quick_take(cid: str, user_text: str, user_id: str) -> None:
     try:
         mem = gather_context(cid, "", user_id, user_text=user_text)
         prefix = f"{mem['block']}\n\n" if mem.get("block") else ""
-        text = await asyncio.to_thread(
-            get_llm().generate,
-            f"{prefix}用户的问题：{user_text}",
-            model=settings.model_classifier,
-            system=QUICK_TAKE_SYSTEM,
-            max_tokens=400,
-        )
+        # 2026-08-13：与 guide quick take 同款修复——DeepSeek 思考模式偶发 content 为空
+        # （token 全花在思考链上），max_tokens 400→1000，仍空则用思考链前 200 字兜底。
+        def _gen():
+            reply, reasoning = get_llm().generate_with_reasoning(
+                f"{prefix}用户的问题：{user_text}",
+                model=settings.model_classifier,
+                system=QUICK_TAKE_SYSTEM,
+                max_tokens=1000,
+            )
+            return (reply or "").strip() or (reasoning or "").strip()[:200]
+
+        text = await asyncio.to_thread(_gen)
         if is_cancelled(cid):  # 生成期间用户点了停止 → 不要再往会话里塞消息
             return
         if (text or "").strip():
@@ -526,10 +531,15 @@ async def _invoke_with_cancel(
 
     if skill_files is None:  # run_deep_research 已加载则复用，避免重复查一次用户技能
         skill_files = load_skill_files(user_id=user_id)
+    from app.agent.subagent_trace import SubagentTracker
+
     config: dict = {"recursion_limit": settings.deep_research_recursion}
+    tracker = SubagentTracker(cid)  # Phase 88：子代理面板（非流式路径同样要有）
+    callbacks: list = [tracker]
     handler = langchain_handler()  # Langfuse：agent 全图追踪（每轮 messages+工具调用+子agent）
     if handler is not None:
-        config["callbacks"] = [handler]
+        callbacks.append(handler)
+    config["callbacks"] = callbacks
     task = asyncio.ensure_future(agent.ainvoke(
         {"messages": turn_messages or [{"role": "user", "content": user_text}], "files": skill_files},
         config=config,
@@ -553,6 +563,7 @@ async def _invoke_with_cancel(
     finally:
         if not task.done():
             task.cancel()
+        tracker.finalize()
 
 
 def _heartbeat(cid: str, text: str) -> None:
@@ -639,10 +650,17 @@ async def _invoke_streaming(
 
     if skill_files is None:
         skill_files = load_skill_files(user_id=user_id)
+    from app.agent.subagent_trace import SubagentTracker
+
     config: dict = {"recursion_limit": settings.deep_research_recursion}
+    # Phase 88：子代理面板。父 callbacks 会自动透传给子图（deepagents/subagents.py），
+    # 所以这一个 handler 同时看得到 task 派发和子代理内部的 token 消耗。
+    tracker = SubagentTracker(cid)
+    callbacks: list = [tracker]
     handler = langchain_handler()
     if handler is not None:
-        config["callbacks"] = [handler]
+        callbacks.append(handler)
+    config["callbacks"] = callbacks
     inputs = {
         "messages": turn_messages or [{"role": "user", "content": user_text}],
         "files": skill_files,
@@ -681,6 +699,7 @@ async def _invoke_streaming(
                 last_flush = _t.monotonic()
     finally:
         hb.cancel()
+        tracker.finalize()  # 取消/超时时也要把转圈的子代理落成结束态
     if stream_state is not None:
         stream_state["reasoning"] = "".join(rbuf)  # 末条（报告）的思考，定稿保留
     return last_state

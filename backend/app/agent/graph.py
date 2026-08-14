@@ -1,7 +1,7 @@
 """LangGraph 攻略图组装（Phase 14 + 16 checkpoint）
 
 固定采集/生成主干 + critique/research/rewrite 反思循环：
-  parse → (plan) collect → (有料) generate → critique
+  parse → (quick_take 占位+快答先行) → collect → (有料) generate → critique
     critique → finalize / research→generate / rewrite→generate
 反思关闭或达上限时退化为「生成一次即终稿」。
 
@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 def _build_graph() -> StateGraph:
     g = StateGraph(AgentState)
     g.add_node("parse", nodes.parse_node)
+    g.add_node("quick_take", nodes.quick_take_node)  # 2026-08-13：占位+快答先行
     g.add_node("collect", nodes.collect_node)
     g.add_node("apologize", nodes.apologize_node)
     g.add_node("generate", nodes.generate_node)
@@ -33,7 +34,10 @@ def _build_graph() -> StateGraph:
     g.add_node("finalize", nodes.finalize_node)
 
     g.add_edge(START, "parse")
-    g.add_conditional_edges("parse", nodes.route_after_parse, {"plan": "collect", "end": END})
+    g.add_conditional_edges(
+        "parse", nodes.route_after_parse, {"plan": "quick_take", "end": END}
+    )
+    g.add_edge("quick_take", "collect")
     g.add_conditional_edges(
         "collect", nodes.route_after_collect, {"generate": "generate", "apologize": "apologize"}
     )

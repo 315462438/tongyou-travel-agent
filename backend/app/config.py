@@ -194,10 +194,18 @@ class Settings(BaseSettings):
     memory_consolidate_min_new: int = 5  # 距上次整合后新增/变更记忆达到这么多才整
     memory_consolidate_min_total: int = 8  # 记忆总数太少不值得整理
 
+    # 流式增量落库节拍（2026-08-13 丝滑改造）：guide/direct 流式每多少秒把增量写库一次。
+    # 1.2s 曾与前端 1.5s 轮询叠加成最坏 ~2.7s 的「一段一段」跳变；0.5s 后可见粒度 ≤ ~1.3s，
+    # 配合前端打字机平滑。单条 UPDATE 很轻，0.5s 粒度对本地 PG 无压力。
+    streaming_flush_interval_s: float = 0.5
+
     # 攻略生成长度（2026-08-04）：8000 对多城长行程明显不够——线上被从「**人均（含」
     # 这种半句处切断。抬高上限 + 触到上限自动续写，用户拿到的应当是完整攻略。
     guide_max_tokens: int = 16000
     guide_max_continuations: int = 2  # 最多续写几轮（16000×3 远超任何真实攻略长度）
+    # guide 快答先行（2026-08-13，Phase 71 机制的 guide 版）：parse 后立刻用快模型给
+    # 150 字内初步规划思路（meta.preliminary），完整攻略随后照常产出。纯增强可关。
+    guide_quick_take: bool = True
 
     # 站点路由（Phase 3）：酒店→携程 / 路线→小红书，登录墙交给用户手动登录
     site_routing_enabled: bool = True

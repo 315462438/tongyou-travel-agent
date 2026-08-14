@@ -217,11 +217,22 @@ prompt 图名单，模型用 `[[img:名称]]` 占位符插图；`_embed_images` 
 流式中只替换占位符、剥残片、不兜底。前端 html2canvas 加 useCORS。
 
 **Phase 11 — 提速**：攻略生成为**流式**（先落 meta.streaming=true 的 assistant
-消息，每 ~1.2s 增量更新，终稿去标记；`_is_running` 视 streaming 为运行中，
+消息，每 ~0.5s 增量更新（`streaming_flush_interval_s`，2026-08-13 由 1.2s 调快，
+配合前端 800ms 轮询 + `mergeMessages` 增量合并 + `useTypewriter` 打字机平滑），
+终稿去标记；`_is_running` 视 streaming 为运行中，
 启动修复会就地终稿被打断的流式消息）。一轮共享一个浏览器会话（勿在会话内
 调 `_expire_stale_logins`，它可能重启 Chrome）。抓取来源 summary 用
 `_excerpt` 清洗摘录（无 LLM 摘要调用）；页面分类长正文规则快判。
 线上实测：总时长 3-6min → ~130s，首段回复 82s 可见。
+**2026-08-13 晚再提速**（Langfuse trace 实测一轮 6 分 52 秒：小红书详情串行 163s +
+生成 200s 是两大头）：① **小红书×必应并行采集**（`collect_sources` 未复用时
+`asyncio.create_task(_collect_xhs)` 与浏览器同时跑，xhs 是 HTTP MCP、必应是 ChromeMCP
+两通道独立；xhs 收成 0 再补 full 第 2 查询）；② **生成思考精炼**（ITINERARY/HOTEL
+system 要求思考两三行要点，此前思考链 1.5 万字吃满 16000 token 预算）；③ **quick take
+空 content 修复**（DeepSeek 思考模式偶发 content 为空——token 全在思考链；max_tokens
+400→1000 + reasoning 前 200 字兜底，guide 与 deep_research 两处同修）；④ 服务器 .env
+`XHS_NOTES_PER_TURN=3` `XHS_REUSE_MAX_DAYS=14`。目标总时长 ≤4 分钟。
+完整改造复盘（诊断方法论/前后对比/踩坑）见 `docs/dev_docs/流式输出与生成提速改造-2026-08-13.md`。
 
 **Phase 10 — 高德地图**：`app/tools/amap.py` httpx 直连 restapi.amap.com
 （数字签名：字典序 k=v& + AMAP_SECRET 取 MD5）。每轮收集来源时并入
@@ -309,6 +320,10 @@ Composer。近 30 天真实热门榜前 4 名在输入框下显示图片卡；�
 非流式 assistant 消息，没有占位时 `_is_running` 会判本轮完成、前端停止轮询、完整版永远收不到
 （同 Phase 14 那个坑）。双保险：`_is_running` 用 `_preliminary()` 把它排除在终稿判定之外。
 `deep_research_quick_take` 可关，失败/被停止都不影响主流程。
+**guide 链路同款**（2026-08-13）：`quick_take` 图节点（parse→quick_take→collect）先建流式
+占位再发初步规划思路（`orchestrator.emit_guide_quick_take`，`guide_quick_take` 可关）。
+配套：`apologize_node` 与 `_ensure_stopped_message` 必须**就地终稿占位**（空占位也要终稿
+「已停止本轮。」），否则 streaming 残留让前端永远判运行中——有回归测试钉住。
 ③ **进度报「发现」而非「动作」**：`research_tools._found()` + `_gist()`，工具每返回一批结果就播
 一条带实质内容的进度；前端 `.thinking-trail` 渲染成足迹列表（最近 5 条、越旧越淡），
 等待期变阅读期，也是「它还活着」的持续证据。

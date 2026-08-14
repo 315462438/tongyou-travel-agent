@@ -458,3 +458,81 @@ export function buildBudgetRoulettePrompt(input: BudgetRouletteInput): string {
     '主要妥协；不能为了卡预算而漏掉往返大交通。最后选出一个首选，给出可执行的每日路线和至少' +
     '一个预算超支时的降级方案。所有价格注明查询时间或估算口径。'
 }
+
+// ---------- 流式丝滑（2026-08-13）：打字机平滑 + 消息增量合并 ----------
+
+/** 打字机动画 tick 间隔（ms）。40ms ≈ 每秒 25 步，肉眼连续。 */
+export const TYPEWRITER_TICK_MS = 40
+/** 无积压时每 tick 揭示的字符数（25 字/s 起步）。 */
+export const TYPEWRITER_BASE_CHARS = 1
+/** 积压超过该字符数升一档速（×2）；再翻倍再升（×4），超过 4 倍封顶。 */
+export const TYPEWRITER_FAST_BACKLOG = 100
+/** 最快档每 tick 揭示的字符数（150 字/s，追平模型输出速率）。 */
+export const TYPEWRITER_MAX_CHARS = 6
+
+export interface TypewriterStep {
+  shown: number
+  done: boolean
+}
+
+/**
+ * 打字机一步（纯函数）：把已揭示字符数 `state.shown` 向 `target` 推进。
+ *
+ * - 积压（target 长度 - shown）越大揭示越快（1 → 2 → 4 → 6 字符/tick），
+ *   保证播放不落后于后端到达速率；无积压立即 done。
+ * - `inactive=true`（流式终稿/页面隐藏/用户已上滚）直接追平全量，零延迟收尾——
+ *   终稿瞬间不该再让用户等打字机播完。
+ */
+export function typewriterStep(
+  state: { shown: number },
+  target: string,
+  opts: { inactive?: boolean } = {},
+): TypewriterStep {
+  const len = target.length
+  if (opts.inactive || state.shown >= len) return { shown: len, done: true }
+  const backlog = len - state.shown
+  const perTick =
+    backlog > TYPEWRITER_FAST_BACKLOG * 4 ? TYPEWRITER_MAX_CHARS
+    : backlog > TYPEWRITER_FAST_BACKLOG * 2 ? TYPEWRITER_BASE_CHARS * 4
+    : backlog > TYPEWRITER_FAST_BACKLOG ? TYPEWRITER_BASE_CHARS * 2
+    : TYPEWRITER_BASE_CHARS
+  const nextShown = Math.min(len, state.shown + perTick)
+  return { shown: nextShown, done: nextShown >= len }
+}
+
+/** 轮询消息的最小结构（与 Home.tsx 的 Msg 结构兼容，避免跨文件耦合）。 */
+export interface MsgLike {
+  id: string
+  role: string
+  content: string
+  reasoning?: string | null
+  meta?: Record<string, unknown> | null
+}
+
+function msgSignature(m: MsgLike): string {
+  const metaLen = m.meta ? JSON.stringify(m.meta).length : 0
+  return `${m.role}|${m.content.length}|${m.content.slice(-64)}|${m.reasoning?.length ?? 0}|${metaLen}`
+}
+
+/**
+ * 消息增量合并（纯函数）：next 相对 prev 只替换**有变化**的消息，
+ * 未变化的消息保持原对象引用 —— React.memo 依赖引用相等跳过重渲染，
+ * 消除「每次轮询全量重渲染 → react-markdown 全量重解析」的卡顿。
+ *
+ * 签名比对：role + content 长度/尾串 + reasoning 长度 + meta 序列化长度。
+ * 流式消息 content 持续变长必然命中；终稿/停止的 meta 变化也会命中
+ * （content 可能不变，见 orchestrator._ensure_stopped_message）。
+ */
+export function mergeMessages<T extends MsgLike>(prev: T[], next: T[]): T[] {
+  if (prev.length === 0) return next
+  const prevByKey = new Map(prev.map((m) => [m.id, m]))
+  const prevSig = new Map(prev.map((m) => [m.id, msgSignature(m)]))
+  let changed = false
+  const out = next.map((m) => {
+    const old = prevByKey.get(m.id)
+    if (old && prevSig.get(m.id) === msgSignature(m)) return old
+    changed = true
+    return m
+  })
+  return changed || out.length !== prev.length ? out : prev
+}

@@ -385,4 +385,14 @@ def build_tools(cid: str, user_id: str, session: BrowserSession, sources: list[d
 
     main_tools = [web_search, open_page, read_source]
     sub_tools = [amap_city_brief, amap_poi, fetch_url, read_source, xhs_search, xhs_detail]
-    return main_tools, sub_tools
+
+    # Phase 89：连续重复调用守卫（借鉴 dsh repeat-tool-reminder）。
+    # 与上面的硬配额互补——配额治「总量超标」，这个治「同一个查询反复调」：
+    # 总数没超但时间和上下文照样白烧，而长上下文里 prompt 纪律必然漂移。
+    # 提醒是建议性的，不阻断；守卫与配额共享同一批闭包，所以也是按轮记账。
+    # read_source 排除在外：它靠 offset 翻页，连续调用是正常用法（参数不同本就不算重复，
+    # 但把它排除掉可以让「search → read_source → search」不被记账工具打断链）。
+    from app.agent.repeat_guard import RepeatGuard, guard_tools
+
+    guard = RepeatGuard(exclude=("read_source",))
+    return guard_tools(main_tools, guard), guard_tools(sub_tools, guard)

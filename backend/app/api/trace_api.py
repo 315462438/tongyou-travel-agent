@@ -153,3 +153,112 @@ def get_turn_trace(
         },
         "nodes": nodes,
     }
+
+
+# ---------- 会话轨迹（Phase 90，借鉴 dsh 的 Trajectory 视图）----------
+
+# 一次最多摊平多少轮。每轮要单独拉一次 observations，轮数越多越慢；
+# 轨迹是排查工具，看最近若干轮足够，不是全量导出。
+_TRAJECTORY_MAX_TURNS = 12
+
+# 摘要行长度：轨迹是**概览**，一行一个事件；要看全文点开节点（复用调用链抽屉）
+_LINE_CHARS = 160
+
+
+def _lane_of(node: dict) -> str:
+    """把观测归到三条泳道：输入 / 模型 / 工具。
+
+    泳道是轨迹密度条的全部信息量——一眼看出这段时间在等模型还是在跑工具，
+    以及工具调用是否密集到不正常（dsh 的 Input/Model/Tools 三条条带即此意）。
+    """
+    kind = (node.get("type") or "").upper()
+    name = (node.get("name") or "").lower()
+    if kind in ("GENERATION", "EMBEDDING"):
+        return "model"
+    if kind == "SPAN" and any(k in name for k in ("tool", "search", "fetch", "page", "amap", "xhs")):
+        return "tools"
+    if kind == "EVENT":
+        return "input"
+    return "tools" if kind == "SPAN" else "input"
+
+
+def _one_line(text: str) -> str:
+    flat = " ".join((text or "").split())
+    return flat[:_LINE_CHARS] + ("…" if len(flat) > _LINE_CHARS else "")
+
+
+def _epoch_ms(iso: str) -> int | None:
+    from datetime import datetime
+
+    if not iso:
+        return None
+    try:
+        return int(datetime.fromisoformat(iso.replace("Z", "+00:00")).timestamp() * 1000)
+    except ValueError:
+        return None
+
+
+@router.get("/{cid}/trajectory")
+def get_session_trajectory(
+    cid: str, limit: int = _TRAJECTORY_MAX_TURNS,
+    db: Session = Depends(get_db), user: TravelUser = Depends(get_current_user),
+):
+    """整个会话的时间线：把每轮的 observations 摊平成一条按时间排序的事件流。
+
+    与 `/trace`（单轮树）的区别：那个回答「这一轮内部怎么跑的」，
+    这个回答「这个会话一路上都发生了什么、时间花在哪」。
+    """
+    _owned(db, cid, user)
+    from app import observability as obs
+
+    if not obs.enabled():
+        return {"enabled": False, "events": [], "turns": [], "spanMs": 0}
+
+    turns_wanted = max(1, min(int(limit or _TRAJECTORY_MAX_TURNS), _TRAJECTORY_MAX_TURNS))
+    auth = (settings.langfuse_public_key, settings.langfuse_secret_key)
+    base = settings.langfuse_host.rstrip("/")
+    turns: list[dict] = []
+    events: list[dict] = []
+    try:
+        with httpx.Client(trust_env=False, auth=auth, timeout=8) as client:
+            tr = client.get(f"{base}/api/public/traces",
+                            params={"sessionId": cid, "limit": turns_wanted})
+            tr.raise_for_status()
+            traces = tr.json().get("data") or []
+            # Langfuse 按时间倒序返回；轨迹要正序读
+            traces = sorted(traces, key=lambda t: t.get("timestamp") or "")
+            for trace in traces:
+                meta = trace.get("metadata") or {}
+                turns.append({
+                    "id": trace.get("id"),
+                    "name": trace.get("name"),
+                    "timestamp": trace.get("timestamp"),
+                    "latency": trace.get("latency"),
+                    "route": meta.get("route") if isinstance(meta, dict) else None,
+                })
+                for node in _simplify(_fetch_observations(client, base, trace["id"])):
+                    events.append({
+                        "id": node["id"],
+                        "turnId": trace.get("id"),
+                        "lane": _lane_of(node),
+                        "type": node["type"],
+                        "name": node["name"] or node["type"],
+                        "model": node["model"],
+                        "startMs": _epoch_ms(node["startTime"]),
+                        "durMs": node["durMs"],
+                        "tokens": (node.get("usage") or {}).get("total"),
+                        "input": _one_line(node["input"]),
+                        "output": _one_line(node["output"]),
+                    })
+    except Exception:  # noqa: BLE001
+        logger.warning("trajectory fetch failed for %s", cid, exc_info=True)
+        raise HTTPException(502, "轨迹服务暂时不可用")
+
+    events = [e for e in events if e["startMs"] is not None]
+    events.sort(key=lambda e: e["startMs"])
+    # 相对起点的偏移：前端画密度条只需要相对位置，不必知道绝对时间
+    origin = events[0]["startMs"] if events else 0
+    for e in events:
+        e["offsetMs"] = e["startMs"] - origin
+    last = max((e["offsetMs"] + (e["durMs"] or 0) for e in events), default=0)
+    return {"enabled": True, "turns": turns, "events": events, "spanMs": last}

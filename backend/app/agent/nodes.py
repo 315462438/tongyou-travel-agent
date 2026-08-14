@@ -71,6 +71,22 @@ def parse_node(state: AgentState) -> dict:
     return orch.parse_request(state["cid"], state["user_text"], state.get("user_id", ""))
 
 
+def quick_take_node(state: AgentState) -> dict:
+    """parse 后、collect 前：建流式占位 + 快答先行（2026-08-13，Phase 71 机制 guide 版）。
+
+    ⚠️ 顺序不变式：占位必须先于快答——快答是非流式 assistant（meta.preliminary），
+    没有占位时 `_is_running` 会判本轮完成、前端停止轮询、完整版永远收不到。
+    占位消息存进 state，generate 节点复用同一条，终稿落它。
+    """
+    cid = state["cid"]
+    msg_id = orch._add_streaming_message(cid)
+    try:
+        orch.emit_guide_quick_take(cid, state["user_text"], state["pref"], state.get("user_id", ""))
+    except Exception:  # noqa: BLE001 — 纯增强：占位已在，快答的任何 bug 都不能毁掉整轮
+        logger.warning("quick_take_node failed cid=%s", cid, exc_info=True)
+    return {"msg_id": msg_id}
+
+
 async def collect_node(state: AgentState) -> dict:
     sources, is_revision = await orch.collect_sources(
         state["cid"], state["pref"], state["intent"], state["hotel_needed"], state.get("user_id", ""),
@@ -81,11 +97,15 @@ async def collect_node(state: AgentState) -> dict:
 
 def apologize_node(state: AgentState) -> dict:
     dest = getattr(state["pref"], "destination", "") or "目的地"
-    orch._add_message(
-        state["cid"], "assistant",
+    text = (
         f"我没能从网上抓到足够的 {dest} 资料（可能遇到反爬或网络限制）。"
-        "要不要换个目的地，或稍后再试？",
+        "要不要换个目的地，或稍后再试？"
     )
+    if state.get("msg_id"):
+        # 2026-08-13：快答先行建的占位必须就地终稿，否则 streaming 残留让前端永远判运行中
+        orch._finalize_streaming_message(state["msg_id"], text, "", {})
+    else:
+        orch._add_message(state["cid"], "assistant", text)
     return {}
 
 

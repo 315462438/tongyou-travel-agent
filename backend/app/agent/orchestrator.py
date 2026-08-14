@@ -424,6 +424,56 @@ def _normalize_destination(dest: str | None) -> str:
     return "" if d in _DEST_PLACEHOLDERS else d
 
 
+GUIDE_QUICK_TAKE_SYSTEM = (
+    "你是旅行规划助手。用户刚提出旅行需求，系统正在联网搜集资料、生成完整攻略（约 2-4 分钟）。\n"
+    "请先基于已解析的需求给一份 **150 字以内**的初步规划思路：\n"
+    "- 直接给结论：先说什么样的行程框架合适（几天怎么分、住哪片区域、主打什么体验）；\n"
+    "- 用一两条理由支撑（季节/交通/预算常识）；**不要编造**具体价格、班次、营业时间这类"
+    "需要实时核实的数字；\n"
+    "- 不要列长清单，不要说「我将要去搜索」之类的过程话；\n"
+    "- 结尾不用加免责声明，系统会自动标注这是初步回答。"
+) + HEALTH_POLICY
+
+
+def emit_guide_quick_take(cid: str, user_text: str, pref, user_id: str) -> None:
+    """guide 链路快答先行（2026-08-13）：parse 后立刻用快模型给初步规划思路。
+
+    ⚠️ 顺序不变式（Phase 71）：**调用方必须先建流式占位消息**——快答是非流式 assistant，
+    没有占位时 `_is_running` 会判本轮完成、前端停止轮询、完整版永远收不到。
+    纯增强：失败/被停止静默跳过，不影响主流程。
+    """
+    if not settings.guide_quick_take:
+        return
+    try:
+        from app.agent.cancel import is_cancelled
+
+        llm = get_llm()
+        mem = gather_context(cid, pref.destination or "", user_id, user_text=user_text)
+        prefix = f"{mem['block']}\n\n" if mem.get("block") else ""
+        dest = _normalize_destination(pref.destination) or "未指定目的地"
+        summary = (
+            f"目的地：{dest}；天数：{pref.days or '未定'}；预算：{pref.budget or '未定'}；"
+            f"节奏：{pref.pace or '未定'}；兴趣：{'、'.join(pref.interests or []) or '未指定'}；"
+            f"补充要求：{'；'.join(pref.special_requirements or []) or '无'}"
+        )
+        reply, reasoning = llm.generate_with_reasoning(
+            f"{prefix}用户的需求：{user_text}\n\n已解析的需求：{summary}",
+            model=settings.model_classifier,
+            system=GUIDE_QUICK_TAKE_SYSTEM,
+            max_tokens=1000,
+        )
+        if is_cancelled(cid):  # 生成期间用户点了停止 → 不要再往会话里塞消息
+            return
+        # 2026-08-13：DeepSeek 思考模式下偶发 content 为空（token 全花在思考链上）——
+        # max_tokens 已从 400 提到 1000；仍为空则用思考链前 200 字兜底，不能白跑这一步。
+        text = (reply or "").strip() or (reasoning or "").strip()[:200]
+        if text:
+            _add_message(cid, "assistant", text, meta={"preliminary": True})
+            _progress(cid, "💡 已给出初步思路，正在查证资料、展开完整攻略…")
+    except Exception:  # noqa: BLE001 — 纯增强，绝不能影响攻略主流程
+        logger.warning("guide quick take failed cid=%s", cid, exc_info=True)
+
+
 def _web_search_mode(xhs_count: int) -> str:
     """按小红书收成决定必应档位（纯函数可测）：skip（足够，直接跳过）/ light（1查询4页）/ full。"""
     if xhs_count >= settings.xhs_skip_search_min:
@@ -672,6 +722,11 @@ def _history_context(cid: str, rounds: int | None = None) -> tuple[list[dict], s
     return messages, summary
 
 
+# Phase 89：每个会话最近一次的上下文装配清单（终稿时挂进 meta 后即弃）。
+# 只存最近一次、进程内内存——它是观测线索，不是需要持久化的状态。
+_LAST_MANIFEST: dict[str, dict] = {}
+
+
 def build_guide_messages(
     system: str, cid: str, user_text: str, pref_json: str, mem_block: str,
     sources: list[dict], img_block: str = "", feedback: str = "", extra_user: str = "",
@@ -686,6 +741,17 @@ def build_guide_messages(
     注意：DeepSeek 思考模式要求带 tool_calls 的 assistant 消息附 reasoning_content。
     """
     history_msgs, summary = _assemble_history(cid, current_user_text=user_text)  # Phase 34 全文历史
+    # Phase 89 上下文清单：记下**这一次**的装配形态。派生是按当前设置现算的，
+    # 改了 history_rounds 会追溯性地移动边界，事后就无从知道那轮实际喂了什么。
+    try:
+        from app.agent.context_manifest import build_manifest
+
+        _LAST_MANIFEST[cid] = build_manifest(
+            history=history_msgs, summary=summary, sources=sources,
+            extra={"img_block": bool(img_block), "feedback": bool(feedback)},
+        )
+    except Exception:  # noqa: BLE001 — 观测绝不能影响生成
+        logger.warning("build context manifest failed cid=%s", cid, exc_info=True)
     messages: list[dict] = [{"role": "system", "content": system}]
     messages += history_msgs
 
@@ -936,6 +1002,8 @@ ITINERARY_SYSTEM = (
     "若提供了「可插入的图片」清单，在相关 Day/景点/酒店段落后用 [[img:名称]] 插入配图，"
     "名称照抄清单、不要写网址；图片要分散到不同章节，有 3 张以上时至少使用 3 张。"
     "结尾用「## 参考来源」列出用到的来源标题。"
+    "思考纪律（2026-08-13 提速）：思考过程保持精炼——两三行要点即可，"
+    "不要在思考里复述资料或推演全文，把绝大部分输出预算留给攻略正文。"
 ) + EXTERNAL_POLICY + HEALTH_POLICY + CURRENT_REQUEST_POLICY
 
 HOTEL_SYSTEM = (
@@ -951,6 +1019,8 @@ HOTEL_SYSTEM = (
     "若提供了「可插入的图片」清单，在对应酒店（### 酒店名）段落后用 [[img:名称]] 插入配图，"
     "名称照抄清单、不要写网址。"
     "结尾用「## 参考来源」列出用到的来源标题。"
+    "思考纪律（2026-08-13 提速）：思考过程保持精炼——两三行要点即可，"
+    "不要在思考里复述资料或推演全文，把绝大部分输出预算留给推荐正文。"
 ) + EXTERNAL_POLICY + HEALTH_POLICY + CURRENT_REQUEST_POLICY
 
 
@@ -1082,8 +1152,11 @@ async def collect_sources(
         return existing_sources, True
 
     site_sources: list[dict] = await _collect_amap(cid, pref)  # 多城逐城，可能多条
-    # Phase 59：攻略/路线/美食来源优先小红书（纯 HTTP MCP，无需浏览器，先于浏览器会话跑）。
-    # 拿到足够笔记 → 必应轻量化（1 查询 4 抓取），整轮明显提速；失败/未启用 → 必应全量兜底。
+    # Phase 59：攻略/路线/美食来源优先小红书（纯 HTTP MCP，无需浏览器）。
+    # 2026-08-13 并行提速：小红书详情与浏览器（必应/携程）**同时跑**——两条通道独立
+    # （xhs 是 HTTP MCP 服务、必应是 ChromeMCP），采集段从 ~200s 降到 ≈ max(xhs, 必应)。
+    # 未复用时必应先按 light 档开浏览器（xhs 大概率有料）；xhs 收成 0 篇再补 full 第 2 查询，
+    # 仍比串行（等 xhs 全失败后才 full）快。
     xhs_sources: list[dict] = []
     reused = False
     if intent != "hotel":
@@ -1091,19 +1164,25 @@ async def collect_sources(
         if xhs_sources:
             reused = True
             _progress(cid, f"♻️ {reuse_note}")
-        else:
-            xhs_sources = await _collect_xhs(cid, pref)
-        site_sources += xhs_sources
-    search_mode = _web_search_mode(len(xhs_sources))
-    # 复用的资料是**上次那个问法**抓的，本轮角度可能不同 → 必应最多降到 light，不允许 skip。
-    # 多花 ~30s 换角度覆盖，相对省下的 3.5 分钟仍是大赚。
-    if reused and search_mode == "skip":
-        search_mode = "light"
+    xhs_pending = intent != "hotel" and not xhs_sources  # 需要现抓小红书 → 与浏览器并行
+    xhs_task: asyncio.Task | None = None
+    if xhs_pending:
+        xhs_task = asyncio.create_task(_collect_xhs(cid, pref))
+        search_mode = "light"  # 预判档位，xhs 完成后按收成再补
+    else:
+        search_mode = _web_search_mode(len(xhs_sources))
+        # 复用的资料是**上次那个问法**抓的，本轮角度可能不同 → 必应最多降到 light，不允许 skip。
+        # 多花 ~30s 换角度覆盖，相对省下的 3.5 分钟仍是大赚。
+        if reused and search_mode == "skip":
+            search_mode = "light"
+    site_sources += xhs_sources
     # 小红书资料足够 + 不需要携程酒店 → 完全不用开浏览器（跳过整个浏览器会话，最大提速）
     need_browser = hotel_needed or search_mode != "skip" or (
         intent != "hotel" and settings.site_routing_enabled and settings.xhs_enabled
     )
-    if search_mode == "skip":
+    if xhs_pending:
+        _progress(cid, "正在并行搜集小红书笔记与网页资料…")
+    elif search_mode == "skip":
         _progress(cid, "小红书资料充足，跳过网页搜索")
     await _expire_stale_logins(cid, user_id)  # 建浏览器会话前做（可能重启 Chrome）
     web_sources: list[dict] = []
@@ -1117,10 +1196,27 @@ async def collect_sources(
                     site_sources += await _collect_from_routed_site(cid, pref, intent, browser, user_id, user_text)
                 if search_mode != "skip":
                     web_sources = await _search_and_collect(
-                        cid, pref, intent, browser, user_id, light=search_mode == "light",
+                        cid, pref, intent, browser, user_id, light=True,
                     )
+                if xhs_task is not None:
+                    got = await xhs_task
+                    xhs_task = None
+                    site_sources += got
+                    if not got and web_sources:
+                        # xhs 0 篇 → 补跑 full 的后续查询（queries[1:]），弥补 light 档缺口
+                        _progress(cid, "小红书暂无可用笔记，正在补充网页搜索…")
+                        extra = await _search_and_collect_queries(
+                            cid, pref, _build_queries(pref, intent)[1:], browser, max_fetch=4,
+                        )
+                        web_sources += extra
         except MCPConnectionError as e:
             _progress(cid, f"浏览器连接失败：{e}")
+    if xhs_task is not None:
+        # 浏览器块未收尾（连接失败）时也要收 xhs 结果，避免 Task 泄漏
+        try:
+            site_sources += await xhs_task
+        except Exception:  # noqa: BLE001
+            logger.warning("xhs collect join failed cid=%s", cid, exc_info=True)
     sources = site_sources + web_sources
     if same_dest:
         seen_urls = {s.get("url") for s in sources}
@@ -1202,7 +1298,7 @@ def generate_guide_streaming(
                     "".join(reasoning_parts), meta={},
                 )
                 raise TurnCancelled()
-            if _time.monotonic() - last_flush > 1.2:
+            if _time.monotonic() - last_flush > settings.streaming_flush_interval_s:
                 _update_streaming_message(
                     msg_id, _embed_images("".join(content_parts), image_map, streaming=True),
                     "".join(reasoning_parts),
@@ -1276,15 +1372,17 @@ def finalize_guide(
     saved = extract_and_save(cid, user_text, guide, user_id)
     update_history_summary(cid)  # Phase 30：轮末折叠早期轮次
     _index_conversation(cid, pref.destination, msg_id)
-    _finalize_streaming_message(
-        msg_id, guide, reasoning,
-        meta={
-            "sources": sources,
-            "preference": pref.model_dump(),
-            "memories_used": mem_ctx.get("used", []),
-            "memories_saved": saved,
-        },
-    )
+    from app.agent.context_manifest import attach
+
+    meta = {
+        "sources": sources,
+        "preference": pref.model_dump(),
+        "memories_used": mem_ctx.get("used", []),
+        "memories_saved": saved,
+    }
+    # Phase 89：把这轮的上下文装配清单一并落盘——事后能回答「那轮喂了什么进模型」
+    attach(meta, _LAST_MANIFEST.pop(cid, None))
+    _finalize_streaming_message(msg_id, guide, reasoning, meta=meta)
     clear_plain_progress(cid)  # 清掉「搜索/读取/补搜/重排」等临时叙述，只留干净攻略
 
 
@@ -1900,7 +1998,7 @@ def run_direct_answer(cid: str, user_text: str, user_id: str) -> None:
                 "".join(reasoning_parts), meta={},
             )
             raise TurnCancelled()
-        if _time.monotonic() - last_flush > 1.2:
+        if _time.monotonic() - last_flush > settings.streaming_flush_interval_s:
             _update_streaming_message(msg_id, "".join(content_parts), "".join(reasoning_parts))
             last_flush = _time.monotonic()
     answer = "".join(content_parts)
@@ -2013,10 +2111,12 @@ def _ensure_stopped_message(cid: str) -> None:
             streaming = bool((json.loads(last.meta_json) or {}).get("streaming")) if last.meta_json else False
             last_id, last_content, last_reasoning = last.id, last.content, last.reasoning
         need = last is None or last.role != "assistant" or streaming
-    if streaming and last_id and (last_content or "").strip():
-        # 反思/优化阶段被停止：流式消息里已经是完整（或大部分）正文，就地终稿保留内容，
-        # 不要再补一条「已停止」——否则 streaming 标记残留，前端永远判「运行中」（2026-07-31）。
-        _finalize_streaming_message(last_id, last_content, last_reasoning or "", meta={})
+    if streaming and last_id:
+        # 2026-08-13：占位可能还是空的（guide 快答先行后、collect 阶段被停止）——
+        # 空占位也要就地终稿，否则 streaming 标记残留，前端永远判「运行中」。
+        _finalize_streaming_message(
+            last_id, last_content or "已停止本轮。", last_reasoning or "", meta={},
+        )
     elif need:
         _add_message(cid, "assistant", "已停止本轮。")
     clear_plain_progress(cid)

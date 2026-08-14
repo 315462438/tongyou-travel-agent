@@ -1675,6 +1675,18 @@ textarea { font-family: inherit; }
   vertical-align: text-bottom;
 }
 
+/* 流式脚注：光标 + 已生成字数（2026-08-13：等待期「还在动=还活着」的持续证据） */
+.stream-foot {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 2px 2px;
+}
+.stream-chars {
+  font-size: 12px;
+  color: #9a9a9a;
+}
+
 .export-btn {
   margin-top: 10px;
   border: 1px solid #e3e3e3;
@@ -5953,3 +5965,153 @@ body { color: var(--tx-ink); background: var(--tx-bg); }
 /* 悬浮按钮会盖住面板右下角的删除按钮（线上「删除点不动」的元凶之一）：
    给工具栏留出让位空间，内容永远不落在按钮下面。 */
 .trip-col-ai { padding-bottom: 72px; }
+
+/* ===== Phase 88：子代理面板（深度研究并发子任务可视化）=====
+   置于对话流最上方。折叠时一行，展开看每个子代理在查什么、多久、多少 token。
+   深度研究常并发派 3-5 个 api-researcher，此前用户完全看不见并行度。 */
+
+.subagent-panel {
+  margin: 0 auto 12px; max-width: 760px; width: 100%;
+  border: 1px solid var(--line, #e6e6ee); border-radius: 14px;
+  background: var(--card, #fff); overflow: hidden;
+}
+.subagent-summary {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 10px 14px; border: none; background: none; cursor: pointer;
+  font-size: 13px; color: var(--text, #1f1f27); text-align: left;
+}
+.subagent-summary:hover { background: rgba(127, 127, 150, .06); }
+.subagent-count { font-weight: 600; }
+.subagent-active { font-size: 12px; color: #16a34a; }
+.subagent-total { margin-left: auto; font-size: 12px; color: var(--muted, #6b7280); }
+.subagent-caret { font-size: 10px; color: var(--muted, #9ca3af); }
+
+/* 有子代理在跑时用呼吸点表示「还活着」——长任务里这是最直接的存活证据 */
+.subagent-active-dot {
+  width: 7px; height: 7px; border-radius: 50%; background: #16a34a; flex: none;
+  animation: subagent-breathe 1.6s ease-in-out infinite;
+}
+@keyframes subagent-breathe { 0%, 100% { opacity: 1 } 50% { opacity: .35 } }
+
+.subagent-list {
+  list-style: none; margin: 0; padding: 4px 6px 8px;
+  border-top: 1px solid var(--line, #f0f0f5);
+  display: flex; flex-direction: column; gap: 2px;
+  max-height: 320px; overflow-y: auto;   /* 子代理多时面板本身滚动，不顶开对话 */
+}
+.subagent-item {
+  display: flex; align-items: flex-start; gap: 9px;
+  padding: 8px 10px; border-radius: 10px;
+}
+.subagent-item:hover { background: rgba(127, 127, 150, .05); }
+.subagent-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex: none; margin-top: 5px;
+  background: var(--muted, #9ca3af);
+}
+.subagent-item.status-running .subagent-dot {
+  background: #16a34a; animation: subagent-breathe 1.6s ease-in-out infinite;
+}
+.subagent-item.status-done .subagent-dot { background: #94a3b8; }
+.subagent-item.status-failed .subagent-dot { background: #dc2626; }
+
+.subagent-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.subagent-main b { font-size: 13px; font-weight: 600; line-height: 1.45; }
+/* 任务描述单行截断：面板是概览，完整提示词不该把这里撑成一段话 */
+.subagent-main small {
+  font-size: 11.5px; color: var(--muted, #6b7280); line-height: 1.5;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.subagent-meta {
+  display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex: none;
+}
+.subagent-meta em {
+  font-style: normal; font-size: 11.5px; color: var(--muted, #6b7280); white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .subagent-active-dot, .subagent-item.status-running .subagent-dot { animation: none; }
+}
+@media (max-width: 820px) {
+  .subagent-panel { border-radius: 12px; }
+  .subagent-summary { padding: 9px 12px; font-size: 12.5px; }
+  .subagent-main small { font-size: 11px; }
+}
+
+/* ===== Phase 90：会话轨迹（对话 / 轨迹 双视图）===== */
+
+.chat-tabs {
+  display: flex; gap: 2px; padding: 0 20px;
+  border-bottom: 1px solid var(--line, #ececf0); flex: none;
+}
+.chat-tabs button {
+  padding: 9px 14px; border: none; background: none; cursor: pointer;
+  font-size: 13px; color: var(--muted, #6b7280);
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.chat-tabs button.active { color: var(--text, #1f1f27); font-weight: 600; border-bottom-color: currentColor; }
+
+.traj { display: flex; flex-direction: column; gap: 12px; padding: 4px 0 24px; }
+.traj-empty { padding: 28px 12px; text-align: center; font-size: 13px; color: var(--muted, #6b7280); }
+
+.traj-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.traj-stat { font-size: 12px; color: var(--muted, #6b7280); }
+.traj-search {
+  margin-left: auto; min-width: 180px; font-size: 12.5px; padding: 6px 11px;
+  border-radius: 999px; border: 1px solid var(--line, #e2e2ea); background: var(--card, #fff);
+}
+
+/* 密度条：三条泳道各画一行刻度，位置=相对起点偏移，宽度=耗时占比 */
+.traj-lanes {
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 10px 12px; border-radius: 12px;
+  background: var(--soft, #fafafc); border: 1px solid var(--line, #eeeef4);
+}
+.traj-lane { display: flex; align-items: center; gap: 8px; }
+.traj-lane-name {
+  width: 44px; flex: none; font-size: 10.5px; color: var(--muted, #9ca3af);
+  text-align: right; letter-spacing: .02em;
+}
+.traj-lane-track {
+  position: relative; flex: 1; height: 14px; border-radius: 3px;
+  background: rgba(127, 127, 150, .07);
+}
+.traj-tick {
+  position: absolute; top: 2px; height: 10px; border-radius: 2px; min-width: 2px;
+}
+.traj-tick.lane-input { background: #3b82f6; }
+.traj-tick.lane-model { background: #a855f7; }
+.traj-tick.lane-tools { background: #f59e0b; }
+
+.traj-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.traj-row {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 9px 10px; border-bottom: 1px solid var(--line, #f2f2f7);
+}
+.traj-row:hover { background: rgba(127, 127, 150, .04); }
+.traj-badge {
+  flex: none; font-size: 9.5px; font-weight: 700; letter-spacing: .04em;
+  padding: 3px 7px; border-radius: 5px; margin-top: 2px; min-width: 46px; text-align: center;
+}
+.traj-badge.lane-input { background: rgba(59, 130, 246, .13); color: #1d4ed8; }
+.traj-badge.lane-model { background: rgba(168, 85, 247, .13); color: #7e22ce; }
+.traj-badge.lane-tools { background: rgba(245, 158, 11, .15); color: #b45309; }
+
+.traj-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.traj-body b { font-size: 12.5px; font-weight: 600; }
+/* 单行截断：轨迹是概览，要看全文点「调用链」看单轮树 */
+.traj-body small {
+  font-size: 11.5px; line-height: 1.5;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.traj-in { color: var(--muted, #6b7280); }
+.traj-out { color: #2c8a55; }
+
+.traj-meta { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+.traj-meta em { font-style: normal; font-size: 11px; color: var(--muted, #9ca3af); white-space: nowrap; }
+
+@media (max-width: 820px) {
+  .chat-tabs { padding: 0 12px; }
+  .traj-lane-name { width: 36px; font-size: 10px; }
+  .traj-search { margin-left: 0; width: 100%; }
+  .traj-body small { font-size: 11px; }
+}

@@ -80,6 +80,9 @@ def wired(monkeypatch):
 
     monkeypatch.setattr(nodes.orch, "parse_request",
                         lambda cid, ut, uid: {"route": "plan", "pref": pref, "intent": "route", "hotel_needed": False})
+    # 2026-08-13 快答先行节点：占位 + 快答都要打桩（快答内部会真实调 LLM/落库）
+    monkeypatch.setattr(nodes.orch, "_add_streaming_message", lambda cid: "mid")
+    monkeypatch.setattr(nodes.orch, "emit_guide_quick_take", lambda *a, **k: None)
 
     async def fake_collect(cid, p, intent, hotel, uid, user_text=""):
         return [{"title": "t", "url": "u", "summary": "s"}], False
@@ -146,3 +149,56 @@ def test_research_branch(wired, monkeypatch):
     asyncio.run(_compiled().ainvoke({"cid": "c", "user_text": "帮我规划成都"}))
     assert wired.research_calls == 1
     assert wired.gen_calls == 2  # 初次 + 补搜后 1 次
+
+
+# ---------- 快答先行（2026-08-13） ----------
+
+def test_quick_take_node_placeholder_before_preliminary(monkeypatch):
+    """顺序不变式：流式占位必须先于快答建立（否则 _is_running 误判完成）。"""
+    calls = []
+
+    def fake_add_streaming(cid):
+        calls.append("placeholder")
+        return "mid-1"
+
+    def fake_emit(cid, ut, pref, uid):
+        calls.append("quick_take")
+
+    monkeypatch.setattr(nodes.orch, "_add_streaming_message", fake_add_streaming)
+    monkeypatch.setattr(nodes.orch, "emit_guide_quick_take", fake_emit)
+    out = nodes.quick_take_node({
+        "cid": "c", "user_text": "规划成都", "pref": object(), "user_id": "u",
+    })
+    assert calls == ["placeholder", "quick_take"]
+    assert out["msg_id"] == "mid-1"  # generate 节点据此复用同一条占位
+
+
+def test_quick_take_failure_keeps_placeholder(monkeypatch):
+    """快答失败（LLM 挂/被关）也不能影响主流程：占位仍在，节点正常返回 msg_id。"""
+    def fake_add_streaming(cid):
+        return "mid-2"
+
+    def fake_emit(*a, **k):
+        raise RuntimeError("llm down")
+
+    monkeypatch.setattr(nodes.orch, "_add_streaming_message", fake_add_streaming)
+    monkeypatch.setattr(nodes.orch, "emit_guide_quick_take", fake_emit)
+    out = nodes.quick_take_node({"cid": "c", "user_text": "x", "pref": object(), "user_id": "u"})
+    assert out["msg_id"] == "mid-2"
+
+
+def test_apologize_finalizes_placeholder_instead_of_new_message(monkeypatch):
+    """collect 无料走 apologize：快答先行的占位必须就地终稿，否则 streaming 残留。"""
+    finalized = {}
+
+    class FakePref:
+        destination = "成都"
+
+    monkeypatch.setattr(nodes.orch, "_finalize_streaming_message",
+                        lambda mid, content, reasoning, meta: finalized.update(mid=mid, content=content))
+    added = []
+    monkeypatch.setattr(nodes.orch, "_add_message", lambda cid, role, content: added.append(content))
+    nodes.apologize_node({"cid": "c", "pref": FakePref(), "msg_id": "mid-3"})
+    assert finalized.get("mid") == "mid-3"
+    assert "成都" in finalized.get("content", "")
+    assert added == []  # 不再新增一条普通 assistant
