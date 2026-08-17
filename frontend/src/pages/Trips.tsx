@@ -745,6 +745,7 @@ function TripBoard({
   const [sourceGuideOpen, setSourceGuideOpen] = useState(false)
   const [mobilePane, setMobilePane] = useState<'timeline' | 'map' | 'assistant'>('timeline')
   const [workspaceView, setWorkspaceView] = useState<'day' | 'tool'>('day')
+  const [mapCollapsed, setMapCollapsed] = useState(false)
   // Phase 47：右栏从「6 面板堆叠」改标签页，按用户心智分四块（一次只显一块）
   const [aiTab, setAiTab] = useState<TripToolTab>('assistant')
   // Phase 48：每天过夜城市（逆地理编码）+ 受控酒店搜索城市
@@ -1623,7 +1624,7 @@ function TripBoard({
         </button>
       </div>
 
-      <div className={`trip-3col trip-view-${workspaceView}`}>
+      <div className={`trip-3col trip-view-${workspaceView}${mapCollapsed ? ' trip-map-collapsed' : ''}`}>
         {/* 左：预算概览 + 每天导航（与参考 HTML 一致） */}
         <aside className="trip-day-sidebar" aria-label="预算与行程天数">
           <section className="trip-budget-summary">
@@ -1867,8 +1868,13 @@ function TripBoard({
         {/* 右：每日地图（桌面固定，参考 HTML 的地图侧栏） */}
         <div className={`trip-col-map${mobilePane === 'map' ? ' mobile-active' : ''}`}>
           <div className="trip-map-card-head">
-            <strong>📍 今日路线地图</strong>
-            <span>{mapStops.length} 个地点</span>
+            <span>
+              <strong>📍 今日路线地图</strong>
+              <small>{mapStops.length} 个地点</small>
+            </span>
+            <button className="trip-map-toggle" onClick={() => setMapCollapsed((v) => !v)}>
+              {mapCollapsed ? '展开' : '收起'}
+            </button>
           </div>
           <div className="trip-map-tabs">
             {days.map((d) => (
@@ -2435,33 +2441,38 @@ function ExpenseModal({
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="trip-expense-form">
-          <label>
-            <span>谁付的</span>
-            <select value={d.payer} onChange={(e) => set({ payer: e.target.value })}>
-              {members.map((m) => <option key={m} value={m}>{m}</option>)}
-            </select>
-          </label>
-          <label>
-            <span>类别</span>
-            <select value={d.category} onChange={(e) => set({ category: e.target.value })}>
-              {EXPENSE_CATS.map((c) => <option key={c}>{c}</option>)}
-            </select>
-          </label>
-          <label>
+          <div className="trip-expense-topline">
+            <label>
+              <span>谁付的</span>
+              <select value={d.payer} onChange={(e) => set({ payer: e.target.value })}>
+                {members.map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </label>
+            <label>
+              <span>类别</span>
+              <select value={d.category} onChange={(e) => set({ category: e.target.value })}>
+                {EXPENSE_CATS.map((c) => <option key={c}>{c}</option>)}
+              </select>
+            </label>
+          </div>
+          <label className="trip-expense-title-field">
             <span>事项</span>
             <input placeholder="花在哪了，如 晚餐" value={d.title}
               onChange={(e) => set({ title: e.target.value })} />
           </label>
-          <label>
-            <span>金额</span>
-            <input type="number" min="0" step="0.01" placeholder="0.00" value={d.amount}
-              onChange={(e) => set({ amount: e.target.value })} />
-          </label>
-          <label>
-            <span>日期</span>
-            {/* 花费日期与记账时间分开：补记昨天的账很常见 */}
-            <input type="date" value={d.spent_at} onChange={(e) => set({ spent_at: e.target.value })} />
-          </label>
+          <div className="trip-expense-money-row">
+            <label className="trip-expense-amount-field">
+              <span>金额</span>
+              <i>¥</i>
+              <input type="number" min="0" step="0.01" placeholder="0.00" value={d.amount}
+                onChange={(e) => set({ amount: e.target.value })} />
+            </label>
+            <label>
+              <span>日期</span>
+              {/* 花费日期与记账时间分开：补记昨天的账很常见 */}
+              <input type="date" value={d.spent_at} onChange={(e) => set({ spent_at: e.target.value })} />
+            </label>
+          </div>
           <div className="trip-expense-parts">
             <span>分摊</span>
             <div>
@@ -2719,25 +2730,46 @@ function EditStopModal({
           <strong>编辑行程</strong>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
+        <div className="trip-edit-context">
+          <span>📅 Day {stop.day}</span>
+          <b>{name || '未命名行程'}</b>
+        </div>
         <div className="trip-edit-grid">
           <div className="trip-edit-section trip-edit-full">
             <b>基础信息</b>
-            <small>活动名用于行程展示；定位关键词只用于地图搜索，不会混进备注。</small>
+            <small>活动名用于行程展示，地图关键词只负责定位。</small>
           </div>
+          <label className="trip-edit-full">活动名称<input value={name} onChange={(e) => setName(e.target.value)} placeholder="如：双子塔（KLCC）" /></label>
           <label>开始时间<input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} /></label>
           <label>结束时间<input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} /></label>
-          <label className="trip-edit-full">活动名称<input value={name} onChange={(e) => setName(e.target.value)} placeholder="如：双子塔（KLCC）" /></label>
-          <label className="trip-edit-full">地图定位关键词<input value={locationText} onChange={(e) => setLocationText(e.target.value)} placeholder="如：Petronas Twin Towers / Suria KLCC" disabled={noLocation} /></label>
-          <label className="trip-edit-full trip-edit-checkbox">
-            <input type="checkbox" checked={noLocation} onChange={(e) => setNoLocation(e.target.checked)} />
-            此行程无具体地点（如飞行）
-          </label>
+          <label>交通方式<input value={transport} onChange={(e) => setTransport(e.target.value)} placeholder="步行/打车/地铁/飞机" /></label>
+          <label>花费<input type="number" min="0" value={ticket} onChange={(e) => setTicket(e.target.value)} placeholder="免费" /></label>
+          <div className="trip-edit-section trip-edit-full">
+            <b>地图定位</b>
+            <small>开启后会参与右侧地图序号和路线展示；飞行/跨城交通可关闭。</small>
+          </div>
+          <div className="trip-edit-full trip-location-field">
+            <div className="trip-location-head">
+              <div>
+                <b>{noLocation ? '不显示在地图上' : '显示在地图上'}</b>
+                <small>{noLocation ? '飞行、跨城交通等无需地图定位' : '开启后可在地图上显示该行程位置'}</small>
+              </div>
+              <label className={`trip-map-switch ${noLocation ? '' : 'on'}`}>
+                <input type="checkbox" checked={!noLocation} onChange={(e) => setNoLocation(!e.target.checked)} />
+                <span className="trip-map-switch-track" />
+                <span>{noLocation ? '关闭' : '开启'}</span>
+              </label>
+            </div>
+            {noLocation ? (
+              <div className="trip-map-disabled-note">开启后可填写定位关键词，并在今日路线地图上显示序号。</div>
+            ) : (
+              <label className="trip-location-keyword">地图定位关键词<input value={locationText} onChange={(e) => setLocationText(e.target.value)} placeholder="如：Petronas Twin Towers / Suria KLCC" /></label>
+            )}
+          </div>
           <div className="trip-edit-section trip-edit-full">
             <b>补充信息</b>
           </div>
           <label className="trip-edit-full">描述/备注<textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="参观博物馆，逛街购物；预约、门票、注意事项等" /></label>
-          <label>交通<input value={transport} onChange={(e) => setTransport(e.target.value)} placeholder="步行可达" /></label>
-          <label>花费<input type="number" min="0" value={ticket} onChange={(e) => setTicket(e.target.value)} placeholder="免费" /></label>
         </div>
         <div className="trip-edit-ops">
           <button className="trip-btn" onClick={onClose}>取消</button>
@@ -2814,25 +2846,46 @@ function AddStopModal({
           <strong>添加 Day {day} 地点</strong>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
+        <div className="trip-edit-context">
+          <span>📅 Day {day}</span>
+          <b>{name || '新行程'}</b>
+        </div>
         <div className="trip-edit-grid">
           <div className="trip-edit-section trip-edit-full">
             <b>基础信息</b>
-            <small>活动名用于行程展示；地图定位关键词用于搜索坐标。</small>
+            <small>活动名用于行程展示，地图关键词只负责定位。</small>
           </div>
+          <label className="trip-edit-full">活动名称<input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="如：双子塔夜景" /></label>
           <label>开始时间<input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} /></label>
           <label>结束时间<input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} /></label>
-          <label className="trip-edit-full">活动名称<input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="如：双子塔夜景" /></label>
-          <label className="trip-edit-full">地图定位关键词<input value={locationText} onChange={(e) => setLocationText(e.target.value)} placeholder="详细地址或地点名，如：Petronas Twin Towers" disabled={noLocation} /></label>
-          <label className="trip-edit-full trip-edit-checkbox">
-            <input type="checkbox" checked={noLocation} onChange={(e) => setNoLocation(e.target.checked)} />
-            此行程无具体地点（如飞行）
-          </label>
+          <label>交通方式<input value={transport} onChange={(e) => setTransport(e.target.value)} placeholder="步行/打车/地铁/飞机" /></label>
+          <label>花费<input type="number" min="0" value={ticket} onChange={(e) => setTicket(e.target.value)} placeholder="免费" /></label>
+          <div className="trip-edit-section trip-edit-full">
+            <b>地图定位</b>
+            <small>开启后会参与右侧地图序号和路线展示；飞行/跨城交通可关闭。</small>
+          </div>
+          <div className="trip-edit-full trip-location-field">
+            <div className="trip-location-head">
+              <div>
+                <b>{noLocation ? '不显示在地图上' : '显示在地图上'}</b>
+                <small>{noLocation ? '飞行、跨城交通等无需地图定位' : '开启后可在地图上显示该行程位置'}</small>
+              </div>
+              <label className={`trip-map-switch ${noLocation ? '' : 'on'}`}>
+                <input type="checkbox" checked={!noLocation} onChange={(e) => setNoLocation(!e.target.checked)} />
+                <span className="trip-map-switch-track" />
+                <span>{noLocation ? '关闭' : '开启'}</span>
+              </label>
+            </div>
+            {noLocation ? (
+              <div className="trip-map-disabled-note">开启后可填写定位关键词，并在今日路线地图上显示序号。</div>
+            ) : (
+              <label className="trip-location-keyword">地图定位关键词<input value={locationText} onChange={(e) => setLocationText(e.target.value)} placeholder="详细地址或地点名，如：Petronas Twin Towers" /></label>
+            )}
+          </div>
           <div className="trip-edit-section trip-edit-full">
             <b>补充信息</b>
           </div>
           <label className="trip-edit-full">描述/备注<textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="补充说明、注意事项" /></label>
-          <label>交通<input value={transport} onChange={(e) => setTransport(e.target.value)} placeholder="步行/打车/地铁" /></label>
-          <label>花费<input type="number" min="0" value={ticket} onChange={(e) => setTicket(e.target.value)} placeholder="免费" /></label>
         </div>
         <div className="trip-edit-ops">
           <button className="trip-btn" onClick={onClose}>取消</button>
@@ -2935,7 +2988,7 @@ function FoodPanel({
         {days.map((d) => {
           const dayFoods = foodStopsOf(d)
           return (
-            <section key={d} className="trip-day-food-card">
+            <section key={d} className={`trip-day-food-card${dayFoods.length ? '' : ' empty'}`}>
               <div className="trip-day-food-head">
                 <b>Day {d}</b>
                 <small>{dayFoods.length} 项</small>
@@ -2955,7 +3008,7 @@ function FoodPanel({
                     </li>
                   ))}
                 </ul>
-              ) : <p className="trip-module-empty">这天还没安排美食。</p>}
+              ) : <p className="trip-module-empty">暂无美食安排</p>}
               <div className="trip-module-add compact">
                 <input
                   placeholder="添加这天的美食"
