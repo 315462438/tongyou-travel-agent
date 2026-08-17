@@ -1,9 +1,10 @@
 /** 协同行程规划板（Phase 35-63）：三栏 = Timeline | 每日地图 | AI Copilot。
  * 协同 = 2.5s 轮询（顺带上报 presence）+ 行程群聊；AI 一律提案制（Preview→采纳/拒绝/恢复）。 */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import html2canvas from 'html2canvas'
 import { ChatBody, ChatInput } from '../components/ChatInput'
 import Iridescence from '../components/Iridescence'
 import TripMap from '../components/TripMap'
@@ -50,6 +51,7 @@ interface TripDetail {
   budget_breakdown?: Record<string, number>
   day_plans?: { day: number; type: string; overnight_required: boolean; overnight_city: string }[]
   hotel_recommendations?: { city: string; hotel: string; price: number | null; source: string; note: string }[]
+  day_titles?: Record<string, string>
   start_date: string
   source_conversation_id: string
   ai_status: string | null
@@ -131,16 +133,6 @@ interface ExpenseSummary {
   text: string
 }
 
-interface Segment {
-  from_id: string
-  to_id: string
-  minutes: number | null
-  km: number | null
-  mode: string
-  estimated?: boolean
-  note?: string
-}
-
 /** http（IP 访问）下 navigator.clipboard 不存在，静默失败会让用户复制到旧剪贴板内容
  * （踩坑：复制出上一张截图）——降级用 execCommand。 */
 async function copyText(text: string): Promise<boolean> {
@@ -164,7 +156,6 @@ async function copyText(text: string): Promise<boolean> {
 }
 
 const DAY_COLORS = ['#FF5A5F', '#2EC4B6', '#3D5AFE', '#FF9F1C', '#9B5DE5', '#00B894']
-const TRANSPORTS = ['', '步行', '公交', '地铁', '打车', '驾车', '骑行']
 const COPILOT_CHIPS = ['减少步行', '预算降一点', '调成亲子路线', '加点美食', '加个夜景']
 const OP_LABEL: Record<string, string> = { add: '＋新增', update: '✎修改', delete: '－删除' }
 // Phase 87：按 PRD《好友协同旅游》4.3 的「先规划、后协同、再收尾」重排。
@@ -186,7 +177,7 @@ type TripToolTab = (typeof TRIP_TOOL_TABS)[number]['id']
 // PRD 4.5 情境化悬浮按钮：按当前标签变文案
 const FAB_BY_TAB: Partial<Record<TripToolTab, string>> = {
   food: '+ 加美食',
-  packing: '+ 加物品',
+  packing: '',
   tips: '+ 加提醒',
   money: '+ 记一笔',
 }
@@ -217,6 +208,22 @@ function tripDayDate(startDate: string, day: number): string {
   return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日 周${WEEK[date.getDay()]}`
 }
 
+function tripDayDateFromTitle(title: string, day: number): string {
+  const match = title.match(/(\d{1,2})[./月](\d{1,2})(?:日)?\s*[—–-]\s*(\d{1,2})[./月](\d{1,2})/)
+  if (!match) return ''
+  const startMonth = Number(match[1])
+  const startDay = Number(match[2])
+  if (!startMonth || !startDay) return ''
+  const date = new Date(2024, startMonth - 1, startDay)
+  if (Number.isNaN(date.getTime())) return ''
+  date.setDate(date.getDate() + day - 1)
+  return `${date.getMonth() + 1}.${date.getDate()}`
+}
+
+function displayTripDayDate(trip: TripDetail, day: number): string {
+  return tripDayDate(trip.start_date, day) || tripDayDateFromTitle(trip.title, day)
+}
+
 export default function TripsOverlay({
   username, layoutMode = 'desktop', initialBoardId = null, onBoardChange, onClose, onOpenConversation, onAskInChat,
 }: {
@@ -236,7 +243,10 @@ export default function TripsOverlay({
   }, [boardId])
   useEffect(() => {
     const close = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !document.querySelector('.trip-chat-panel, .trip-source-panel')) onClose()
+      if (event.key !== 'Escape') return
+      if (document.querySelector('.trip-chat-panel, .trip-source-panel')) return
+      if (document.querySelector('.modal-mask, .trip-actions-menu[open]')) return
+      // 行程页是一个工作台，Esc 只交给当前打开的小弹窗/抽屉处理，避免误退出整页。
     }
     window.addEventListener('keydown', close)
     return () => window.removeEventListener('keydown', close)
@@ -714,7 +724,6 @@ function TripBoard({
   const [ticketTotal, setTicketTotal] = useState(0)
   const [suggestions, setSuggestions] = useState<Suggestion[]>([])
   const [comments, setComments] = useState<TripComment[]>([])
-  const [segments, setSegments] = useState<Segment[]>([])
   const [events, setEvents] = useState<{ username: string; action: string; created_at: string }[]>([])
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [invite, setInvite] = useState('')
@@ -724,10 +733,15 @@ function TripBoard({
   const [selectedDay, setSelectedDay] = useState(1)
   const [flashId, setFlashId] = useState<string | null>(null)
   const [editing, setEditing] = useState<TripStop | null>(null)
-  const [openComments, setOpenComments] = useState<string | null>(null)
+  const [addingStopDay, setAddingStopDay] = useState<number | null>(null)
+  const [dragOverStopId, setDragOverStopId] = useState<string | null>(null)
+  const [editingDayTitle, setEditingDayTitle] = useState<number | null>(null)
+  const [dayTitleInput, setDayTitleInput] = useState('')
+  const [openComments] = useState<string | null>(null)
   const [mapFailed, setMapFailed] = useState(false)  // JS 地图挂了回退静态图
   const [focusStop, setFocusStop] = useState<string | null>(null)
   const [repairingLocations, setRepairingLocations] = useState(false)
+  const [optimizingRoute, setOptimizingRoute] = useState(false)
   const [sourceGuideOpen, setSourceGuideOpen] = useState(false)
   const [mobilePane, setMobilePane] = useState<'timeline' | 'map' | 'assistant'>('timeline')
   const [workspaceView, setWorkspaceView] = useState<'day' | 'tool'>('day')
@@ -743,12 +757,18 @@ function TripBoard({
   const aiStatusRef = useRef<string | null>(null)
   const dayRef = useRef(1)
   const stopRefs = useRef(new Map<string, HTMLDivElement>())
-  const tripUpdatedAt = trip?.updated_at
   dayRef.current = selectedDay
 
   const load = useCallback(async () => {
     const res = await authFetch(`${API}/trips/${tripId}?editing_day=${dayRef.current}`)
-    if (!res.ok) return
+    if (!res.ok) {
+      // 404 = 行程不存在（可能已被删除），跳转回首页
+      if (res.status === 404) {
+        notify('行程不存在或已被删除')
+        window.location.href = '/travel/'
+      }
+      return
+    }
     const data: TripDetail = await res.json()
     const wasCopilot = aiStatusRef.current === 'copilot'
     aiStatusRef.current = data.ai_status
@@ -779,14 +799,6 @@ function TripBoard({
     return () => window.clearInterval(timer)
   }, [load])
 
-  // Phase 39：选中天的真实交通时间
-  useEffect(() => {
-    if (!tripUpdatedAt) return
-    authFetch(`${API}/trips/${tripId}/segment-times?day=${selectedDay}`)
-      .then(async (r) => r.ok && setSegments((await r.json()).segments))
-      .catch(() => setSegments([]))
-  }, [tripId, selectedDay, tripUpdatedAt])
-
   useEffect(() => {
     if (aiTab === 'log') {
       authFetch(`${API}/trips/${tripId}/events`).then(async (r) => r.ok && setEvents(await r.json())).catch(() => {})
@@ -804,6 +816,453 @@ function TripBoard({
       setHotelCity((c) => c || body.default || '')
     }).catch(() => {})
   }, [aiTab, tripId, trip?.updated_at])
+
+  const saveDayTitle = async (day: number, title: string) => {
+    if (!trip) return
+    const newTitles = { ...(trip.day_titles || {}), [day]: title.trim() }
+    const res = await authFetch(`${API}/trips/${tripId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ day_titles: newTitles })
+    })
+    if (res.ok) {
+      setTrip({ ...trip, day_titles: newTitles })
+      setEditingDayTitle(null)
+      notify('标题已更新')
+    } else {
+      notify('更新失败，请重试')
+    }
+  }
+
+  const getDayTitle = (day: number) => {
+    return trip?.day_titles?.[day] || trip?.destination || trip?.title || ''
+  }
+
+  const formatDayTitle = (day: number) => {
+    const title = getDayTitle(day).trim()
+    if (!title) return `Day ${day}`
+    return /^Day\s*\d{1,2}\b/i.test(title) ? title : `Day ${day} · ${title}`
+  }
+
+  const changeDays = async (newDays: number) => {
+    if (!trip || newDays < 1 || newDays > 30) return
+    const res = await authFetch(`${API}/trips/${tripId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ days: newDays })
+    })
+    if (res.ok) {
+      await load()
+      if (selectedDay > newDays) {
+        setSelectedDay(newDays)
+      }
+      notify(`行程已调整为 ${newDays} 天`)
+    } else {
+      notify('调整失败，请重试')
+    }
+  }
+
+  const exportToImage = async () => {
+    if (!trip) return
+    notify('正在生成长图，请稍候...')
+
+    try {
+      // 获取所有模块数据
+      const [foodsRes, tipsRes, packingRes] = await Promise.all([
+        authFetch(`${API}/trips/${tripId}/foods`),
+        authFetch(`${API}/trips/${tripId}/tips`),
+        authFetch(`${API}/trips/${tripId}/packing`)
+      ])
+
+      const foods: FoodItem[] = foodsRes.ok ? await foodsRes.json() : []
+      const tips: TipItem[] = tipsRes.ok ? await tipsRes.json() : []
+      const packingData: PackingData = packingRes.ok ? await packingRes.json() : { members: [], items: [], templates: [] }
+
+      // 时间计算辅助函数
+      const formatTimeRange = (startTime: string, stayMin: number | null, nextStartTime?: string) => {
+        const parseTime = (time: string): number | null => {
+          const match = /^(\d{1,2}):(\d{2})$/.exec(time.trim())
+          if (!match) return null
+          const hours = Number(match[1])
+          const minutes = Number(match[2])
+          if (hours > 23 || minutes > 59) return null
+          return hours * 60 + minutes
+        }
+
+        const formatTime = (totalMinutes: number): string => {
+          const normalized = ((totalMinutes % 1440) + 1440) % 1440
+          return `${String(Math.floor(normalized / 60)).padStart(2, '0')}:${String(normalized % 60).padStart(2, '0')}`
+        }
+
+        const start = parseTime(startTime)
+        if (start === null) return '时间待定'
+
+        if (stayMin !== null && Number.isFinite(stayMin) && stayMin > 0) {
+          const end = start + stayMin
+          const dayPrefix = end >= 1440 ? '次日 ' : ''
+          return `${formatTime(start)} – ${dayPrefix}${formatTime(end)}`
+        }
+
+        if (nextStartTime) {
+          const next = parseTime(nextStartTime)
+          if (next !== null) {
+            return `${formatTime(start)} – ${formatTime(next)}`
+          }
+        }
+
+        return `${formatTime(start)} 开始`
+      }
+
+      // 创建一个临时容器来渲染完整行程
+      const container = document.createElement('div')
+      container.style.cssText = `
+        position: fixed;
+        left: -9999px;
+        top: 0;
+        width: 900px;
+        background: white;
+        padding: 50px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+      `
+      document.body.appendChild(container)
+
+      // 渲染行程标题
+      const titleSection = document.createElement('div')
+      titleSection.style.cssText = 'margin-bottom: 40px; border-bottom: 3px solid #5b8ff9; padding-bottom: 25px;'
+      titleSection.innerHTML = `
+        <h1 style="margin: 0 0 12px 0; font-size: 32px; color: #1a1a1a; font-weight: 700;">${trip.title}</h1>
+        <div style="display: flex; gap: 20px; flex-wrap: wrap; align-items: center;">
+          <span style="color: #666; font-size: 18px; display: flex; align-items: center; gap: 6px;">
+            <span style="font-weight: 600;">📍</span>${trip.destination}
+          </span>
+          <span style="color: #666; font-size: 18px; display: flex; align-items: center; gap: 6px;">
+            <span style="font-weight: 600;">📅</span>${trip.days} 天
+          </span>
+          ${trip.start_date ? `
+            <span style="color: #666; font-size: 18px; display: flex; align-items: center; gap: 6px;">
+              <span style="font-weight: 600;">🚀</span>${trip.start_date} 出发
+            </span>
+          ` : ''}
+          ${trip.budget ? `
+            <span style="color: #5b8ff9; font-size: 18px; font-weight: 600; display: flex; align-items: center; gap: 6px;">
+              <span>💰</span>¥${trip.budget.toLocaleString()} / 人
+            </span>
+          ` : ''}
+        </div>
+      `
+      container.appendChild(titleSection)
+
+      // 渲染每一天的内容
+      const days = Array.from({ length: trip.days }, (_, i) => i + 1)
+      for (const day of days) {
+        const dayStops = stopsOf(day)
+        const dayTitle = getDayTitle(day)
+        const dayDate = tripDayDate(trip.start_date, day)
+
+        const daySection = document.createElement('div')
+        daySection.style.cssText = 'margin-bottom: 45px; page-break-inside: avoid;'
+
+        // Day 标题
+        daySection.innerHTML = `
+          <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 18px 24px; border-radius: 12px 12px 0 0; margin-bottom: 0;">
+            <h2 style="margin: 0; font-size: 24px; color: white; font-weight: 700;">
+              Day ${day} · ${dayTitle}
+            </h2>
+            <div style="color: rgba(255,255,255,0.9); margin-top: 6px; font-size: 15px;">
+              ${dayDate ? `📅 ${dayDate}` : ''}
+              ${dayDate && dayStops.length > 0 ? ' · ' : ''}
+              ${dayStops.length > 0 ? `${dayStops.length} 个事件` : '暂无安排'}
+            </div>
+          </div>
+        `
+
+        // 路线概览
+        if (dayStops.length > 0) {
+          const route = dayStops.map(s => s.name.replace(/^🏨\s*/, '')).join(' → ')
+          daySection.innerHTML += `
+            <div style="background: #f8f9ff; padding: 16px 24px; border-left: 4px solid #667eea; margin-bottom: 0; font-size: 15px; color: #333; line-height: 1.8;">
+              <strong style="color: #667eea; margin-right: 8px;">📍 今日路线</strong>${route}
+            </div>
+          `
+        }
+
+        // 事件列表容器
+        const eventsContainer = document.createElement('div')
+        eventsContainer.style.cssText = 'background: #fafbfc; padding: 20px 24px 24px 24px; border-radius: 0 0 12px 12px;'
+
+        // 渲染每个事件
+        dayStops.forEach((stop, idx) => {
+          const isStay = stop.name.startsWith('🏨')
+          const nextStop = dayStops[idx + 1]
+          const timeRange = stop.start_time ? formatTimeRange(stop.start_time, stop.stay_min, nextStop?.start_time) : ''
+
+          const details = []
+          if (stop.transport) details.push(`🚗 ${stop.transport}`)
+          if (stop.ticket_price) details.push(`💰 ¥${stop.ticket_price}`)
+          if (stop.tags && stop.tags.length > 0) details.push(`🏷️ ${stop.tags.join(', ')}`)
+
+          eventsContainer.innerHTML += `
+            <div style="
+              margin-bottom: 16px;
+              padding: 20px;
+              border-left: 4px solid ${isStay ? '#faad14' : '#5b8ff9'};
+              border-radius: 8px;
+              ${isStay ? 'background: linear-gradient(to right, #fffbf0, #ffffff);' : 'background: white;'}
+              box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+            ">
+              <div style="display: flex; align-items: flex-start; gap: 16px;">
+                <div style="
+                  min-width: 36px;
+                  height: 36px;
+                  border-radius: 50%;
+                  background: ${isStay ? '#faad14' : '#5b8ff9'};
+                  color: white;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  font-weight: bold;
+                  font-size: 16px;
+                  flex-shrink: 0;
+                ">${idx + 1}</div>
+                <div style="flex: 1;">
+                  <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
+                    <h3 style="margin: 0; font-size: 18px; color: #1a1a1a; font-weight: 600; line-height: 1.4;">${stop.name}</h3>
+                    ${timeRange ? `
+                      <span style="
+                        background: #e6f7ff;
+                        color: #1890ff;
+                        padding: 4px 12px;
+                        border-radius: 12px;
+                        font-size: 14px;
+                        font-weight: 600;
+                        white-space: nowrap;
+                        margin-left: 12px;
+                      ">⏰ ${timeRange}</span>
+                    ` : ''}
+                  </div>
+                  ${stop.note ? `
+                    <p style="margin: 0 0 10px 0; color: #555; font-size: 15px; line-height: 1.7;">
+                      ${stop.note}
+                    </p>
+                  ` : ''}
+                  ${details.length > 0 ? `
+                    <div style="display: flex; flex-wrap: wrap; gap: 12px; font-size: 14px; color: #666;">
+                      ${details.map(d => `<span>${d}</span>`).join('')}
+                    </div>
+                  ` : ''}
+                </div>
+              </div>
+            </div>
+          `
+        })
+
+        daySection.appendChild(eventsContainer)
+        container.appendChild(daySection)
+      }
+
+      // 渲染注意事项
+      if (tips.length > 0) {
+        const tipsSection = document.createElement('div')
+        tipsSection.style.cssText = 'margin-top: 50px; page-break-before: avoid;'
+        tipsSection.innerHTML = `
+          <div style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); padding: 18px 24px; border-radius: 12px 12px 0 0;">
+            <h2 style="margin: 0; font-size: 24px; color: white; font-weight: 700; display: flex; align-items: center; gap: 10px;">
+              ⚠️ 注意事项
+            </h2>
+          </div>
+          <div style="background: #fafbfc; padding: 20px 24px; border-radius: 0 0 12px 12px;">
+        `
+
+        tips.forEach(tip => {
+          const levelConfig = {
+            warning: { color: '#ff4d4f', icon: '⚠️', bg: '#fff1f0' },
+            info: { color: '#1890ff', icon: 'ℹ️', bg: '#e6f7ff' },
+            tip: { color: '#52c41a', icon: '💡', bg: '#f6ffed' }
+          }
+          const config = levelConfig[tip.level as keyof typeof levelConfig] || levelConfig.info
+
+          tipsSection.innerHTML += `
+            <div style="
+              margin-bottom: 12px;
+              padding: 14px 18px;
+              border-left: 4px solid ${config.color};
+              background: ${config.bg};
+              border-radius: 6px;
+            ">
+              <span style="font-size: 18px; margin-right: 10px;">${config.icon}</span>
+              <span style="color: #333; font-size: 15px; line-height: 1.7;">${tip.content}</span>
+            </div>
+          `
+        })
+
+        tipsSection.innerHTML += `</div>`
+        container.appendChild(tipsSection)
+      }
+
+      // 渲染美食推荐
+      if (foods.length > 0) {
+        const foodSection = document.createElement('div')
+        foodSection.style.cssText = 'margin-top: 50px; page-break-before: avoid;'
+        foodSection.innerHTML = `
+          <div style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); padding: 18px 24px; border-radius: 12px 12px 0 0;">
+            <h2 style="margin: 0; font-size: 24px; color: white; font-weight: 700; display: flex; align-items: center; gap: 10px;">
+              🍜 美食推荐
+            </h2>
+          </div>
+          <div style="background: #fafbfc; padding: 20px 24px; border-radius: 0 0 12px 12px;">
+        `
+
+        const FOOD_CATS = ['小吃', '正餐', '甜点', '饮品', '其他']
+        FOOD_CATS.forEach(cat => {
+          const catFoods = foods.filter(f => f.category === cat)
+          if (catFoods.length === 0) return
+
+          foodSection.innerHTML += `
+            <h3 style="margin: 20px 0 12px 0; font-size: 18px; color: #333; font-weight: 600;">${cat}</h3>
+          `
+
+          catFoods.forEach(food => {
+            const priceText = food.price ? `¥${food.price}` : ''
+            const cityText = food.city ? `📍 ${food.city}` : ''
+            const isTop = food.is_top
+
+            foodSection.innerHTML += `
+              <div style="
+                margin-bottom: 12px;
+                padding: 14px 18px;
+                background: white;
+                border: 1px solid #e8e8e8;
+                border-radius: 8px;
+                ${isTop ? 'border-left: 4px solid #faad14; background: linear-gradient(to right, #fffbf0, #ffffff);' : ''}
+              ">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                  <div style="flex: 1;">
+                    <div style="font-weight: 600; color: #1a1a1a; font-size: 16px; margin-bottom: 6px;">
+                      ${isTop ? '<span style="color: #faad14; margin-right: 6px;">⭐</span>' : ''}${food.name}
+                    </div>
+                    ${food.note ? `
+                      <p style="margin: 0 0 6px 0; color: #666; font-size: 14px; line-height: 1.6;">${food.note}</p>
+                    ` : ''}
+                    ${(cityText || priceText) ? `
+                      <div style="font-size: 13px; color: #999;">
+                        ${[cityText, priceText].filter(Boolean).join(' · ')}
+                      </div>
+                    ` : ''}
+                  </div>
+                </div>
+              </div>
+            `
+          })
+        })
+
+        foodSection.innerHTML += `</div>`
+        container.appendChild(foodSection)
+      }
+
+      // 渲染行李清单
+      if (packingData.items.length > 0) {
+        const packingSection = document.createElement('div')
+        packingSection.style.cssText = 'margin-top: 50px; page-break-before: avoid;'
+        packingSection.innerHTML = `
+          <div style="background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%); padding: 18px 24px; border-radius: 12px 12px 0 0;">
+            <h2 style="margin: 0; font-size: 24px; color: #333; font-weight: 700; display: flex; align-items: center; gap: 10px;">
+              🧳 行李清单
+            </h2>
+          </div>
+          <div style="background: #fafbfc; padding: 20px 24px; border-radius: 0 0 12px 12px;">
+        `
+
+        const categories = [...new Set(packingData.items.map(i => i.category))]
+        categories.forEach(cat => {
+          const catItems = packingData.items.filter(i => i.category === cat)
+          if (catItems.length === 0) return
+
+          packingSection.innerHTML += `
+            <h3 style="margin: 20px 0 12px 0; font-size: 18px; color: #333; font-weight: 600;">${cat}</h3>
+            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
+          `
+
+          catItems.forEach(item => {
+            const states = Object.values(item.states)
+            const packedCount = states.filter(s => s === 'packed').length
+            const totalCount = states.length
+            const allPacked = packedCount === totalCount
+            const somePacked = packedCount > 0 && packedCount < totalCount
+
+            const statusIcon = allPacked ? '✓' : somePacked ? '◐' : '○'
+            const statusColor = allPacked ? '#52c41a' : somePacked ? '#faad14' : '#d9d9d9'
+
+            packingSection.innerHTML += `
+              <div style="
+                padding: 10px 14px;
+                background: white;
+                border: 1px solid #e8e8e8;
+                border-radius: 6px;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+              ">
+                <span style="
+                  font-size: 18px;
+                  color: ${statusColor};
+                  font-weight: bold;
+                  flex-shrink: 0;
+                ">${statusIcon}</span>
+                <span style="color: #333; font-size: 15px; flex: 1;">${item.name}</span>
+                ${totalCount > 1 ? `
+                  <span style="color: #999; font-size: 13px; white-space: nowrap;">${packedCount}/${totalCount}</span>
+                ` : ''}
+              </div>
+            `
+          })
+
+          packingSection.innerHTML += `</div>`
+        })
+
+        packingSection.innerHTML += `</div>`
+        container.appendChild(packingSection)
+      }
+
+      // 添加页脚
+      const footer = document.createElement('div')
+      footer.style.cssText = 'margin-top: 60px; padding-top: 30px; border-top: 2px solid #e8e8e8; text-align: center;'
+      footer.innerHTML = `
+        <div style="color: #999; font-size: 14px; line-height: 1.8;">
+          <div style="font-weight: 600; color: #666; margin-bottom: 8px;">✨ 由 17同游 生成</div>
+          <div>${new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
+        </div>
+      `
+      container.appendChild(footer)
+
+      // 使用 html2canvas 生成图片
+      const canvas = await html2canvas(container, {
+        scale: 2,
+        backgroundColor: '#ffffff',
+        logging: false,
+        useCORS: true,
+        windowWidth: 900
+      })
+
+      // 下载图片
+      canvas.toBlob((blob) => {
+        if (blob) {
+          const url = URL.createObjectURL(blob)
+          const a = document.createElement('a')
+          a.href = url
+          a.download = `${trip.title.replace(/[^\w一-龥]/g, '_')}_行程单.png`
+          a.click()
+          URL.revokeObjectURL(url)
+          notify('长图已生成并下载')
+        }
+      })
+
+      // 清理临时容器
+      document.body.removeChild(container)
+    } catch (error) {
+      console.error('导出失败:', error)
+      notify('导出失败，请重试')
+    }
+  }
 
   // Phase 51 批6：首次载入把当前日定位到「第一个有坐标的日」，避免开局地图空白/居中在别处
   const didInitDay = useRef('')
@@ -840,8 +1299,8 @@ function TripBoard({
 
   const isOwner = trip.members.some((m) => m.username === username && m.role === 'owner')
   const status = tripStatus(trip.start_date, trip.days)
-  // PRD 4.5：悬浮按钮的文案跟着当前标签走；行程表视图下是「新增地点」
-  const fabLabel = workspaceView === 'day' ? '+ 加地点' : FAB_BY_TAB[aiTab]
+  // 工具页按模块保留快捷入口；日程页的添加入口放在表格内，避免右下角重复悬浮按钮遮挡地图。
+  const fabLabel = workspaceView === 'tool' ? FAB_BY_TAB[aiTab] : ''
   const days = Array.from(
     new Set([...Array.from({ length: trip.days }, (_, i) => i + 1), ...trip.stops.map((s) => s.day)]),
   ).sort((a, b) => a - b)
@@ -853,7 +1312,6 @@ function TripBoard({
     stopsOf(selectedDay).filter(isStay).map((s) => s.name.replace(/^🏨\s*/, '')),
   )
   const commentsOf = (sid: string) => comments.filter((c) => c.stop_id === sid)
-  const segAfter = (sid: string) => segments.find((sg) => sg.from_id === sid)
 
   const locate = (day?: number, stopId?: string) => {
     if (day) setSelectedDay(day)
@@ -889,20 +1347,75 @@ function TripBoard({
     }
   }
 
-  const move = async (stop: TripStop, dir: -1 | 1) => {
-    const siblings = stopsOf(stop.day)
-    const idx = siblings.findIndex((s) => s.id === stop.id)
-    const target = siblings[idx + dir]
-    if (!target) return
-    await call(`/stops/${stop.id}`, 'PATCH', { order_no: target.order_no })
-    await call(`/stops/${target.id}`, 'PATCH', { order_no: stop.order_no })
-  }
-
   const dropOn = async (dragId: string, day: number, beforeId: string | null) => {
     const siblings = stopsOf(day).map((x) => x.id).filter((id) => id !== dragId)
     const idx = beforeId ? siblings.indexOf(beforeId) : siblings.length
     siblings.splice(idx < 0 ? siblings.length : idx, 0, dragId)
-    await call('/stops/reorder', 'POST', { day, ordered_ids: siblings })
+
+    // 乐观更新：立即本地重排，后台异步调接口，失败时才 reload
+    const dragged = trip.stops.find((s) => s.id === dragId)
+    if (dragged && dragged.day !== day) {
+      // 跨天拖拽，更新 day
+      setTrip((prev) => prev ? {
+        ...prev,
+        stops: prev.stops.map((s) => s.id === dragId ? { ...s, day } : s)
+      } : prev)
+    }
+    setTrip((prev) => prev ? {
+      ...prev,
+      stops: prev.stops.map((s) => {
+        if (s.id === dragId) {
+          const orderNo = siblings.indexOf(s.id)
+          return { ...s, day, order_no: orderNo >= 0 ? orderNo : s.order_no }
+        }
+        if (s.day !== day) return s
+        const orderNo = siblings.indexOf(s.id)
+        return orderNo >= 0 ? { ...s, order_no: orderNo } : s
+      }),
+    } : prev)
+
+    const res = await authFetch(`${API}/trips/${tripId}/stops/reorder`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ day, ordered_ids: siblings }),
+    })
+    if (!res.ok) {
+      setMsg('调整顺序失败，已恢复最新数据')
+      window.setTimeout(() => setMsg(''), 3000)
+      await load()
+    }
+  }
+
+  const moveStop = async (stop: TripStop, direction: -1 | 1) => {
+    const current = stopsOf(stop.day)
+    const from = current.findIndex((s) => s.id === stop.id)
+    const to = from + direction
+    if (from < 0 || to < 0 || to >= current.length) return
+
+    const next = [...current]
+    const [picked] = next.splice(from, 1)
+    next.splice(to, 0, picked)
+    const orderedIds = next.map((s) => s.id)
+
+    setTrip((prev) => prev ? {
+      ...prev,
+      stops: prev.stops.map((s) => {
+        if (s.day !== stop.day) return s
+        const orderNo = orderedIds.indexOf(s.id)
+        return orderNo >= 0 ? { ...s, order_no: orderNo } : s
+      }),
+    } : prev)
+
+    try {
+      const res = await authFetch(`${API}/trips/${tripId}/stops/reorder`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ day: stop.day, ordered_ids: orderedIds }),
+      })
+      if (!res.ok) await load()
+    } catch {
+      await load()
+    }
   }
 
   // 只有「进行中」状态锁输入；failed 是终态，必须允许重发以恢复（否则卡死无法自愈）
@@ -943,6 +1456,7 @@ function TripBoard({
   }
 
   const mapStops = stopsOf(selectedDay).filter((s) => s.location)
+  const mapStopIndexById = new Map(mapStops.map((s, i) => [s.id, i + 1]))
   const actualTotal = expenses.reduce((sum, expense) => sum + expense.amount, 0)
   const plannedTotal = trip.budget || Object.values(trip.budget_breakdown || {}).reduce((sum, value) => sum + value, 0)
   const budgetPercent = plannedTotal > 0 ? Math.min(100, Math.round((actualTotal / plannedTotal) * 100)) : 0
@@ -953,19 +1467,37 @@ function TripBoard({
     : null
 
   const optimizeRoute = async () => {
-    const res = await authFetch(`${API}/trips/${tripId}/ai/order`, { method: 'POST' })
-    if (!res.ok) return
-    const result = await res.json()
-    setMsg(`已串好路线：${result.km_before}km → ${result.km_after}km${result.unlocated.length ? `（${result.unlocated.join('、')} 无坐标已跳过）` : ''}`)
-    window.setTimeout(() => setMsg(''), 6000)
-    updatedRef.current = ''
-    load()
+    if (optimizingRoute) return
+    if (stopsOf(selectedDay).length < 2) {
+      setMsg('当天至少需要 2 个行程点才能优化路线')
+      window.setTimeout(() => setMsg(''), 3500)
+      return
+    }
+    setOptimizingRoute(true)
+    setMsg('正在优化路线…')
+    try {
+      const res = await authFetch(`${API}/trips/${tripId}/ai/order`, { method: 'POST' })
+      const result = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setMsg(result.detail || '路线优化失败，请稍后重试')
+        return
+      }
+      setMsg(`已串好路线：${result.km_before}km → ${result.km_after}km${result.unlocated?.length ? `（${result.unlocated.join('、')} 无坐标已跳过）` : ''}`)
+      updatedRef.current = ''
+      await load()
+    } catch {
+      setMsg('路线优化失败，请检查网络或稍后重试')
+    } finally {
+      setOptimizingRoute(false)
+      window.setTimeout(() => setMsg(''), 6000)
+    }
   }
 
   return (
     <div className="trip-board">
       <div className="trip-board-head">
         <button className="trip-btn" onClick={onBack}>← 返回</button>
+        <button className="trip-btn" onClick={exportToImage} style={{ marginLeft: '8px' }}>📸 导出长图</button>
         <span className="trip-title-stack">
           <strong className="trip-board-title">
             {trip.title}
@@ -1102,7 +1634,29 @@ function TripBoard({
             </div>
             <small>{plannedTotal > 0 ? `已使用 ${budgetPercent}%` : '可在「费用」中设置预算'}</small>
           </section>
-          <div className="trip-sidebar-label">行程天数</div>
+          <div className="trip-sidebar-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span>行程天数</span>
+            <div style={{ display: 'flex', gap: '4px' }}>
+              <button
+                className="trip-btn tiny"
+                onClick={() => changeDays(trip.days - 1)}
+                disabled={trip.days <= 1}
+                title="减少一天"
+                style={{ padding: '2px 6px', fontSize: '12px' }}
+              >
+                −
+              </button>
+              <button
+                className="trip-btn tiny"
+                onClick={() => changeDays(trip.days + 1)}
+                disabled={trip.days >= 30}
+                title="增加一天"
+                style={{ padding: '2px 6px', fontSize: '12px' }}
+              >
+                +
+              </button>
+            </div>
+          </div>
           <nav className="trip-sidebar-days">
             {days.map((d) => (
               <button
@@ -1110,7 +1664,7 @@ function TripBoard({
                 className={workspaceView === 'day' && selectedDay === d ? 'active' : ''}
                 onClick={() => { setSelectedDay(d); setWorkspaceView('day') }}
               >
-                <span><b>Day {d}</b><small>{tripDayDate(trip.start_date, d) || `${stopsOf(d).length} 个事件`}</small></span>
+                <span><b>Day {d}</b><small>{displayTripDayDate(trip, d) || `${stopsOf(d).length} 个事件`}</small></span>
                 <i>{stopsOf(d).length}</i>
               </button>
             ))}
@@ -1120,13 +1674,64 @@ function TripBoard({
         {/* 中：当前日事件时间线 */}
         <div className={`trip-col-timeline${mobilePane === 'timeline' ? ' mobile-active' : ''}`}>
           <header className="trip-day-overview">
-            <h2>Day {selectedDay} · {trip.destination || trip.title}</h2>
-            <p>{[tripDayDate(trip.start_date, selectedDay), `${stopsOf(selectedDay).length} 个事件`].filter(Boolean).join(' · ')}</p>
+            {editingDayTitle === selectedDay ? (
+              <h2 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                Day {selectedDay} ·
+                <input
+                  type="text"
+                  value={dayTitleInput}
+                  onChange={(e) => setDayTitleInput(e.target.value)}
+                  onBlur={() => {
+                    if (dayTitleInput.trim()) {
+                      saveDayTitle(selectedDay, dayTitleInput)
+                    } else {
+                      setEditingDayTitle(null)
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      if (dayTitleInput.trim()) {
+                        saveDayTitle(selectedDay, dayTitleInput)
+                      }
+                    } else if (e.key === 'Escape') {
+                      setEditingDayTitle(null)
+                    }
+                  }}
+                  autoFocus
+                  style={{
+                    flex: 1,
+                    fontSize: 'inherit',
+                    border: '1px solid #ddd',
+                    borderRadius: '4px',
+                    padding: '4px 8px'
+                  }}
+                />
+              </h2>
+            ) : (
+              <h2
+                style={{ cursor: 'pointer' }}
+                onClick={() => {
+                  setEditingDayTitle(selectedDay)
+                  setDayTitleInput(getDayTitle(selectedDay))
+                }}
+                title="点击编辑标题"
+              >
+                {formatDayTitle(selectedDay)}
+              </h2>
+            )}
+            <p>{[displayTripDayDate(trip, selectedDay), `${stopsOf(selectedDay).length} 个事件`].filter(Boolean).join(' · ')}</p>
           </header>
           <section className="trip-route-summary">
             <div className="trip-route-summary-head">
               <strong>📍 今日路线</strong>
-              <button className="trip-btn primary" onClick={optimizeRoute}>✦ AI 优化路线</button>
+              <span className="trip-route-actions">
+                <span className="trip-route-plan" title="按当天有坐标的地点计算直线距离，用最近邻把每一天内部重排；无坐标地点会跳过并排在后面。">
+                  当前方案：按坐标距离最短重排
+                </span>
+                <button className="trip-btn primary" onClick={optimizeRoute} disabled={optimizingRoute}>
+                  {optimizingRoute ? '优化中…' : '✦ AI 优化路线'}
+                </button>
+              </span>
             </div>
             <div className="trip-route-points">
               {stopsOf(selectedDay).length
@@ -1145,86 +1750,116 @@ function TripBoard({
                 dragIdRef.current = null
               }}
             >
-              {/* Phase 51 批6：长行程导航——只展开当前日，其余折叠成日头（点击展开），拖拽仍可落到折叠日 */}
-              {selectedDay === d && (<>
-              {stopsOf(d).map((s, i, arr) => (
-                <div key={s.id} className="trip-event-item">
-                  <div
-                    ref={(el) => { if (el) stopRefs.current.set(s.id, el) }}
-                    className={`trip-stop${flashId === s.id ? ' flash' : ''}${isStay(s) ? ' is-stay' : ''}`}
-                    onClick={() => { setSelectedDay(d); setFocusStop(s.id) }}
-                    draggable
-                    onDragStart={(e) => { dragIdRef.current = s.id; e.dataTransfer.effectAllowed = 'move' }}
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={(e) => {
-                      e.preventDefault()
-                      e.stopPropagation()
-                      if (dragIdRef.current && dragIdRef.current !== s.id) dropOn(dragIdRef.current, d, s.id)
-                      dragIdRef.current = null
-                    }}
-                  >
-                    <div className="trip-stop-time-row">
-                      <span className="trip-stop-time">
-                        {formatTripTimeRange(s.start_time, s.stay_min, arr[i + 1]?.start_time)}
-                      </span>
+              {/* 表格式行程展示 */}
+              {selectedDay === d && (
+                <div className="trip-table-shell">
+                  <div className="trip-table">
+                    <div className="trip-table-header">
+                      <div className="trip-table-col-time">时段</div>
+                      <div className="trip-table-col-activity">地点与活动</div>
+                      <div className="trip-table-col-transport">交通/备注</div>
+                      <div className="trip-table-col-price">参考花费</div>
+                      <div className="trip-table-col-ops">操作</div>
                     </div>
-                    <div className="trip-stop-main">
-                      <span className="trip-stop-no" style={{ background: DAY_COLORS[(d - 1) % DAY_COLORS.length] }}>{i + 1}</span>
-                      <span className="trip-stop-name" title={s.location ? '已定位' : '未找到坐标，串路线时会跳过'}>
-                        {s.name} {!s.location && <em className="trip-noloc">?</em>}
-                      </span>
-                    </div>
-                    <div className="trip-stop-badges">
-                      {s.stay_min ? <span>⏱ {s.stay_min}min</span> : null}
-                      {s.transport && <span>🚶 {s.transport}</span>}
-                      {s.ticket_price ? <span>🎫 ¥{s.ticket_price}</span> : null}
-                      {s.tags.map((t) => <span key={t} className="trip-tag">#{t}</span>)}
-                    </div>
-                    {s.note && <div className="trip-stop-note">{s.note}</div>}
-                    <div className="trip-stop-ops">
-                      <button aria-label={`上移 ${s.name}`} disabled={i === 0} onClick={(e) => { e.stopPropagation(); move(s, -1) }} title="上移">↑</button>
-                      <button aria-label={`下移 ${s.name}`} disabled={i === arr.length - 1} onClick={(e) => { e.stopPropagation(); move(s, 1) }} title="下移">↓</button>
-                      <button onClick={(e) => {
-                        e.stopPropagation()
-                        const nd = window.prompt('移到第几天？', String(s.day === days[days.length - 1] ? 1 : s.day + 1))
-                        const n = Number(nd)
-                        if (n >= 1 && n <= 15) call(`/stops/${s.id}`, 'PATCH', { day: n })
-                      }} aria-label={`移动 ${s.name} 到其他天`} title="换天">⇄</button>
-                      <button aria-label={`编辑 ${s.name}`} onClick={(e) => { e.stopPropagation(); setEditing(s) }} title="编辑详情">✎</button>
-                      <button
-                        className={commentsOf(s.id).length ? 'has-comments' : ''}
-                        onClick={(e) => { e.stopPropagation(); setOpenComments(openComments === s.id ? null : s.id) }}
-                        title="评论"
-                        aria-label={`${s.name} 的评论`}
-                      >
-                        💬{commentsOf(s.id).length || ''}
-                      </button>
-                      <button onClick={(e) => {
-                        e.stopPropagation()
-                        if (!window.confirm(`删除「${s.name}」？此操作无法撤销。`)) return
-                        call(`/stops/${s.id}`, 'DELETE').then((ok) => {
-                          if (ok) notify(`已删除「${s.name}」`, 'success')
-                        })
-                      }} aria-label={`删除 ${s.name}`} title="删除">✕</button>
-                    </div>
-                    {openComments === s.id && (
-                      <CommentThread
-                        comments={commentsOf(s.id)}
-                        onAdd={(text) => call(`/stops/${s.id}/comments`, 'POST', { content: text })}
-                        onDelete={(id) => call(`/comments/${id}`, 'DELETE')}
-                      />
+                    {stopsOf(d).length === 0 ? (
+                      <div className="trip-table-empty">暂无行程</div>
+                    ) : (
+                      stopsOf(d).map((s, i, arr) => (
+                        <div
+                          key={s.id}
+                          ref={(el) => { if (el) stopRefs.current.set(s.id, el) }}
+                          className={`trip-table-row${flashId === s.id ? ' flash' : ''}${isStay(s) ? ' is-stay' : ''}${dragOverStopId === s.id ? ' drag-over' : ''}`}
+                          draggable
+                          onDragStart={(e) => { dragIdRef.current = s.id; e.dataTransfer.effectAllowed = 'move' }}
+                          onDragEnter={() => {
+                            if (dragIdRef.current && dragIdRef.current !== s.id) setDragOverStopId(s.id)
+                          }}
+                          onDragLeave={(e) => {
+                            if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverStopId(null)
+                          }}
+                          onDragOver={(e) => {
+                            e.preventDefault()
+                            if (dragIdRef.current && dragIdRef.current !== s.id) setDragOverStopId(s.id)
+                          }}
+                          onDrop={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            if (dragIdRef.current && dragIdRef.current !== s.id) dropOn(dragIdRef.current, d, s.id)
+                            dragIdRef.current = null
+                            setDragOverStopId(null)
+                          }}
+                          onDragEnd={() => setDragOverStopId(null)}
+                        >
+                          <div className="trip-table-col-time">
+                            {formatTripTimeRange(s.start_time, s.stay_min, arr[i + 1]?.start_time)}
+                          </div>
+                          <div className="trip-table-col-activity" onClick={() => { setSelectedDay(d); setFocusStop(s.id) }}>
+                            <div className="trip-activity-title">
+                              {mapStopIndexById.has(s.id) && (
+                                <i className="trip-stop-map-index">{mapStopIndexById.get(s.id)}</i>
+                              )}
+                              <span>{s.name}</span>
+                            </div>
+                            {s.note && (
+                              <div className="trip-activity-desc">{s.note}</div>
+                            )}
+                          </div>
+                          <div className="trip-table-col-transport">
+                            {s.transport || '—'}
+                          </div>
+                          <div className="trip-table-col-price">
+                            {s.ticket_price ? `¥${s.ticket_price}${s.ticket_price < 1000 ? '/人' : ''}` : '免费'}
+                          </div>
+                          <div className="trip-table-col-ops">
+                            <button
+                              className="trip-table-btn-move"
+                              onClick={(e) => { e.stopPropagation(); moveStop(s, -1) }}
+                              aria-label={`上移 ${s.name}`}
+                              title="上移"
+                              disabled={i === 0}
+                            >↑</button>
+                            <button
+                              className="trip-table-btn-move"
+                              onClick={(e) => { e.stopPropagation(); moveStop(s, 1) }}
+                              aria-label={`下移 ${s.name}`}
+                              title="下移"
+                              disabled={i === arr.length - 1}
+                            >↓</button>
+                            <button
+                              className="trip-table-btn-edit"
+                              aria-label={`编辑 ${s.name}`}
+                              onClick={(e) => { e.stopPropagation(); setEditing(s) }}
+                              title="编辑"
+                            >✏️</button>
+                            <button
+                              className="trip-table-btn-delete"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                if (!window.confirm(`删除「${s.name}」？此操作无法撤销。`)) return
+                                call(`/stops/${s.id}`, 'DELETE').then((ok) => {
+                                  if (ok) notify(`已删除「${s.name}」`, 'success')
+                                })
+                              }}
+                              aria-label={`删除 ${s.name}`}
+                              title="删除"
+                            >🗑️</button>
+                          </div>
+                          {openComments === s.id && (
+                            <div className="trip-table-comments">
+                              <CommentThread
+                                comments={commentsOf(s.id)}
+                                onAdd={(text) => call(`/stops/${s.id}/comments`, 'POST', { content: text })}
+                                onDelete={(id) => call(`/comments/${id}`, 'DELETE')}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      ))
                     )}
                   </div>
-                  {selectedDay === d && i < arr.length - 1 && segAfter(s.id)?.minutes != null && (
-                    <div className="trip-segment">
-                      ↓ {segAfter(s.id)!.mode} {segAfter(s.id)!.minutes} 分钟 · {segAfter(s.id)!.km}km
-                      {segAfter(s.id)!.estimated ? <em title={segAfter(s.id)!.note || '距离与时间为估算'}>估算</em> : null}
-                    </div>
-                  )}
+                  <AddStop onAdd={() => setAddingStopDay(d)} />
                 </div>
-              ))}
-              <AddStop onAdd={(name) => call('/stops', 'POST', { day: d, name })} />
-              </>)}
+              )}
             </div>
           ))}
         </div>
@@ -1280,7 +1915,17 @@ function TripBoard({
           {/* Phase 87：这里原本还有一套驱动同一个 aiTab 的标签栏，与顶部 trip-workspace-tabs
               完全重复（同样的四个标签、同样的 setAiTab）。删掉，只保留顶部那一套。 */}
 
-          {aiTab === 'food' && <FoodPanel tripId={tripId} active />}
+          {aiTab === 'food' && (
+            <FoodPanel
+              tripId={tripId}
+              active
+              days={days}
+              stopsOf={stopsOf}
+              onAddToDay={(day, name) => call('/stops', 'POST', { day, name, note: '美食', tags: ['food'] })}
+              onEditStop={setEditing}
+              onDeleteStop={(stop) => call(`/stops/${stop.id}`, 'DELETE')}
+            />
+          )}
           {aiTab === 'packing' && (
             <PackingPanel tripId={tripId} active username={username}
               members={trip.members} isOwner={isOwner}
@@ -1304,17 +1949,30 @@ function TripBoard({
                       {noStay && !stays.length ? (
                         <span className="trip-stay-name trip-stay-return">返程日 · 无需住宿</span>
                       ) : stays.length ? (
-                        <span className="trip-stay-name" onClick={() => { setSelectedDay(d); locate(d, stays[0].id) }}>
-                          {stays.map((s) => s.name.replace(/^🏨\s*/, '')).join('、')}
-                          {stays.some((s) => s.ticket_price) && (
-                            <b className="trip-stay-price">
-                              ¥{stays.reduce((a, s) => a + (s.ticket_price || 0), 0).toFixed(0)}/晚
-                            </b>
-                          )}
+                        <span className="trip-stay-name trip-stay-with-actions">
+                          <button className="trip-stay-link" onClick={() => { setSelectedDay(d); locate(d, stays[0].id) }}>
+                            {stays.map((s) => s.name.replace(/^🏨\s*/, '')).join('、')}
+                            {stays.some((s) => s.ticket_price) && (
+                              <b className="trip-stay-price">
+                                ¥{stays.reduce((a, s) => a + (s.ticket_price || 0), 0).toFixed(0)}/晚
+                              </b>
+                            )}
+                          </button>
+                          <button className="trip-mini-action" onClick={() => setEditing(stays[0])}>编辑</button>
+                          <button className="trip-mini-action danger" onClick={() => {
+                            if (!window.confirm(`删除 Day${d} 住宿？`)) return
+                            call(`/stops/${stays[0].id}`, 'DELETE')
+                          }}>删除</button>
                         </span>
                       ) : (
                         <>
                           <span className="trip-stay-name trip-stay-city">{city || '未知城市'}</span>
+                          <button
+                            className="trip-btn trip-stay-book"
+                            onClick={() => call('/stops', 'POST', { day: d, name: '🏨 待定住宿', note: '住宿' })}
+                          >
+                            添加住宿
+                          </button>
                           <button
                             className="trip-btn trip-stay-book"
                             disabled={!city}
@@ -1532,8 +2190,31 @@ function TripBoard({
           stop={editing}
           onClose={() => setEditing(null)}
           onSave={async (patch) => {
-            await call(`/stops/${editing.id}`, 'PATCH', patch)
+            const optimisticPatch = { ...patch }
+            if ('no_location' in patch) {
+              const prevTags = editing.tags || []
+              optimisticPatch.tags = patch.no_location
+                ? Array.from(new Set([...prevTags, 'no_location']))
+                : prevTags.filter((tag) => tag !== 'no_location')
+            }
+            delete optimisticPatch.location
+            delete optimisticPatch.no_location
+            setTrip((prev) => prev ? {
+              ...prev,
+              stops: prev.stops.map((s) => s.id === editing.id ? { ...s, ...optimisticPatch } : s)
+            } : prev)
             setEditing(null)
+            call(`/stops/${editing.id}`, 'PATCH', patch).catch(() => load())
+          }}
+        />
+      )}
+      {addingStopDay !== null && (
+        <AddStopModal
+          day={addingStopDay}
+          onClose={() => setAddingStopDay(null)}
+          onSave={async (patch) => {
+            setAddingStopDay(null)
+            await call('/stops', 'POST', { day: addingStopDay, ...patch })
           }}
         />
       )}
@@ -1842,7 +2523,10 @@ function LedgerPanel({
       `${API}/trips/${tripId}/expenses${d.id ? `/${d.id}` : ''}`,
       { method: d.id ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },
     )
-    if (!r.ok) { notify('保存失败，请检查金额和分摊成员', 'error'); return false }
+    if (!r.ok) {
+      notify('保存失败，请检查金额和分摊成员', 'error')
+      return false
+    }
     onChanged()
     loadPerPerson()
     notify(d.id ? '账目已更新' : '账目已添加', 'success')
@@ -2007,43 +2691,77 @@ function EditStopModal({
   stop, onClose, onSave,
 }: { stop: TripStop; onClose: () => void; onSave: (patch: Record<string, unknown>) => void }) {
   const [name, setName] = useState(stop.name)
-  const [time, setTime] = useState(stop.start_time)
-  const [stay, setStay] = useState(stop.stay_min ? String(stop.stay_min) : '')
+  const [startTime, setStartTime] = useState(stop.start_time)
+  // 从 start_time + stay_min 反推结束时间（用于初始化）
+  const calcEndTime = (start: string, stayMin: number) => {
+    if (!start || !stayMin) return ''
+    const [h, m] = start.split(':').map(Number)
+    if (isNaN(h) || isNaN(m)) return ''
+    const endMin = h * 60 + m + stayMin
+    return `${String(Math.floor(endMin / 60)).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}`
+  }
+  const [endTime, setEndTime] = useState(calcEndTime(stop.start_time, stop.stay_min || 0))
+  const initialNoLocation = stop.tags?.includes('no_location') || false
+  const [locationText, setLocationText] = useState(stop.name.replace(/^🏨\s*/, ''))
+  const [description, setDescription] = useState(stop.note || '')
+  const [noLocation, setNoLocation] = useState(initialNoLocation)
   const [transport, setTransport] = useState(stop.transport)
   const [ticket, setTicket] = useState(stop.ticket_price ? String(stop.ticket_price) : '')
-  const [tags, setTags] = useState(stop.tags.join(','))
-  const [note, setNote] = useState(stop.note)
+  useEffect(() => {
+    const close = (event: KeyboardEvent) => event.key === 'Escape' && onClose()
+    window.addEventListener('keydown', close)
+    return () => window.removeEventListener('keydown', close)
+  }, [onClose])
   return (
     <div className="modal-mask" onClick={onClose}>
       <div className="modal trip-edit-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <strong>编辑地点</strong>
+          <strong>编辑行程</strong>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="trip-edit-grid">
-          <label>名称<input value={name} onChange={(e) => setName(e.target.value)} /></label>
-          <label>到达时间<input type="time" value={time} onChange={(e) => setTime(e.target.value)} /></label>
-          <label>停留(分钟)<input type="number" min="0" value={stay} onChange={(e) => setStay(e.target.value)} /></label>
-          <label>交通方式
-            <select value={transport} onChange={(e) => setTransport(e.target.value)}>
-              {TRANSPORTS.map((t) => <option key={t} value={t}>{t || '未填'}</option>)}
-            </select>
+          <div className="trip-edit-section trip-edit-full">
+            <b>基础信息</b>
+            <small>活动名用于行程展示；定位关键词只用于地图搜索，不会混进备注。</small>
+          </div>
+          <label>开始时间<input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} /></label>
+          <label>结束时间<input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} /></label>
+          <label className="trip-edit-full">活动名称<input value={name} onChange={(e) => setName(e.target.value)} placeholder="如：双子塔（KLCC）" /></label>
+          <label className="trip-edit-full">地图定位关键词<input value={locationText} onChange={(e) => setLocationText(e.target.value)} placeholder="如：Petronas Twin Towers / Suria KLCC" disabled={noLocation} /></label>
+          <label className="trip-edit-full trip-edit-checkbox">
+            <input type="checkbox" checked={noLocation} onChange={(e) => setNoLocation(e.target.checked)} />
+            此行程无具体地点（如飞行）
           </label>
-          <label>门票(元)<input type="number" min="0" value={ticket} onChange={(e) => setTicket(e.target.value)} /></label>
-          <label>标签(逗号分隔)<input value={tags} placeholder="美食,拍照" onChange={(e) => setTags(e.target.value)} /></label>
-          <label className="trip-edit-full">备注<textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} /></label>
+          <div className="trip-edit-section trip-edit-full">
+            <b>补充信息</b>
+          </div>
+          <label className="trip-edit-full">描述/备注<textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="参观博物馆，逛街购物；预约、门票、注意事项等" /></label>
+          <label>交通<input value={transport} onChange={(e) => setTransport(e.target.value)} placeholder="步行可达" /></label>
+          <label>花费<input type="number" min="0" value={ticket} onChange={(e) => setTicket(e.target.value)} placeholder="免费" /></label>
         </div>
         <div className="trip-edit-ops">
           <button className="trip-btn" onClick={onClose}>取消</button>
-          <button className="trip-btn primary" onClick={() => onSave({
-            name: name.trim() || undefined,
-            start_time: time,
-            stay_min: stay === '' ? 0 : Math.max(0, Number(stay) || 0),
-            transport,
-            ticket_price: ticket === '' ? 0 : Math.max(0, Number(ticket) || 0),
-            tags: tags.split(/[,，]/).map((t) => t.trim()).filter(Boolean),
-            note,
-          })}>
+          <button className="trip-btn primary" onClick={() => {
+            // 从开始、结束时间计算停留分钟数
+            let stayMin = 0
+            if (startTime && endTime) {
+              const [sh, sm] = startTime.split(':').map(Number)
+              const [eh, em] = endTime.split(':').map(Number)
+              if (!isNaN(sh) && !isNaN(sm) && !isNaN(eh) && !isNaN(em)) {
+                stayMin = Math.max(0, (eh * 60 + em) - (sh * 60 + sm))
+              }
+            }
+            onSave({
+              name: name.trim() || undefined,
+              start_time: startTime,
+              stay_min: stayMin,
+              transport: transport.trim() || '',
+              ticket_price: ticket === '' ? 0 : Math.max(0, Number(ticket) || 0),
+              no_location: noLocation,
+              location: noLocation ? '' : locationText.trim(),
+              note: description.trim(),
+            })
+          }}>
             保存
           </button>
         </div>
@@ -2052,21 +2770,83 @@ function EditStopModal({
   )
 }
 
-function AddStop({ onAdd }: { onAdd: (name: string) => void }) {
+function AddStopModal({
+  day, onClose, onSave,
+}: { day: number; onClose: () => void; onSave: (patch: Record<string, unknown>) => void }) {
   const [name, setName] = useState('')
+  const [startTime, setStartTime] = useState('')
+  const [endTime, setEndTime] = useState('')
+  const [locationText, setLocationText] = useState('')
+  const [description, setDescription] = useState('')
+  const [transport, setTransport] = useState('')
+  const [ticket, setTicket] = useState('')
+  const [noLocation, setNoLocation] = useState(false)
+  useEffect(() => {
+    const close = (event: KeyboardEvent) => event.key === 'Escape' && onClose()
+    window.addEventListener('keydown', close)
+    return () => window.removeEventListener('keydown', close)
+  }, [onClose])
+  const save = () => {
+    if (!name.trim()) return
+    let stayMin = 0
+    if (startTime && endTime) {
+      const [sh, sm] = startTime.split(':').map(Number)
+      const [eh, em] = endTime.split(':').map(Number)
+      if (!isNaN(sh) && !isNaN(sm) && !isNaN(eh) && !isNaN(em)) {
+        stayMin = Math.max(0, (eh * 60 + em) - (sh * 60 + sm))
+      }
+    }
+    onSave({
+      name: name.trim(),
+      start_time: startTime,
+      stay_min: stayMin,
+      transport: transport.trim(),
+      ticket_price: ticket === '' ? 0 : Math.max(0, Number(ticket) || 0),
+      no_location: noLocation,
+      location: noLocation ? '' : locationText.trim(),
+      note: description.trim(),
+    })
+  }
+  return (
+    <div className="modal-mask" onClick={onClose}>
+      <div className="modal trip-edit-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <strong>添加 Day {day} 地点</strong>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="trip-edit-grid">
+          <div className="trip-edit-section trip-edit-full">
+            <b>基础信息</b>
+            <small>活动名用于行程展示；地图定位关键词用于搜索坐标。</small>
+          </div>
+          <label>开始时间<input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} /></label>
+          <label>结束时间<input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} /></label>
+          <label className="trip-edit-full">活动名称<input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="如：双子塔夜景" /></label>
+          <label className="trip-edit-full">地图定位关键词<input value={locationText} onChange={(e) => setLocationText(e.target.value)} placeholder="详细地址或地点名，如：Petronas Twin Towers" disabled={noLocation} /></label>
+          <label className="trip-edit-full trip-edit-checkbox">
+            <input type="checkbox" checked={noLocation} onChange={(e) => setNoLocation(e.target.checked)} />
+            此行程无具体地点（如飞行）
+          </label>
+          <div className="trip-edit-section trip-edit-full">
+            <b>补充信息</b>
+          </div>
+          <label className="trip-edit-full">描述/备注<textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="补充说明、注意事项" /></label>
+          <label>交通<input value={transport} onChange={(e) => setTransport(e.target.value)} placeholder="步行/打车/地铁" /></label>
+          <label>花费<input type="number" min="0" value={ticket} onChange={(e) => setTicket(e.target.value)} placeholder="免费" /></label>
+        </div>
+        <div className="trip-edit-ops">
+          <button className="trip-btn" onClick={onClose}>取消</button>
+          <button className="trip-btn primary" onClick={save} disabled={!name.trim()}>保存</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function AddStop({ onAdd }: { onAdd: () => void }) {
   return (
     <div className="trip-add-stop">
-      <input
-        placeholder="+ 添加地点"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && name.trim()) {
-            onAdd(name.trim())
-            setName('')
-          }
-        }}
-      />
+      <button type="button" onClick={onAdd}>+ 添加地点</button>
     </div>
   )
 }
@@ -2094,7 +2874,7 @@ function useModuleData<T>(tripId: string, path: string, active: boolean, initial
   useEffect(() => {
     if (active) reload()
   }, [active, reload])
-  return { data, loading, reload }
+  return { data, setData, loading, reload }
 }
 
 interface FoodItem {
@@ -2104,9 +2884,20 @@ interface FoodItem {
 
 const FOOD_CATS = ['小吃', '正餐', '甜点', '饮品', '其他']
 
-function FoodPanel({ tripId, active }: { tripId: string; active: boolean }) {
+function FoodPanel({
+  tripId, active, days, stopsOf, onAddToDay, onEditStop, onDeleteStop,
+}: {
+  tripId: string
+  active: boolean
+  days: number[]
+  stopsOf: (day: number) => TripStop[]
+  onAddToDay: (day: number, name: string) => Promise<unknown>
+  onEditStop: (stop: TripStop) => void
+  onDeleteStop: (stop: TripStop) => Promise<unknown>
+}) {
   const { data, reload } = useModuleData<FoodItem[]>(tripId, 'foods', active, [])
   const [name, setName] = useState('')
+  const [dayFoodName, setDayFoodName] = useState<Record<number, string>>({})
   const [cat, setCat] = useState('正餐')
   const [filter, setFilter] = useState('全部')
   const { notify } = useToast()
@@ -2133,10 +2924,64 @@ function FoodPanel({ tripId, active }: { tripId: string; active: boolean }) {
 
   const cats = ['全部', ...FOOD_CATS.filter((c) => data.some((f) => f.category === c))]
   const shown = filter === '全部' ? data : data.filter((f) => f.category === filter)
+  const foodStopsOf = (day: number) => stopsOf(day).filter((s) => (
+    s.tags?.includes('food') || (s.note || '').includes('美食') || /餐|咖啡|小吃|饭|食|甜品|早餐|午餐|晚餐/.test(s.name)
+  ))
 
   return (
     <div className="trip-panel trip-module">
-      <div className="trip-panel-head">🍜 美食清单 <span className="trip-day-km">TOP 会置顶</span></div>
+      <div className="trip-panel-head">🍜 按天美食 <span className="trip-day-km">会同步到对应 Day 行程</span></div>
+      <div className="trip-day-foods">
+        {days.map((d) => {
+          const dayFoods = foodStopsOf(d)
+          return (
+            <section key={d} className="trip-day-food-card">
+              <div className="trip-day-food-head">
+                <b>Day {d}</b>
+                <small>{dayFoods.length} 项</small>
+              </div>
+              {dayFoods.length ? (
+                <ul className="trip-day-food-list">
+                  {dayFoods.map((s) => (
+                    <li key={s.id}>
+                      <span>
+                        <b>{s.name}</b>
+                        {s.note && <small>{s.note.replace(/^美食\s*/, '')}</small>}
+                      </span>
+                      <button className="trip-mini-action" onClick={() => onEditStop(s)}>编辑</button>
+                      <button className="trip-mini-action danger" onClick={() => {
+                        if (window.confirm(`删除「${s.name}」？`)) onDeleteStop(s)
+                      }}>删除</button>
+                    </li>
+                  ))}
+                </ul>
+              ) : <p className="trip-module-empty">这天还没安排美食。</p>}
+              <div className="trip-module-add compact">
+                <input
+                  placeholder="添加这天的美食"
+                  value={dayFoodName[d] || ''}
+                  onChange={(e) => setDayFoodName((prev) => ({ ...prev, [d]: e.target.value }))}
+                  onKeyDown={async (e) => {
+                    const value = (dayFoodName[d] || '').trim()
+                    if (e.key === 'Enter' && value) {
+                      await onAddToDay(d, value)
+                      setDayFoodName((prev) => ({ ...prev, [d]: '' }))
+                    }
+                  }}
+                />
+                <button className="trip-btn primary" onClick={async () => {
+                  const value = (dayFoodName[d] || '').trim()
+                  if (!value) return
+                  await onAddToDay(d, value)
+                  setDayFoodName((prev) => ({ ...prev, [d]: '' }))
+                }}>添加</button>
+              </div>
+            </section>
+          )
+        })}
+      </div>
+
+      <div className="trip-panel-head trip-sub-panel-head">攻略推荐美食 <span className="trip-day-km">未分天，可手动加入上面某天</span></div>
       {cats.length > 1 && (
         <div className="trip-module-filters">
           {cats.map((c) => (
@@ -2182,7 +3027,6 @@ interface PackingData {
 
 // 三态循环：未设置 → 已带 → 没带 → 未设置
 const PACK_NEXT: Record<string, string> = { na: 'packed', packed: 'unpacked', unpacked: 'na' }
-const PACK_GLYPH: Record<string, string> = { packed: '✓', unpacked: '✗', na: '–' }
 
 function PackingPanel({
   tripId, active, username, members, isOwner, onInvite,
@@ -2192,15 +3036,41 @@ function PackingPanel({
   isOwner: boolean
   onInvite: (name: string) => Promise<boolean>
 }) {
-  const { data, reload } = useModuleData<PackingData>(
+  const { data, setData, reload } = useModuleData<PackingData>(
     tripId, 'packing', active, { members: [], items: [], templates: [] })
   const [adding, setAdding] = useState(false)
   const [name, setName] = useState('')
   const [cat, setCat] = useState('通用')
+  const [categoryName, setCategoryName] = useState('')
+  const [editingCategoryName, setEditingCategoryName] = useState('')
+  const [editingCategoryValue, setEditingCategoryValue] = useState('')
+  const [customCats, setCustomCats] = useState<string[]>([])
   const [manageCats, setManageCats] = useState(false)
   const [managePeople, setManagePeople] = useState(false)
+  const [batchOpen, setBatchOpen] = useState(false)
+  const [batchRows, setBatchRows] = useState([{ name: '', category: '通用' }])
+  const [bulkCat, setBulkCat] = useState('通用')
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [editingItem, setEditingItem] = useState<PackingData['items'][number] | null>(null)
+  const [editingName, setEditingName] = useState('')
+  const [editingCat, setEditingCat] = useState('通用')
   const [invite, setInvite] = useState('')
+  const [filterCat, setFilterCat] = useState('全部')
   const { notify } = useToast()
+
+  useEffect(() => {
+    const close = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      if (editingItem) setEditingItem(null)
+      else if (batchOpen) setBatchOpen(false)
+      else if (manageCats) setManageCats(false)
+      else if (managePeople) setManagePeople(false)
+    }
+    window.addEventListener('keydown', close)
+    return () => window.removeEventListener('keydown', close)
+  }, [batchOpen, editingItem, manageCats, managePeople])
 
   const add = async (text: string, category = '通用') => {
     if (!text.trim()) return
@@ -2211,51 +3081,213 @@ function PackingPanel({
     if (r.ok) { setName(''); setAdding(false); reload() } else notify('添加失败，请重试', 'error')
   }
   const cycle = async (itemId: string, cur: string, member: string) => {
+    const nextState = PACK_NEXT[cur] || 'packed'
+    const targetMember = member || username
+    setData((prev) => ({
+      ...prev,
+      items: prev.items.map((it) => it.id === itemId ? {
+        ...it,
+        states: { ...it.states, [targetMember]: nextState },
+        marked_by: (() => {
+          const nextMarked = { ...it.marked_by }
+          if (member && member !== username) {
+            if (nextState === 'na') delete nextMarked[targetMember]
+            else nextMarked[targetMember] = username
+          }
+          return nextMarked
+        })(),
+      } : it),
+    }))
     const r = await authFetch(`${API}/trips/${tripId}/packing/${itemId}/state`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ state: PACK_NEXT[cur] || 'packed', member }),
+      body: JSON.stringify({ state: nextState, member }),
     })
-    if (r.ok) reload()
+    if (!r.ok) {
+      notify('勾选失败，请重试', 'error')
+      reload()
+    }
+  }
+  const updateItem = async (itemId: string, patch: { name?: string; category?: string }, reloadAfter = false) => {
+    const r = await authFetch(`${API}/trips/${tripId}/packing/${itemId}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    })
+    if (!r.ok) {
+      notify('修改失败，请重试', 'error')
+      return false
+    }
+    setData((prev) => ({
+      ...prev,
+      items: prev.items.map((item) => item.id === itemId ? { ...item, ...patch } : item),
+    }))
+    if (reloadAfter) reload()
+    return true
   }
   const remove = async (id: string, itemName: string) => {
     if (!window.confirm(`删除「${itemName}」？`)) return
     const r = await authFetch(`${API}/trips/${tripId}/packing/${id}`, { method: 'DELETE' })
     // 失败必须说出来——原来静默失败，用户只看到「点了没反应」
-    if (r.ok) reload()
+    if (r.ok) {
+      setSelectedIds((prev) => prev.filter((sid) => sid !== id))
+      reload()
+    }
     else notify('删除失败，请重试', 'error')
   }
-  const recategorize = async (itemId: string, category: string) => {
-    const r = await authFetch(`${API}/trips/${tripId}/packing/${itemId}`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ category }),
-    })
-    if (r.ok) reload()
+  const recategorize = async (itemId: string, category: string, reloadAfter = true) => {
+    const ok = await updateItem(itemId, { category }, false)
+    if (ok && reloadAfter) reload()
   }
 
-  const cats = Array.from(new Set(data.items.map((i) => i.category || '通用')))
-  const grouped = cats.map((c) => ({ cat: c, items: data.items.filter((i) => (i.category || '通用') === c) }))
+  const cats = Array.from(new Set(['通用', ...customCats, ...data.items.map((i) => i.category || '通用')]))
+  const displayedItems = filterCat === '全部'
+    ? data.items
+    : data.items.filter(i => (i.category || '通用') === filterCat)
+  const groupedItems = cats
+    .map((category) => ({
+      category,
+      items: displayedItems.filter((i) => (i.category || '通用') === category),
+    }))
+    .filter((group) => group.items.length > 0)
+
   const unused = data.templates.filter((t) => !data.items.some((i) => i.name === t))
+  const selectedItems = data.items.filter((it) => selectedIds.includes(it.id))
+
+  const addCategory = () => {
+    const nextName = categoryName.trim()
+    if (!nextName) return
+    if (cats.includes(nextName)) {
+      notify('该分类已存在')
+      return
+    }
+    setCustomCats((prev) => Array.from(new Set([...prev, nextName])))
+    setCat(nextName)
+    setBulkCat(nextName)
+    setCategoryName('')
+    notify('分类已添加，可在添加物品时使用', 'success')
+  }
+
+  const startEditCategory = (category: string) => {
+    setEditingCategoryName(category)
+    setEditingCategoryValue(category)
+  }
+
+  const cancelEditCategory = () => {
+    setEditingCategoryName('')
+    setEditingCategoryValue('')
+  }
+
+  const saveCategoryName = async (from: string) => {
+    const nextName = editingCategoryValue.trim()
+    if (!nextName || nextName === from) {
+      cancelEditCategory()
+      return
+    }
+    if (cats.includes(nextName)) {
+      notify('该分类已存在', 'error')
+      return
+    }
+    setCustomCats((prev) => Array.from(new Set(prev.map((x) => x === from ? nextName : x).concat(nextName))))
+    setCat((cur) => cur === from ? nextName : cur)
+    setBulkCat((cur) => cur === from ? nextName : cur)
+    setFilterCat((cur) => cur === from ? nextName : cur)
+    const itemsToUpdate = data.items.filter((it) => (it.category || '通用') === from)
+    for (const item of itemsToUpdate) {
+      await recategorize(item.id, nextName, false)
+    }
+    cancelEditCategory()
+    reload()
+  }
+
+  const openEditItem = (item: PackingData['items'][number]) => {
+    setEditingItem(item)
+    setEditingName(item.name)
+    setEditingCat(item.category || '通用')
+  }
+
+  const saveEditingItem = async () => {
+    if (!editingItem || !editingName.trim()) return
+    const ok = await updateItem(editingItem.id, {
+      name: editingName.trim(),
+      category: editingCat.trim() || '通用',
+    })
+    if (ok) {
+      setEditingItem(null)
+      notify('物品已更新', 'success')
+    }
+  }
+
+  const batchAdd = async () => {
+    const rows = batchRows
+      .map((row) => ({ name: row.name.trim(), category: row.category.trim() || '通用' }))
+      .filter((row) => row.name)
+    if (rows.length === 0) return
+    for (const row of rows) {
+      await add(row.name, row.category)
+    }
+    setBatchRows([{ name: '', category: bulkCat || '通用' }])
+    setBatchOpen(false)
+    reload()
+  }
+
+  const bulkMove = async () => {
+    if (selectedIds.length === 0) return
+    for (const id of selectedIds) {
+      await recategorize(id, bulkCat || '通用', false)
+    }
+    setSelectedIds([])
+    reload()
+  }
+
+  const bulkDelete = async () => {
+    if (selectedIds.length === 0) return
+    if (!window.confirm(`删除选中的 ${selectedIds.length} 个物品？`)) return
+    for (const id of selectedIds) {
+      await authFetch(`${API}/trips/${tripId}/packing/${id}`, { method: 'DELETE' })
+    }
+    setSelectedIds([])
+    reload()
+  }
 
   const renderRows = (items: PackingData['items']) => items.map((it) => (
-    <tr key={it.id}>
-      <td className="trip-packing-name">{it.name}</td>
+    <tr key={it.id} className="trip-packing-item-row">
+      <td className="trip-packing-select">
+        <input
+          type="checkbox"
+          checked={selectedIds.includes(it.id)}
+          onChange={(e) => setSelectedIds((prev) => e.target.checked
+            ? Array.from(new Set([...prev, it.id]))
+            : prev.filter((id) => id !== it.id))}
+          aria-label={`选择 ${it.name}`}
+        />
+      </td>
+      <td className="trip-packing-name">
+        <div className="trip-packing-item-cell">
+          <b>{it.name}</b>
+          <small>{it.category || '通用'}</small>
+        </div>
+      </td>
       {data.members.map((m) => {
         const st = it.states[m] || 'na'
         const mine = m === username
         const by = it.marked_by?.[m]
+        const statusText = st === 'packed' ? '已带' : st === 'unpacked' ? '未带' : '–'
+
         return (
           <td key={m}>
-            <button className={`trip-pack-cell ${st}${mine ? ' mine' : ''}${by ? ' proxied' : ''}`}
-              title={`${mine ? '我' : m}：点击切换 已带 / 没带 / 未设置${by ? `（由 ${by} 代勾）` : ''}`}
-              onClick={() => cycle(it.id, st, mine ? '' : m)}>
-              {PACK_GLYPH[st]}
-              {by && <i className="trip-pack-proxy" aria-hidden="true">{by[0]?.toUpperCase()}</i>}
+            <button
+              className={`trip-pack-status ${st}${mine ? ' mine' : ''}`}
+              title={`${mine ? '我' : m}：点击切换 已带 / 未带 / 未设置${by ? `（由 ${by} 代勾）` : ''}`}
+              onClick={() => cycle(it.id, st, mine ? '' : m)}
+            >
+              {statusText}
+              {by && <i>{by[0]?.toUpperCase()}</i>}
             </button>
           </td>
         )
       })}
       <td className="trip-packing-ops">
-        <button className="trip-module-del" onClick={() => remove(it.id, it.name)} aria-label="删除">×</button>
+        <button className="trip-mini-action" onClick={() => openEditItem(it)}>编辑</button>
+        <button className="trip-mini-action danger" onClick={() => remove(it.id, it.name)}>删除</button>
       </td>
     </tr>
   ))
@@ -2266,7 +3298,8 @@ function PackingPanel({
 
       <div className="trip-module-toolbar">
         <button className="trip-btn primary" onClick={() => setAdding(true)}>+ 添加物品</button>
-        <button className="trip-btn" onClick={() => setManageCats(true)} disabled={data.items.length === 0}>
+        <button className="trip-btn" onClick={() => setBatchOpen(true)}>批量维护</button>
+        <button className="trip-btn" onClick={() => setManageCats(true)}>
           🏷 管理分类
         </button>
         <button className="trip-btn" onClick={() => setManagePeople(true)}>👥 人员管理</button>
@@ -2286,26 +3319,68 @@ function PackingPanel({
 
       {data.items.length === 0 && <p className="trip-module-empty">还没有物品，用下面的常见清单或「添加物品」加起。</p>}
 
-      {/* 按分类分组展示：物品一多，一张平表根本找不到东西 */}
-      {grouped.map((g) => (
-        <div key={g.cat} className="trip-packing-group">
-          <div className="trip-packing-group-head">{g.cat} <small>{g.items.length}</small></div>
-          <div className="trip-packing-scroll">
-            <table className="trip-packing-table">
-              <thead>
-                <tr>
-                  <th>物品</th>
-                  {data.members.map((m) => (
-                    <th key={m} className={m === username ? 'me' : ''}>{m === username ? '我' : m}</th>
-                  ))}
-                  <th aria-label="操作" />
-                </tr>
-              </thead>
-              <tbody>{renderRows(g.items)}</tbody>
-            </table>
-          </div>
+      {data.items.length > 0 && (
+        <div className="trip-packing-filters">
+          <button className={filterCat === '全部' ? 'active' : ''} onClick={() => setFilterCat('全部')}>
+            全部 ({data.items.length})
+          </button>
+          {cats.map(c => {
+            const count = data.items.filter(i => (i.category || '通用') === c).length
+            return (
+              <button key={c} className={filterCat === c ? 'active' : ''} onClick={() => setFilterCat(c)}>
+                {c} ({count})
+              </button>
+            )
+          })}
         </div>
-      ))}
+      )}
+
+      {data.items.length > 0 && (
+        <div className="trip-packing-scroll">
+          <table className="trip-packing-table">
+            <thead>
+              <tr>
+                <th className="trip-packing-select">
+                  <input
+                    type="checkbox"
+                    checked={displayedItems.length > 0 && displayedItems.every((it) => selectedIds.includes(it.id))}
+                    onChange={(e) => {
+                      const nextIds = e.target.checked ? displayedItems.map((it) => it.id) : []
+                      setSelectedIds(nextIds)
+                      if (nextIds.length > 0) {
+                        setBulkCat(filterCat === '全部' ? cats[0] || '通用' : filterCat)
+                        setBatchOpen(true)
+                      }
+                    }}
+                    aria-label="选择当前列表全部物品"
+                  />
+                </th>
+                <th className="trip-packing-name">物品</th>
+                {data.members.map((m) => (
+                  <th key={m} className={m === username ? 'me' : ''}>
+                    <span className="trip-packing-avatar">{m[0]?.toUpperCase()}</span>
+                    <b>{m}</b>
+                  </th>
+                ))}
+                <th className="trip-packing-ops">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {groupedItems.map((group) => (
+                <Fragment key={group.category}>
+                  <tr key={`${group.category}-group`} className="trip-packing-group-row">
+                    <td colSpan={3 + data.members.length}>
+                      <span>{group.category}</span>
+                      <small>总数 {group.items.length}</small>
+                    </td>
+                  </tr>
+                  {renderRows(group.items)}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {unused.length > 0 && (
         <div className="trip-module-templates">
@@ -2320,23 +3395,202 @@ function PackingPanel({
         <div className="modal-mask" onClick={() => setManageCats(false)}>
           <div className="modal trip-manage-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-head">
-              <strong>🏷 管理分类</strong>
+              <strong>管理分类</strong>
               <button className="modal-close" onClick={() => setManageCats(false)}>✕</button>
             </div>
-            <p className="trip-module-empty">给每件物品选一个分类，清单会按分类分组显示。</p>
-            <ul className="trip-module-list">
-              {data.items.map((it) => (
-                <li key={it.id}>
-                  <span className="trip-module-main"><b>{it.name}</b></span>
-                  <input className="trip-cat-input" defaultValue={it.category || '通用'}
-                    aria-label={`${it.name} 的分类`}
-                    onBlur={(e) => {
-                      const v = e.target.value.trim()
-                      if (v && v !== (it.category || '通用')) recategorize(it.id, v)
-                    }} />
-                </li>
-              ))}
-            </ul>
+
+            <div className="trip-category-section">
+              <h3>当前分类</h3>
+              <div className="trip-category-list">
+                {cats.map((c) => (
+                  <div key={c} className="trip-category-row">
+                    {editingCategoryName === c ? (
+                      <>
+                        <span>
+                          <input
+                            className="trip-category-inline-input"
+                            autoFocus
+                            value={editingCategoryValue}
+                            onChange={(e) => setEditingCategoryValue(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') saveCategoryName(c)
+                              if (e.key === 'Escape') cancelEditCategory()
+                            }}
+                          />
+                          <small>{data.items.filter((it) => (it.category || '通用') === c).length} 个物品</small>
+                        </span>
+                        <button className="trip-mini-action" onClick={() => saveCategoryName(c)}>保存</button>
+                        <button className="trip-mini-action ghost" onClick={cancelEditCategory}>取消</button>
+                      </>
+                    ) : (
+                      <>
+                        <span>
+                          <b>{c}</b>
+                          <small>{data.items.filter((it) => (it.category || '通用') === c).length} 个物品</small>
+                        </span>
+                        <button
+                          className="trip-mini-action"
+                          onClick={() => startEditCategory(c)}
+                          title={`修改分类 ${c}`}
+                        >
+                          修改
+                        </button>
+                        <button
+                          className="trip-mini-action danger"
+                          onClick={async () => {
+                            if (c === '通用') {
+                              notify('通用分类不能删除', 'error')
+                              return
+                            }
+                            if (confirm(`确定删除分类"${c}"？该分类下的物品将移至"通用"分类。`)) {
+                              const itemsToUpdate = data.items.filter(it => (it.category || '通用') === c)
+                              for (const item of itemsToUpdate) {
+                                await recategorize(item.id, '通用', false)
+                              }
+                              setCustomCats((prev) => prev.filter((x) => x !== c))
+                              setCat((cur) => cur === c ? '通用' : cur)
+                              setBulkCat((cur) => cur === c ? '通用' : cur)
+                              setFilterCat((cur) => cur === c ? '全部' : cur)
+                              reload()
+                            }
+                          }}
+                          title={`删除分类 ${c}`}
+                        >
+                          删除
+                        </button>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="trip-category-section">
+              <h3>新增分类</h3>
+              <div className="trip-category-add">
+                <input
+                  type="text"
+                  placeholder="例如：电子产品"
+                  value={categoryName}
+                  onChange={(e) => setCategoryName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') addCategory()
+                  }}
+                />
+                <button
+                  className="trip-btn primary"
+                  onClick={addCategory}
+                  disabled={!categoryName.trim()}
+                >
+                  确定添加
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>, document.body)}
+
+      {editingItem && createPortal(
+        <div className="modal-mask" onClick={() => setEditingItem(null)}>
+          <div className="modal trip-manage-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <strong>编辑物品</strong>
+              <button className="modal-close" onClick={() => setEditingItem(null)}>✕</button>
+            </div>
+            <div className="trip-packing-edit-form">
+              <label>
+                <span>物品名</span>
+                <input autoFocus value={editingName} onChange={(e) => setEditingName(e.target.value)} />
+              </label>
+              <label>
+                <span>分类</span>
+                <select value={editingCat} onChange={(e) => setEditingCat(e.target.value)}>
+                  {cats.map((c) => <option key={c}>{c}</option>)}
+                </select>
+              </label>
+            </div>
+            <div className="trip-modal-foot">
+              <button className="trip-btn danger" onClick={() => {
+                if (!editingItem) return
+                remove(editingItem.id, editingItem.name)
+                setEditingItem(null)
+              }}>删除</button>
+              <span />
+              <button className="trip-btn" onClick={() => setEditingItem(null)}>取消</button>
+              <button className="trip-btn primary" onClick={saveEditingItem}>保存</button>
+            </div>
+          </div>
+        </div>, document.body)}
+
+      {batchOpen && createPortal(
+        <div className="modal-mask" onClick={() => setBatchOpen(false)}>
+          <div className="modal trip-manage-modal trip-batch-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <strong>批量维护</strong>
+              <button className="modal-close" onClick={() => setBatchOpen(false)}>✕</button>
+            </div>
+            {selectedItems.length > 0 && (
+              <div className="trip-batch-selected trip-batch-section">
+                <b>已选 {selectedItems.length} 个物品</b>
+                <small>{selectedItems.map((it) => it.name).join('、')}</small>
+                <div className="trip-batch-actions">
+                  <select value={bulkCat} onChange={(e) => setBulkCat(e.target.value)}>
+                    {cats.map((c) => <option key={c}>{c}</option>)}
+                  </select>
+                  <button className="trip-btn" onClick={bulkMove}>把所选移到这个分类</button>
+                  <button className="trip-btn danger" onClick={bulkDelete}>删除所选</button>
+                  <button className="trip-btn ghost" onClick={() => setSelectedIds([])}>取消选择</button>
+                </div>
+              </div>
+            )}
+            <div className="trip-batch-section">
+              <b>批量新增物品</b>
+              <small>一小行就是一个物品；每行可以单独选择分类。</small>
+              <div className="trip-batch-rows">
+                {batchRows.map((row, index) => (
+                  <div className="trip-batch-row" key={index}>
+                    <select
+                      value={row.category}
+                      onChange={(e) => setBatchRows((prev) => prev.map((item, idx) => (
+                        idx === index ? { ...item, category: e.target.value } : item
+                      )))}
+                    >
+                      {cats.map((c) => <option key={c}>{c}</option>)}
+                    </select>
+                    <input
+                      value={row.name}
+                      placeholder="物品名"
+                      onChange={(e) => setBatchRows((prev) => prev.map((item, idx) => (
+                        idx === index ? { ...item, name: e.target.value } : item
+                      )))}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          setBatchRows((prev) => [...prev, { name: '', category: row.category }])
+                        }
+                      }}
+                    />
+                    <button
+                      className="trip-btn tiny ghost"
+                      onClick={() => setBatchRows((prev) => prev.length <= 1
+                        ? [{ name: '', category: bulkCat || '通用' }]
+                        : prev.filter((_, idx) => idx !== index))}
+                    >
+                      删除本行
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <button
+                className="trip-btn"
+                onClick={() => setBatchRows((prev) => [...prev, { name: '', category: bulkCat || prev.at(-1)?.category || '通用' }])}
+              >
+                + 添加一行
+              </button>
+            </div>
+            <div className="trip-modal-foot">
+              <span />
+              <button className="trip-btn" onClick={() => setBatchOpen(false)}>关闭</button>
+              <button className="trip-btn primary" onClick={batchAdd}>批量添加</button>
+            </div>
           </div>
         </div>, document.body)}
 
@@ -2425,4 +3679,3 @@ function TipsPanel({ tripId, active }: { tripId: string; active: boolean }) {
     </div>
   )
 }
-

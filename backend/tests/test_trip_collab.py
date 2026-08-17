@@ -174,6 +174,36 @@ def test_trip_collaboration_flow(client):
     assert "鼓楼夜市" in names
 
 
+def test_stop_no_location_can_be_unchecked_and_regeocoded(client):
+    c, _current = client
+    trip_id = c.post("/api/trips", json={"title": "吉隆坡一日", "destination": "吉隆坡", "days": 1}).json()["id"]
+    created = c.post(f"/api/trips/{trip_id}/stops", json={
+        "day": 1,
+        "name": "值机",
+        "note": "机场办理",
+        "no_location": True,
+    }).json()
+
+    assert created["location"] == ""
+    assert "no_location" in created["tags"]
+
+    updated = c.patch(f"/api/trips/{trip_id}/stops/{created['id']}", json={
+        "name": "值机",
+        "note": "机场办理",
+        "location": "吉隆坡国际机场",
+        "no_location": False,
+    })
+    assert updated.status_code == 200
+    body = updated.json()
+    assert body["location"] == "116.10,39.90"
+    assert "no_location" not in body["tags"]
+
+    detail = c.get(f"/api/trips/{trip_id}").json()
+    saved = next(s for s in detail["stops"] if s["id"] == created["id"])
+    assert saved["location"] == "116.10,39.90"
+    assert "no_location" not in saved["tags"]
+
+
 def test_source_guide_is_visible_to_members_but_private_chat_stays_private(client):
     """editor 通过行程成员权限读原攻略；接口只给原攻略，不授予 owner 私人会话权限。"""
     import json

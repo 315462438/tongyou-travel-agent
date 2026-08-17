@@ -463,7 +463,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
       else if (showSkills) setShowSkills(false)
       else if (showMemories) setShowMemories(false)
       else if (showSocial) setShowSocial(false)
-      else if (showTrips) { setShowTrips(false); setTripsBoard(null) }
+      else if (showTrips) return
       else if (window.innerWidth <= 720 && !collapsed) setCollapsed(true)
     }
     window.addEventListener('keydown', onKeyDown)
@@ -2847,11 +2847,13 @@ function Message({
             </button>
             {onImportTrip && (
               msg.meta?.imported_trip_id ? (
-                <button className="next-step-card" onClick={() => onImportTrip(msg.meta!.imported_trip_id!)}>
-                  <span className="ns-icon" aria-hidden>🗺️</span>
-                  <b>打开协同行程</b>
-                  <small>已导入，可继续和同行者一起改</small>
-                </button>
+                <OpenOrReimportButton
+                  tripId={msg.meta.imported_trip_id}
+                  cid={cid}
+                  messageId={msg.id}
+                  disabled={running}
+                  onDone={onImportTrip}
+                />
               ) : (
                 <TripImportButton
                   cid={cid} messageId={msg.id} disabled={running} onDone={onImportTrip}
@@ -3060,6 +3062,96 @@ function BudgetView({ budget }: { budget: BudgetData }) {
         </ul>
       )}
     </div>
+  )
+}
+
+function OpenOrReimportButton({
+  tripId, cid, messageId, disabled, onDone
+}: {
+  tripId: string
+  cid: string | null
+  messageId: string
+  disabled: boolean
+  onDone: (id: string) => void
+}) {
+  const [checking, setChecking] = useState(false)
+  const [tripExists, setTripExists] = useState<boolean | null>(null)
+  const { notify } = useToast()
+
+  // 检查行程是否存在
+  useEffect(() => {
+    const checkTrip = async () => {
+      try {
+        const res = await authFetch(`${API}/trips/${tripId}`)
+        setTripExists(res.ok)
+      } catch {
+        setTripExists(false)
+      }
+    }
+    checkTrip()
+  }, [tripId])
+
+  const handleClick = async () => {
+    if (tripExists === null) return // 还在检查中
+
+    if (tripExists) {
+      // 行程存在，直接打开
+      onDone(tripId)
+    } else {
+      // 行程已被删除，重新导入
+      if (!cid || checking || disabled) return
+      setChecking(true)
+      try {
+        const res = await authFetch(`${API}/trips/import`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ conversation_id: cid, message_id: messageId }),
+        })
+        if (res.ok) {
+          notify('已创建协同行程，正在提取地点、酒店与预算', 'success')
+          const data = await res.json()
+          setTripExists(true) // 更新状态
+          onDone(data.id)
+        } else {
+          notify('导入协同行程失败', 'error')
+        }
+      } catch {
+        notify('导入失败，请检查网络', 'error')
+      } finally {
+        setChecking(false)
+      }
+    }
+  }
+
+  if (tripExists === null) {
+    // 检查中
+    return (
+      <button className="next-step-card" disabled>
+        <span className="ns-icon" aria-hidden>⏳</span>
+        <b>检查中…</b>
+        <small>正在验证行程状态</small>
+      </button>
+    )
+  }
+
+  if (tripExists) {
+    // 行程存在，显示"打开"按钮
+    return (
+      <button className="next-step-card" onClick={handleClick}>
+        <span className="ns-icon" aria-hidden>🗺️</span>
+        <b>打开协同行程</b>
+        <small>已导入，可继续和同行者一起改</small>
+      </button>
+    )
+  }
+
+  // 行程已删除，显示"重新导入"按钮
+  return (
+    <button className="next-step-card" onClick={handleClick} disabled={checking || disabled}>
+      <span className="ns-icon" aria-hidden>🗺️</span>
+      <b>{checking ? '导入中…' : '重新导入协同行程'}</b>
+      <small>之前的行程已删除，点击重新导入</small>
+    </button>
   )
 }
 

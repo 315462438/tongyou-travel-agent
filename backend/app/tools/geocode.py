@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+import re
 import threading
 import time
 from dataclasses import dataclass
@@ -39,7 +40,13 @@ _KNOWN_CITY_ANCHORS: dict[str, tuple[float, float, str]] = {
 # 高频名称先走确定性表，其他名称由上层在导入/手动修复时批量请 LLM 仅做翻译。
 _PLACE_SEARCH_ALIASES: dict[str, str] = {
     "吉隆坡国际机场": "Kuala Lumpur International Airport",
+    "吉隆坡国际机场（KLIA）": "Kuala Lumpur International Airport",
+    "吉隆坡国际机场(KLIA)": "Kuala Lumpur International Airport",
+    "KLIA": "Kuala Lumpur International Airport",
     "双子塔": "Petronas Towers",
+    "双子塔（KLCC）": "Petronas Towers",
+    "双子塔(KLCC)": "Petronas Towers",
+    "KLCC": "Petronas Towers",
     "国家石油公司双子塔": "Petronas Towers",
     "独立广场": "Merdeka Square Kuala Lumpur",
     "鬼仔巷": "Kwai Chai Hong",
@@ -68,6 +75,18 @@ _PLACE_SEARCH_ALIASES: dict[str, str] = {
     "怡丰叻沙": "Yee Fung Laksa",
 }
 
+_KNOWN_PLACE_ANCHORS: dict[str, tuple[float, float, str]] = {
+    "吉隆坡国际机场": (101.709100, 2.745600, "my"),
+    "吉隆坡国际机场klia": (101.709100, 2.745600, "my"),
+    "kualalumpurinternationalairport": (101.709100, 2.745600, "my"),
+    "klia": (101.709100, 2.745600, "my"),
+    "双子塔": (101.711600, 3.157900, "my"),
+    "双子塔klcc": (101.711600, 3.157900, "my"),
+    "petronastowers": (101.711600, 3.157900, "my"),
+    "petronastwintowers": (101.711600, 3.157900, "my"),
+    "klcc": (101.711600, 3.157900, "my"),
+}
+
 
 @dataclass(frozen=True)
 class GeocodeContext:
@@ -83,6 +102,10 @@ class GeocodeContext:
 
 def _norm(value: str) -> str:
     return "".join((value or "").lower().split()).replace("市", "")
+
+
+def _norm_place(value: str) -> str:
+    return re.sub(r"[^\w\u4e00-\u9fff]+", "", (value or "").lower()).replace("市", "")
 
 
 def _known_context(city: str) -> GeocodeContext | None:
@@ -102,7 +125,28 @@ def known_overseas_city(city: str) -> bool:
 
 def overseas_search_name(name: str) -> str:
     raw = (name or "").strip()
-    return _PLACE_SEARCH_ALIASES.get(raw, raw)
+    if raw in _PLACE_SEARCH_ALIASES:
+        return _PLACE_SEARCH_ALIASES[raw]
+    normalized = _norm_place(raw)
+    for alias, search_name in _PLACE_SEARCH_ALIASES.items():
+        alias_norm = _norm_place(alias)
+        if alias_norm and (alias_norm in normalized or normalized in alias_norm):
+            return search_name
+    return raw
+
+
+def known_place_location(name: str, context: GeocodeContext) -> str | None:
+    normalized = _norm_place(name)
+    for alias, (lng, lat, country) in _KNOWN_PLACE_ANCHORS.items():
+        alias_norm = _norm_place(alias)
+        if (
+            country == context.country_code
+            and alias_norm
+            and (alias_norm in normalized or normalized in alias_norm)
+            and haversine_km((lng, lat), (context.lng, context.lat)) <= _MAX_CITY_DISTANCE_KM
+        ):
+            return f"{lng:.6f},{lat:.6f}"
+    return None
 
 
 def city_center_for_name(name: str, context: GeocodeContext) -> str | None:

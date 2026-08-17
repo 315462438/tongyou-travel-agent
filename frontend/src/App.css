@@ -182,3 +182,140 @@
     border-right-color: var(--border);
   }
 }
+
+/* 行李清单表格悬停显示操作按钮 */
+.trip-packing-table tbody tr:hover .trip-packing-actions {
+  opacity: 1 !important;
+}
+
+.trip-packing-table tbody tr {
+  transition: background-color 0.2s;
+}
+
+.trip-packing-table tbody tr:hover {
+  background-color: #fafafa;
+}
+
+
+/* 表格式行程展示 */
+.trip-table {
+  width: 100%;
+  border-radius: 8px;
+  overflow: hidden;
+  background: white;
+  margin-bottom: 16px;
+}
+
+.trip-table-header {
+  display: grid;
+  grid-template-columns: 140px 1fr 180px 100px 100px;
+  gap: 12px;
+  padding: 12px 16px;
+  background: #f5f5f5;
+  font-weight: 600;
+  font-size: 14px;
+  color: #666;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.trip-table-row {
+  display: grid;
+  grid-template-columns: 140px 1fr 180px 100px 100px;
+  gap: 12px;
+  padding: 16px;
+  border-bottom: 1px solid #f0f0f0;
+  transition: background-color 0.2s;
+  cursor: move;
+}
+
+.trip-table-row:hover {
+  background-color: #fafafa;
+}
+
+.trip-table-row.flash {
+  animation: flash 1s ease;
+}
+
+.trip-table-col-time {
+  font-size: 14px;
+  color: #ff6b35;
+  font-weight: 500;
+}
+
+.trip-table-col-activity {
+  cursor: pointer;
+}
+
+.trip-activity-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 4px;
+}
+
+.trip-activity-location {
+  font-size: 13px;
+  color: #666;
+  margin-bottom: 4px;
+}
+
+.trip-activity-desc {
+  font-size: 13px;
+  color: #999;
+  white-space: pre-wrap;
+}
+
+.trip-table-col-transport {
+  font-size: 13px;
+  color: #666;
+}
+
+.trip-table-col-price {
+  font-size: 14px;
+  color: #ff6b35;
+  font-weight: 500;
+}
+
+.trip-table-col-ops {
+  display: flex;
+  gap: 8px;
+}
+
+.trip-table-btn-edit,
+.trip-table-btn-delete {
+  background: #f5f5f5;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 16px;
+  transition: background-color 0.2s;
+}
+
+.trip-table-btn-edit:hover {
+  background: #ffe8dc;
+}
+
+.trip-table-btn-delete:hover {
+  background: #ffebee;
+}
+
+.trip-table-comments {
+  grid-column: 1 / -1;
+  padding: 12px;
+  background: #fafafa;
+  border-radius: 4px;
+  margin-top: 8px;
+}
+
+.trip-edit-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.trip-edit-checkbox input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+}
+

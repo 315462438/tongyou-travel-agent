@@ -60,6 +60,19 @@ def pending_schema_changes(engine: Engine) -> list[str]:
     return pending
 
 
+def _sqlite_has_column(conn, table: str, column: str) -> bool:
+    rows = conn.execute(text(f"PRAGMA table_info({table})")).mappings().all()
+    return any(row["name"] == column for row in rows)
+
+
+def _add_column_if_missing(conn, table: str, column: str, definition: str) -> None:
+    if conn.dialect.name == "sqlite":
+        if not _sqlite_has_column(conn, table, column):
+            conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {definition}"))
+        return
+    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {definition}"))
+
+
 def migrate_and_bootstrap(engine: Engine) -> None:
     with engine.begin() as conn:
         # 站点登录表结构变了（加 user_id 进主键）→ 重建（临时数据可弃）
@@ -76,127 +89,127 @@ def migrate_and_bootstrap(engine: Engine) -> None:
     logger.info("applying schema changes (%d): %s", len(pending), pending[:12])
 
     with engine.begin() as conn:
+        is_sqlite = conn.dialect.name == "sqlite"
         # 抢不到锁就放弃这一轮迁移（下次启动重来），不要把用户那一轮拖进死锁
-        conn.execute(text(f"SET LOCAL lock_timeout = '{_DDL_LOCK_TIMEOUT}'"))
+        if not is_sqlite:
+            conn.execute(text(f"SET LOCAL lock_timeout = '{_DDL_LOCK_TIMEOUT}'"))
         # 存量表补 user_id 列
-        conn.execute(text("ALTER TABLE travel_conversation ADD COLUMN IF NOT EXISTS user_id VARCHAR(32)"))
-        conn.execute(text("ALTER TABLE travel_memory ADD COLUMN IF NOT EXISTS user_id VARCHAR(32)"))
+        _add_column_if_missing(conn, "travel_conversation", "user_id", "VARCHAR(32)")
+        _add_column_if_missing(conn, "travel_memory", "user_id", "VARCHAR(32)")
         # Phase 68：单页分析任务归属（此前 /api/agent/run 无鉴权，补上后按 user_id 校验）
-        conn.execute(text("ALTER TABLE travel_task ADD COLUMN IF NOT EXISTS user_id VARCHAR(32)"))
+        _add_column_if_missing(conn, "travel_task", "user_id", "VARCHAR(32)")
         # Phase 17：三元组归槽（key）+ 明确表达标记（explicit）
-        conn.execute(text("ALTER TABLE travel_memory ADD COLUMN IF NOT EXISTS key VARCHAR(64)"))
-        conn.execute(text("ALTER TABLE travel_memory ADD COLUMN IF NOT EXISTS explicit BOOLEAN DEFAULT FALSE"))
+        _add_column_if_missing(conn, "travel_memory", "key", "VARCHAR(64)")
+        _add_column_if_missing(conn, "travel_memory", "explicit", "BOOLEAN DEFAULT FALSE")
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_conv_user ON travel_conversation (user_id)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_mem_user ON travel_memory (user_id)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_mem_key ON travel_memory (key)"))
         # Phase 45：记忆访问频率（重要性评分补第四根柱子）
-        conn.execute(text("ALTER TABLE travel_memory ADD COLUMN IF NOT EXISTS hit_count INTEGER DEFAULT 0"))
+        _add_column_if_missing(conn, "travel_memory", "hit_count", "INTEGER DEFAULT 0")
         # Phase 57：睡眠整合门控时间
-        conn.execute(text("ALTER TABLE travel_user ADD COLUMN IF NOT EXISTS memory_consolidated_at TIMESTAMP"))
+        _add_column_if_missing(conn, "travel_user", "memory_consolidated_at", "TIMESTAMP")
+        # 每天的自定义标题（2026-08-14）
+        _add_column_if_missing(conn, "travel_trip", "day_titles_json", "TEXT")
         # 2026-07-31：退役「当前行程」(trip_state) 记忆槽——时点事实伪装成长期偏好，
         # 会把旧行程的日期/预算泄漏进新行程（线上真实 bug）。跨会话指代消解改由
         # memory.recent_plan_hint 确定性提供。存量行清掉（幂等）。
         conn.execute(text("DELETE FROM travel_memory WHERE type = 'trip_state'"))
         # 2026-07-31 跨会话检索索引：会话级 destination + 首条攻略消息 id
-        conn.execute(text("ALTER TABLE travel_conversation ADD COLUMN IF NOT EXISTS destination VARCHAR(64)"))
-        conn.execute(text(
-            "ALTER TABLE travel_conversation ADD COLUMN IF NOT EXISTS guide_message_id VARCHAR(32)"
-        ))
+        _add_column_if_missing(conn, "travel_conversation", "destination", "VARCHAR(64)")
+        _add_column_if_missing(conn, "travel_conversation", "guide_message_id", "VARCHAR(32)")
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_conv_dest ON travel_conversation (destination)"))
         # 存量回填：每个会话取**最早**一条带 sources 的 assistant 消息（那就是首版攻略）。
         # 只填空值，幂等；meta_json 全部由 json.dumps 写出，但仍加 '{%' 前缀防脏数据炸 cast。
-        conn.execute(text("""
-            UPDATE travel_conversation c
-               SET destination = sub.dest, guide_message_id = sub.mid
-              FROM (
-                    SELECT DISTINCT ON (m.conversation_id)
-                           m.conversation_id AS cid, m.id AS mid,
-                           (m.meta_json::json -> 'preference' ->> 'destination') AS dest
-                      FROM travel_message m
-                     WHERE m.role = 'assistant'
-                       AND m.meta_json LIKE '{%'
-                       AND m.meta_json LIKE '%"sources"%'
-                     ORDER BY m.conversation_id, m.created_at ASC
-                   ) sub
-             WHERE c.id = sub.cid
-               AND sub.dest IS NOT NULL AND sub.dest <> ''
-               AND (c.destination IS NULL OR c.destination = '')
-        """))
+        if not is_sqlite:
+            conn.execute(text("""
+                UPDATE travel_conversation c
+                   SET destination = sub.dest, guide_message_id = sub.mid
+                  FROM (
+                        SELECT DISTINCT ON (m.conversation_id)
+                               m.conversation_id AS cid, m.id AS mid,
+                               (m.meta_json::json -> 'preference' ->> 'destination') AS dest
+                          FROM travel_message m
+                         WHERE m.role = 'assistant'
+                           AND m.meta_json LIKE '{%'
+                           AND m.meta_json LIKE '%"sources"%'
+                         ORDER BY m.conversation_id, m.created_at ASC
+                       ) sub
+                 WHERE c.id = sub.cid
+                   AND sub.dest IS NOT NULL AND sub.dest <> ''
+                   AND (c.destination IS NULL OR c.destination = '')
+            """))
         # Phase 27b：zip 多文件技能包，旧的纯文本单文件行 files_json 留空即可（见模型注释）
-        conn.execute(text("ALTER TABLE travel_user_skill ADD COLUMN IF NOT EXISTS files_json TEXT"))
+        _add_column_if_missing(conn, "travel_user_skill", "files_json", "TEXT")
         # Phase 30：历史压缩（早期轮次折叠成结构化摘要）
-        conn.execute(text("ALTER TABLE travel_conversation ADD COLUMN IF NOT EXISTS history_summary TEXT"))
-        conn.execute(text(
-            "ALTER TABLE travel_conversation ADD COLUMN IF NOT EXISTS history_summary_count INTEGER DEFAULT 0"
-        ))
+        _add_column_if_missing(conn, "travel_conversation", "history_summary", "TEXT")
+        _add_column_if_missing(conn, "travel_conversation", "history_summary_count", "INTEGER DEFAULT 0")
         # Phase 35b：邀请确认流（存量成员默认已接受）
-        conn.execute(text(
-            "ALTER TABLE travel_trip_member ADD COLUMN IF NOT EXISTS status VARCHAR(16) DEFAULT 'accepted'"
-        ))
+        _add_column_if_missing(conn, "travel_trip_member", "status", "VARCHAR(16) DEFAULT 'accepted'")
         # Phase 36：行程预算/日期/来源联动 + 条目卡片字段
         for ddl in (
-            "ALTER TABLE travel_trip ADD COLUMN IF NOT EXISTS budget FLOAT",
-            "ALTER TABLE travel_trip ADD COLUMN IF NOT EXISTS start_date VARCHAR(10)",
-            "ALTER TABLE travel_trip ADD COLUMN IF NOT EXISTS source_conversation_id VARCHAR(32)",
-            "ALTER TABLE travel_trip ADD COLUMN IF NOT EXISTS source_message_id VARCHAR(32)",
-            "ALTER TABLE travel_trip_stop ADD COLUMN IF NOT EXISTS start_time VARCHAR(5)",
-            "ALTER TABLE travel_trip_stop ADD COLUMN IF NOT EXISTS stay_min INTEGER",
-            "ALTER TABLE travel_trip_stop ADD COLUMN IF NOT EXISTS transport VARCHAR(16)",
-            "ALTER TABLE travel_trip_stop ADD COLUMN IF NOT EXISTS ticket_price FLOAT",
-            "ALTER TABLE travel_trip_stop ADD COLUMN IF NOT EXISTS tags VARCHAR(128)",
+            ("travel_trip", "budget", "FLOAT"),
+            ("travel_trip", "start_date", "VARCHAR(10)"),
+            ("travel_trip", "source_conversation_id", "VARCHAR(32)"),
+            ("travel_trip", "source_message_id", "VARCHAR(32)"),
+            ("travel_trip_stop", "start_time", "VARCHAR(5)"),
+            ("travel_trip_stop", "stay_min", "INTEGER"),
+            ("travel_trip_stop", "transport", "VARCHAR(16)"),
+            ("travel_trip_stop", "ticket_price", "FLOAT"),
+            ("travel_trip_stop", "tags", "VARCHAR(128)"),
             # Phase 38：presence
-            "ALTER TABLE travel_trip_member ADD COLUMN IF NOT EXISTS last_seen TIMESTAMP",
-            "ALTER TABLE travel_trip_member ADD COLUMN IF NOT EXISTS editing_day INTEGER",
+            ("travel_trip_member", "last_seen", "TIMESTAMP"),
+            ("travel_trip_member", "editing_day", "INTEGER"),
             # Phase 42：分享链接
-            "ALTER TABLE travel_trip ADD COLUMN IF NOT EXISTS invite_token VARCHAR(32)",
+            ("travel_trip", "invite_token", "VARCHAR(32)"),
             # Phase 51：结构化导入——计划预算按类别拆分
-            "ALTER TABLE travel_trip ADD COLUMN IF NOT EXISTS budget_breakdown_json TEXT",
+            ("travel_trip", "budget_breakdown_json", "TEXT"),
             # Phase 54：结构化逐日性质/过夜城市 + 攻略酒店候选
-            "ALTER TABLE travel_trip ADD COLUMN IF NOT EXISTS day_plan_json TEXT",
-            "ALTER TABLE travel_trip ADD COLUMN IF NOT EXISTS hotel_recommendations_json TEXT",
+            ("travel_trip", "day_plan_json", "TEXT"),
+            ("travel_trip", "hotel_recommendations_json", "TEXT"),
             # Phase 73：admin 在线状态。存量用户留 NULL（= 从未活跃），不回填伪造时间。
             # **必须 TIMESTAMPTZ**：服务器 TimeZone=Asia/Shanghai，往 naive TIMESTAMP 列写
             # aware UTC 值时，Postgres 会按会话时区折算成本地时间存进去；读回来又被当 UTC 解读，
             # 凭空多出 8 小时 → `now - last` 为负 → 所有人永远显示「在线」。见 pitfalls。
-            "ALTER TABLE travel_user ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ",
+            ("travel_user", "last_seen_at", "TIMESTAMPTZ"),
             # Phase 81：个人主页与社交资料。新表由 Base.metadata.create_all 创建；存量用户表补列。
-            "ALTER TABLE travel_user ADD COLUMN IF NOT EXISTS display_name VARCHAR(40)",
-            "ALTER TABLE travel_user ADD COLUMN IF NOT EXISTS avatar_upload_id VARCHAR(32)",
-            "ALTER TABLE travel_user ADD COLUMN IF NOT EXISTS bio VARCHAR(240)",
-            "ALTER TABLE travel_user ADD COLUMN IF NOT EXISTS home_city VARCHAR(64)",
-            "ALTER TABLE travel_user ADD COLUMN IF NOT EXISTS travel_styles_json TEXT",
-            "ALTER TABLE travel_user ADD COLUMN IF NOT EXISTS profile_public BOOLEAN DEFAULT TRUE",
+            ("travel_user", "display_name", "VARCHAR(40)"),
+            ("travel_user", "avatar_upload_id", "VARCHAR(32)"),
+            ("travel_user", "bio", "VARCHAR(240)"),
+            ("travel_user", "home_city", "VARCHAR(64)"),
+            ("travel_user", "travel_styles_json", "TEXT"),
+            ("travel_user", "profile_public", "BOOLEAN DEFAULT TRUE"),
             # Phase 87：行李格「是谁勾的」。**表本身已由 create_all 建过**，加列必须显式写在
             # 这里——`create_all` 只补缺失的表，不给已存在的表加列（本次上线即中招：
             # 先部署了不带该列的版本，第二次部署时模型有了列、库里却没有）。
-            "ALTER TABLE travel_trip_packing_state ADD COLUMN IF NOT EXISTS updated_by VARCHAR(32) DEFAULT ''",
+            ("travel_trip_packing_state", "updated_by", "VARCHAR(32) DEFAULT ''"),
             # Phase 87b：记账支持「花费日期」（补记昨天的账很常见）。同上，表已存在必须显式加列。
-            "ALTER TABLE travel_trip_expense ADD COLUMN IF NOT EXISTS spent_at VARCHAR(10) DEFAULT ''",
+            ("travel_trip_expense", "spent_at", "VARCHAR(10) DEFAULT ''"),
             # Phase 91 surface 投影：压缩改为「追加遮蔽事件」而非覆盖会话字段。
             # 老规矩——表已存在，create_all 不会加列，必须显式写在这里。
-            "ALTER TABLE travel_message ADD COLUMN IF NOT EXISTS surface_op VARCHAR(12) DEFAULT 'append'",
-            "ALTER TABLE travel_message ADD COLUMN IF NOT EXISTS shadow_from_id VARCHAR(32)",
-            "ALTER TABLE travel_message ADD COLUMN IF NOT EXISTS shadow_to_id VARCHAR(32)",
+            ("travel_message", "surface_op", "VARCHAR(12) DEFAULT 'append'"),
+            ("travel_message", "shadow_from_id", "VARCHAR(32)"),
+            ("travel_message", "shadow_to_id", "VARCHAR(32)"),
+        ):
+            _add_column_if_missing(conn, *ddl)
+        if not is_sqlite:
             # 已按 naive 建过列的部署（本次上线即中招）就地转换：Postgres 会按会话时区
             # 把 naive 值解读成本地时间再转 UTC，正好把之前存歪的值掰回来。
-            """DO $$
-            BEGIN
-                IF EXISTS (SELECT 1 FROM information_schema.columns
-                           WHERE table_name='travel_user' AND column_name='last_seen_at'
-                             AND data_type='timestamp without time zone') THEN
-                    ALTER TABLE travel_user
-                        ALTER COLUMN last_seen_at TYPE TIMESTAMPTZ;
-                END IF;
-                IF EXISTS (SELECT 1 FROM information_schema.columns
-                           WHERE table_name='travel_support_message' AND column_name='created_at'
-                             AND data_type='timestamp without time zone') THEN
-                    ALTER TABLE travel_support_message
-                        ALTER COLUMN created_at TYPE TIMESTAMPTZ,
-                        ALTER COLUMN read_at TYPE TIMESTAMPTZ;
-                END IF;
-            END $$;""",
-        ):
-            conn.execute(text(ddl))
+            conn.execute(text("""DO $$
+                BEGIN
+                    IF EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name='travel_user' AND column_name='last_seen_at'
+                                 AND data_type='timestamp without time zone') THEN
+                        ALTER TABLE travel_user
+                            ALTER COLUMN last_seen_at TYPE TIMESTAMPTZ;
+                    END IF;
+                    IF EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name='travel_support_message' AND column_name='created_at'
+                                 AND data_type='timestamp without time zone') THEN
+                        ALTER TABLE travel_support_message
+                            ALTER COLUMN created_at TYPE TIMESTAMPTZ,
+                            ALTER COLUMN read_at TYPE TIMESTAMPTZ;
+                    END IF;
+                END $$;"""))
 
     _bootstrap_admin_and_backfill(engine)
 

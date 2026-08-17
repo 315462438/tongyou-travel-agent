@@ -110,7 +110,7 @@ async def geocode_names(
     from app.db.session import get_session
     from app.tools.geocode import (
         city_center_for_name, geocode_cache_key, global_search_poi, overseas_search_name,
-        location_near_context, resolve_city_context,
+        known_place_location, location_near_context, resolve_city_context,
     )
 
     uniq = list(dict.fromkeys(n for n in names if n and n.strip()))  # 去重去空、保序
@@ -147,9 +147,10 @@ async def geocode_names(
         for name in misses:
             try:
                 center = city_center_for_name(name, context)
+                known_place = known_place_location(name, context)
                 fetched.append((
                     name,
-                    {"location": center} if center else await global_search_poi(
+                    {"location": center or known_place} if center or known_place else await global_search_poi(
                         overseas_search_name(name), context,
                     ),
                 ))
@@ -198,6 +199,12 @@ class DraftStop(BaseModel):
     note: str = ""
     # 表示「从上一地点到本地点」的交通方式，与 TravelTripStop/segment-times 语义一致。
     transport: str = ""
+    # Phase 63：攻略导入时保留时间信息
+    start_time: str = ""  # 格式 "HH:MM"
+    stay_min: int | None = None  # 停留时长（分钟）
+    # 是否是可定位的地点：True=景点/餐厅/酒店等（需 geocode 上地图），
+    # False=起床/早餐/退房等日常活动（只留在时间线，不参与 geocode）
+    is_place: bool = True
 
 
 class DraftStay(BaseModel):
@@ -217,6 +224,7 @@ class DraftDayPlan(BaseModel):
     type: str = "stay"  # stay / transit / return
     overnight_required: bool = True
     overnight_city: str = ""
+    day_title: str = ""  # 攻略中的每日标题，如 "Day 1 10.1 南京 → 吉隆坡：双子塔与无边泳池"
 
 
 class HotelOption(BaseModel):
@@ -236,6 +244,23 @@ class BudgetItem(BaseModel):
     amount: float
 
 
+class DraftFood(BaseModel):
+    """攻略导入时的美食推荐。"""
+
+    name: str
+    category: str = "正餐"  # 小吃/正餐/甜点
+    city: str = ""
+    price: float | None = None  # 人均参考价
+    note: str = ""
+
+
+class DraftTip(BaseModel):
+    """攻略导入时的避坑提示。"""
+
+    level: str = "notice"  # important(红)/notice(橙)
+    content: str
+
+
 class TripImportSummary(BaseModel):
     """攻略导入的全局小对象；与逐日地点分开抽取，避免长行程 JSON 超限。"""
 
@@ -244,6 +269,8 @@ class TripImportSummary(BaseModel):
     days: int
     hotel_options: list[HotelOption] = []
     budget_items: list[BudgetItem] = []
+    foods: list[DraftFood] = []
+    tips: list[DraftTip] = []
 
 
 class TripImportDays(BaseModel):
@@ -287,6 +314,9 @@ class TripDraft(BaseModel):
     day_plans: list[DraftDayPlan] = []
     hotel_options: list[HotelOption] = []
     budget_items: list[BudgetItem] = []
+    # 攻略导入时提取的美食推荐和避坑贴士（落对应面板）
+    foods: list[DraftFood] = []
+    tips: list[DraftTip] = []
     # 2026-07-31：逐天抽取时失败的天。非空 = 部分成功，调用方据此写「部分导入」状态并
     # 提供只重跑这些天的入口（此前一天失败会连同已成功的天一起作废）。
     failed_days: list[int] = []

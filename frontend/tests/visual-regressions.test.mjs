@@ -72,13 +72,17 @@ test('collaborative trip follows the reference layout while inheriting platform 
   assert.match(phase86, /\.trips-overlay \.trip-jsmap,[\s\S]*max-width:\s*none/s)
 })
 
-test('desktop trip board uses budget-days, event timeline, and map columns', () => {
+test('desktop trip board uses budget-days, itinerary table, and map columns', () => {
   const phase86 = css.slice(css.indexOf('Phase 86：协同行程参考稿视觉重构'))
   assert.match(trips, /trip-3col trip-view-\$\{workspaceView\}/)
   assert.match(trips, /days\.filter\(\(d\) => d === selectedDay\)\.map/)
   assert.match(trips, /className="trip-day-sidebar"/)
   assert.match(trips, /className="trip-budget-summary"/)
-  assert.match(trips, /className="trip-event-item"/)
+  assert.match(trips, /className="trip-table-shell"/)
+  assert.match(trips, /className="trip-table-header"/)
+  assert.match(trips, /className=\{`trip-table-row/)
+  assert.match(trips, /className="trip-table-col-time">时段/)
+  assert.match(trips, /className="trip-table-col-activity">地点与活动/)
   assert.match(trips, /className="trip-map-card-head"/)
   assert.match(trips, /右：每日地图（桌面固定，参考 HTML 的地图侧栏）/)
   assert.match(phase86, /\.trips-overlay \.trip-3col\s*\{[^}]*display:\s*grid[^}]*grid-template-columns:\s*clamp\(220px, 17vw, 270px\) minmax\(440px, 1fr\) clamp\(370px, 27vw, 430px\)/s)
@@ -87,7 +91,8 @@ test('desktop trip board uses budget-days, event timeline, and map columns', () 
   assert.match(phase86, /\.trips-overlay \.trip-col-map\s*\{[^}]*grid-column:\s*3/s)
   assert.match(phase86, /\.trips-overlay \.trip-view-tool \.trip-col-timeline\s*\{\s*display:\s*none/)
   assert.match(phase86, /\.trips-overlay \.trip-view-day \.trip-col-ai\s*\{\s*display:\s*none/)
-  assert.match(phase86, /\.trips-overlay \.trip-day-section::before\s*\{[^}]*background:\s*#d9deea/s)
+  assert.match(phase86, /\.trips-overlay \.trip-table-header,[\s\S]*\.trips-overlay \.trip-table-row\s*\{[^}]*display:\s*grid/s)
+  assert.match(phase86, /\.trips-overlay \.trip-day-section:has\(\.trip-table\)::before\s*\{[^}]*display:\s*none/s)
 })
 
 test('collaborative trip keeps mobile pane navigation after the desktop restyle', () => {
@@ -176,7 +181,6 @@ test('trip map exposes overseas coordinate repair and honest route estimates', (
   assert.match(trips, /\/geocode\/repair/)
   assert.match(trips, /🌐 重新定位/)
   assert.match(trips, /iss\.action === 'repair_geocode'/)
-  assert.match(trips, /estimated \? <em/)
   assert.match(trips, /OpenStreetMap contributors/)
   assert.match(css, /\.trip-map-tools\s*\{/)
   assert.match(css, /\.trip-repair-btn:disabled\s*\{[^}]*cursor:\s*wait/s)

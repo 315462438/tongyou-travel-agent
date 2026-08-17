@@ -117,11 +117,30 @@ def test_overseas_uses_global_provider_and_ignores_poisoned_legacy_cache(monkeyp
     monkeypatch.setattr("app.tools.geocode.global_search_poi", fake_global)
     monkeypatch.setattr("app.tools.amap.search_poi", should_not_call_amap)
 
-    result = asyncio.run(geocode_names(["双子塔"], "吉隆坡"))
-    assert result == {"双子塔": "101.711700,3.157900"}
-    assert calls == ["Petronas Towers"]  # Photon 只索引英文/当地名，中文先转换
+    result = asyncio.run(geocode_names(["独立广场"], "吉隆坡"))
+    assert result == {"独立广场": "101.711700,3.157900"}
+    assert calls == ["Merdeka Square Kuala Lumpur"]  # Photon 只索引英文/当地名，中文先转换
     keys = {row.key for row in db.execute(select(TravelGeocode)).scalars()}
-    assert "v2|photon|my|吉隆坡|双子塔" in keys
+    assert "v2|photon|my|吉隆坡|独立广场" in keys
+
+
+def test_overseas_known_place_handles_parenthetical_alias_without_network(monkeypatch, db):
+    @contextmanager
+    def fake_session():
+        yield db
+
+    async def fake_context(city, force_refresh=False):
+        return GeocodeContext(city=city, country_code="my", lng=101.6869, lat=3.1390)
+
+    async def should_not_call_global(name, context):
+        raise AssertionError("KLIA should be resolved by deterministic place anchors")
+
+    monkeypatch.setattr("app.db.session.get_session", fake_session)
+    monkeypatch.setattr("app.tools.geocode.resolve_city_context", fake_context)
+    monkeypatch.setattr("app.tools.geocode.global_search_poi", should_not_call_global)
+
+    result = asyncio.run(geocode_names(["吉隆坡国际机场（KLIA）"], "吉隆坡"))
+    assert result == {"吉隆坡国际机场（KLIA）": "101.709100,2.745600"}
 
 
 def test_force_refresh_bypasses_v2_cache(monkeypatch, wired):

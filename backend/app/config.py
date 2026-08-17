@@ -241,7 +241,7 @@ class Settings(BaseSettings):
     xhs_reuse_image_max_hours: int = 20
     # 导入协同行程：单天结构化抽取的输出上限。3000 太低——线上 6 天攻略切到**单天**
     # 仍然 JSON 中途截断（「自动分段仍失败」的真相）。
-    trip_import_chunk_max_tokens: int = 8000
+    trip_import_chunk_max_tokens: int = 16000  # 提到 16k，应对超详细攻略的单日内容
     deep_research_max_xhs: int = 4  # 深度研究每轮小红书调用配额（搜索+详情合计）
     # 小红书暂不接入（风控封锁云服务器 IP，见 docs/pitfalls/小红书风控封锁云服务器IP.md）
     # 路线规划走必应搜索；本地想启用可在 .env 设 XHS_ENABLED=true

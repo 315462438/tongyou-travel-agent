@@ -305,6 +305,8 @@ class TravelTrip(Base):
     # Phase 54：逐日类型/过夜城市，以及攻略里的酒店候选（候选不等于已预订住宿）。
     day_plan_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     hotel_recommendations_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 每天的自定义标题，JSON 格式：{"1": "南京-吉隆坡", "2": "吉隆坡-仙本那"}
+    day_titles_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     start_date: Mapped[str | None] = mapped_column(String(10), nullable=True)  # YYYY-MM-DD，天气检查用
     # Phase 36 对话联动：从攻略消息导入时记录来源，板上可跳回原对话
     source_conversation_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
