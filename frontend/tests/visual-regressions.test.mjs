@@ -85,7 +85,10 @@ test('desktop trip board uses budget-days, itinerary table, and map columns', ()
   assert.match(trips, /className="trip-table-col-activity">地点与活动/)
   assert.match(trips, /className="trip-map-card-head"/)
   assert.match(trips, /右：每日地图（桌面固定，参考 HTML 的地图侧栏）/)
-  assert.match(phase86, /\.trips-overlay \.trip-3col\s*\{[^}]*display:\s*grid[^}]*grid-template-columns:\s*clamp\(220px, 17vw, 270px\) minmax\(440px, 1fr\) clamp\(370px, 27vw, 430px\)/s)
+  // 三栏宽度是**设计快照**：改了就红，红了不代表坏了，而是提醒确认这次调整是有意的。
+  // 2026-08-18 跟随 commit 0b2e6fe「Polish trip planning interface」更新——
+  // 左侧日期栏与右侧地图栏收窄、中间行程表加宽（把版面让给主角）。
+  assert.match(phase86, /\.trips-overlay \.trip-3col\s*\{[^}]*display:\s*grid[^}]*grid-template-columns:\s*clamp\(176px, 14vw, 220px\) minmax\(520px, 1fr\) clamp\(320px, 24vw, 390px\)/s)
   assert.match(phase86, /\.trips-overlay \.trip-day-sidebar\s*\{[^}]*grid-column:\s*1/s)
   assert.match(phase86, /\.trips-overlay \.trip-col-timeline\s*\{[^}]*grid-column:\s*2/s)
   assert.match(phase86, /\.trips-overlay \.trip-col-map\s*\{[^}]*grid-column:\s*3/s)
