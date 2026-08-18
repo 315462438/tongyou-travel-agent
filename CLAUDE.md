@@ -443,7 +443,7 @@ class/id 命中 `nav|menu|sidebar|footer|toc|comment…` 的容器，保留 h1-h
 去引用角标）接 `research_tools._html_to_text`；`reduce_a11y`（**只取引号里的 label**，无引号
 即纯结构节点丢弃，连续重复行折叠）接 `browser_tool._snapshot_to_text`——该函数此前**名不副实**，
 docstring 写"提取正文"而实际只做头部截断，喂进模型的是带 uid/role/属性的 a11y 树原文。
-认不得的格式**原样通过**（`reduce_auto`），兜底仍是 `TruncateBudget`。真机实测：HTML 省
+认不得的格式**原样通过**（`reduce_auto`），兜底是调用方原有的**尾部截断**（`text[:limit]`）。⚠️ 订正：Phase 90 的 `truncate.py`（`TruncateBudget`/`TOOL_RESULT`/`BRIEF`，中段截断）**在 app/ 里一次都没被调用**，只有测试引用——它是死代码；生产里所有截断都是 `[:n]` 尾部切片。这不构成正确性问题（尾部截断本身幂等，需要那个模块的是中段截断），但别再以为它在生效。真机实测：HTML 省
 13-33%、chrome 特征串归零；a11y 快照去哪儿 31144→4324(-86%)、必应 -65%、百度百科 -80%，
 结构残留 0。⚠️ 三个**静默失效点**（不抛异常、日志干净、内容悄悄少了，全是真实样本才暴露的）：
 ①维基 `<html class="…-toc-pinned-…">` 命中 chrome 规则致整页归零 → 根元素永不按属性丢弃 +
