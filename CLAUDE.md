@@ -433,6 +433,21 @@ React Bits `Aurora`（低透明、pointer-events none、低动态偏好不挂载
 好友页，接力通知直达对应目的地；未读数每 30 秒及窗口聚焦时刷新。坑见
 `docs/pitfalls/事件通知必须与业务同事务且按事件去重.md`。
 
+**Phase 98 — 标签页未读提醒**：Phase 97 之后同行者仍需**打开页面**才看得到铃铛。自然的下一步
+Web Push **实测否掉**：投递由浏览器厂商的推送服务中转，服务器实测 `fcm.googleapis.com` **连不上**
+（Chrome/Edge 全走它，是绝大多数用户），Mozilla/APNs 通但份额可忽略（Safari 还要先装 PWA）；
+且国内用户浏览器本身也连不上 FCM，**服务器搬境外也没用**。改为靠浏览器自己就会显示的东西：
+未读时改**标签页标题**（`(3) 17同游…`）+ **favicon 红点**。无需权限、无 Service Worker、
+不依赖外部服务，覆盖「人挂着页面在干别的」这个最高频场景。纯函数 `badgedTitle` 在
+`interaction.ts`，hook `useAttentionBadge` 接 `Home.tsx` 的 `notificationUnread`（群聊未读天然计入）。
+⚠️ 三个要点：①**原始标题只在挂载时捕获一次**——拿 `document.title` 反复加工会叠成 `(1) (2) 标题`，
+有性质测试钉死 `badgedTitle(badgedTitle(t,1),2) === badgedTitle(t,2)`；②favicon **只在有/无未读
+翻转时重画**，不是每轮轮询都画；③画不出来时静默降级，标题提醒照常。favicon 用 **canvas 在现有
+图标上叠红点**而非另备一张图（品牌图标只有一份，换图标不用维护第二份；CSP 的 `img-src data:` 允许）。
+**刻意不做**：Web Push（收不到）、微信服务号模板消息（唯一能触达完全离开页面的用户，但需认证
+服务号+用户关注绑定，是产品决策）、标题闪烁（干扰大于价值）、按聚焦状态区分（Gmail/Slack 都不区分）。
+计划 `docs/task_plans/标签页未读提醒-2026-08-18.md`（`tests/interaction-utils.test.mjs` 35 passed）。
+
 **Phase 97 — 群聊消息进通知中心**：Phase 61 的群聊未读**只在行程板内部**（`Trips.tsx` 的本地
 state 靠轮询比对算出），人不进那个页面就永远不知道有人说话。现在 `add_chat_message` **同事务**
 给除发送者外的每个 accepted 成员写 `TravelNotification`（`type=trip_chat`、`target_kind=trip`），

@@ -10,6 +10,7 @@ import { AdminInvites } from '../components/AdminInvites'
 import { AdminSupport, SupportChat, useSupportUnread } from '../components/Support'
 import { useToast } from '../components/toast-context'
 import { API, authFetch, setToken } from '../api'
+import { useAttentionBadge } from '../hooks/useAttentionBadge'
 import { useNotificationUnread } from '../hooks/useNotificationUnread'
 import { useTypewriter } from '../hooks/useTypewriter'
 import {
@@ -416,6 +417,8 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
   const [showNotifications, setShowNotifications] = useState(false)
   const [socialUnread, refreshSocialUnread] = useNotificationUnread(showNotifications)
   const notificationUnread = annUnread + socialUnread
+  // Phase 98：未读时在标签页标题和 favicon 上提醒——人挂着页面在干别的时也能看到
+  useAttentionBadge(notificationUnread)
   // 群聊通知点开后要**自动展开群聊抽屉**——否则用户落到行程板还得自己找入口，
   // 等于把「有人说话了」的提示又还回去了一半。用一个自增序号触发，而不是布尔值：
   // 连续点两条不同行程的群聊通知时，布尔值第二次不会变化，抽屉就打不开。

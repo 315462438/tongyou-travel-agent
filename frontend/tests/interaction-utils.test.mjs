@@ -2,6 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  ATTENTION_BADGE_MAX,
+  badgedTitle,
   extractGuideHeadings,
   formatTripTimeRange,
   formatThinkingElapsed,
@@ -388,4 +390,34 @@ test('智能规划档预期文案不能混入深度推理的 4-6 分钟（Phase 
   assert.match(expectedHintFor('智能规划'), /3-4|2-3/)
   assert.doesNotMatch(expectedHintFor('智能规划'), /4-6|6 分钟/)
   assert.ok(expectedSecondsFor('智能规划') < expectedSecondsFor('深度推理'))
+})
+
+// ---------- 标签页未读提醒（Phase 98） ----------
+
+test('未读数拼进标题，0 时还原', () => {
+  assert.equal(badgedTitle('17同游 · 一起规划', 0), '17同游 · 一起规划')
+  assert.equal(badgedTitle('17同游 · 一起规划', 3), '(3) 17同游 · 一起规划')
+})
+
+test('反复加工不会把徽标叠起来', () => {
+  // 这是最容易写出来的 bug：拿 document.title 反复加工会变成 `(1) (2) 标题`。
+  const base = '17同游'
+  const once = badgedTitle(base, 1)
+  assert.equal(badgedTitle(once, 2), badgedTitle(base, 2))
+  assert.equal(badgedTitle(badgedTitle(badgedTitle(base, 5), 7), 0), base)
+})
+
+test('超过上限显示 99+，标题不被大数字撑长', () => {
+  assert.equal(badgedTitle('17同游', ATTENTION_BADGE_MAX), `(${ATTENTION_BADGE_MAX}) 17同游`)
+  assert.equal(badgedTitle('17同游', ATTENTION_BADGE_MAX + 1), `(${ATTENTION_BADGE_MAX}+) 17同游`)
+  assert.equal(badgedTitle('17同游', 99999), `(${ATTENTION_BADGE_MAX}+) 17同游`)
+  // 99+ 的产物再进一次也要能剥干净
+  assert.equal(badgedTitle(badgedTitle('17同游', 500), 0), '17同游')
+})
+
+test('脏输入不炸', () => {
+  assert.equal(badgedTitle('', 3), '(3) ')
+  assert.equal(badgedTitle('标题', -1), '标题')
+  assert.equal(badgedTitle('标题', 1.7), '(1) 标题')
+  assert.equal(badgedTitle('标题', NaN), '标题')
 })

@@ -536,3 +536,27 @@ export function mergeMessages<T extends MsgLike>(prev: T[], next: T[]): T[] {
   })
   return changed || out.length !== prev.length ? out : prev
 }
+
+// ---------- 标签页未读提醒（Phase 98） ----------
+//
+// 国内收不到 Web Push（Chrome/Edge 走 FCM，服务器和用户浏览器都连不上 fcm.googleapis.com，
+// 已实测），所以「人不在这个标签页时叫住他」只能靠浏览器本身就会显示的东西：标题和 favicon。
+// 覆盖的是最高频的真实场景——人挂着页面在干别的事。
+
+/** 未读徽标上限。超过就显示 99+，避免标题被一个大数字撑长。 */
+export const ATTENTION_BADGE_MAX = 99
+
+/**
+ * 把未读数拼进标签页标题。
+ *
+ * **必须传原始标题**（组件挂载时捕获一次），不能拿 `document.title` 反复加工——
+ * 那样会叠成 `(1) (2) 17同游`。这也是把它写成纯函数的原因：叠加是最容易写出来的 bug，
+ * 而它有一条一句话就能测的性质：`badgedTitle(badgedTitle(t, 1), 2) === badgedTitle(t, 2)`。
+ */
+export function badgedTitle(baseTitle: string, unread: number): string {
+  const base = (baseTitle || '').replace(/^\(\d+\+?\)\s*/, '')
+  const count = Math.max(0, Math.floor(unread || 0))
+  if (count <= 0) return base
+  const shown = count > ATTENTION_BADGE_MAX ? `${ATTENTION_BADGE_MAX}+` : String(count)
+  return `(${shown}) ${base}`
+}
