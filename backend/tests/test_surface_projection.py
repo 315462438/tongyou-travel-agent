@@ -230,7 +230,14 @@ def test_second_send_while_running_is_rejected(db, monkeypatch):
 
 
 def test_send_allowed_again_after_the_turn_finishes(db, monkeypatch):
-    """终稿之后必须能继续发，否则输入框就锁死了。"""
+    """终稿之后必须能继续发，否则输入框就锁死了。
+
+    ⚠️ 这条**不能**用 `_add()` 落终稿：`send_message` 写的是**真实 now**，而 `_add`
+    锚在固定的 `_T0`（2026-08-14）。两种时间基准混在一起，assistant 会按 created_at
+    排到 user 消息**前面** → `_is_running` 的 `after` 为空 → 落进过期兜底判为运行中
+    → 409。这样写的话只在 _T0 当天为真，之后每天都挂（本条曾是这样的时间炸弹，
+    2026-08-18 修）。终稿必须锚在真实的那条 user 消息之后。
+    """
     from app.api import chat_api
     from app.api.chat_api import SendMessageRequest
 
@@ -244,7 +251,13 @@ def test_send_allowed_again_after_the_turn_finishes(db, monkeypatch):
     monkeypatch.setattr(chat_api, "_owned", lambda d, c, u: db.get(TravelConversation, "c1"))
 
     bg = _BG()
-    chat_api.send_message("c1", SendMessageRequest(content="问1"), bg, db=db, user=_U())
-    _add(db, "assistant", "答1", 50)  # 终稿（非流式）
+    out = chat_api.send_message("c1", SendMessageRequest(content="问1"), bg, db=db, user=_U())
+    user_msg = db.get(TravelMessage, out["user_message_id"])
+    db.add(TravelMessage(  # 终稿（非流式），紧跟在那条真实 user 消息之后
+        conversation_id="c1", role="assistant", content="答1",
+        created_at=user_msg.created_at + timedelta(seconds=1),
+    ))
+    db.commit()
+
     chat_api.send_message("c1", SendMessageRequest(content="问2"), bg, db=db, user=_U())
     assert len(bg.tasks) == 2
