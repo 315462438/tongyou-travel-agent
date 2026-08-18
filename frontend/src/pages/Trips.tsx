@@ -182,22 +182,6 @@ const FAB_BY_TAB: Partial<Record<TripToolTab, string>> = {
   money: '+ 记一笔',
 }
 
-/** 行程状态（PRD 4.2 头部状态角标）。无出发日期时按「未开始」处理。 */
-function tripStatus(startDate: string, days: number): { key: string; label: string } {
-  if (!startDate) return { key: 'draft', label: '未定日期' }
-  const start = new Date(`${startDate}T00:00:00`)
-  if (Number.isNaN(start.getTime())) return { key: 'draft', label: '未定日期' }
-  const end = new Date(start)
-  end.setDate(end.getDate() + Math.max(1, days) - 1)
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  if (today < start) return { key: 'upcoming', label: '未开始' }
-  if (today > end) return { key: 'archived', label: '已结束' }
-  return { key: 'ongoing', label: '进行中' }
-}
-// Phase 51 计划预算类别展示顺序（与后端 normalize_budget_category 一致）
-const BUDGET_CAT_ORDER = ['住宿', '大交通', '交通', '餐饮', '门票', '其他']
-
 function tripDayDate(startDate: string, day: number): string {
   if (!startDate) return ''
   const date = new Date(`${startDate}T00:00:00`)
@@ -222,6 +206,696 @@ function tripDayDateFromTitle(title: string, day: number): string {
 
 function displayTripDayDate(trip: TripDetail, day: number): string {
   return tripDayDate(trip.start_date, day) || tripDayDateFromTitle(trip.title, day)
+}
+
+function parseTripStartDateInput(input: string): string | null {
+  const value = input.trim()
+  if (!value) return null
+  const full = value.match(/^(\d{4})[-./年](\d{1,2})[-./月](\d{1,2})日?$/)
+  const short = value.match(/^(\d{1,2})[-./月](\d{1,2})日?$/)
+  const year = full ? Number(full[1]) : new Date().getFullYear()
+  const month = Number(full ? full[2] : short?.[1])
+  const day = Number(full ? full[3] : short?.[2])
+  if (!month || !day) return null
+  const date = new Date(year, month - 1, day)
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+}
+
+function formatExportDayDate(date: string): string {
+  const shortDate = date.match(/^(\d{1,2})\.(\d{1,2})$/)
+  if (shortDate) return `${Number(shortDate[1])} 月 ${Number(shortDate[2])} 日`
+  return date.replace(/(\d+)年(\d+)月(\d+)日/, '$2 月 $3 日')
+}
+
+function exportWeekLabel(trip: TripDetail, day: number): string {
+  if (!trip.start_date) {
+    const title = trip.day_titles?.[day] || ''
+    return title.match(/周[一二三四五六日天]/)?.[0] || ''
+  }
+  const date = new Date(`${trip.start_date}T00:00:00`)
+  if (Number.isNaN(date.getTime())) return ''
+  date.setDate(date.getDate() + day - 1)
+  return `周${['日', '一', '二', '三', '四', '五', '六'][date.getDay()]}`
+}
+
+function formatExportDateRange(trip: TripDetail): string {
+  if (trip.start_date) {
+    const start = new Date(`${trip.start_date}T00:00:00`)
+    if (!Number.isNaN(start.getTime())) {
+      const end = new Date(start)
+      end.setDate(start.getDate() + Math.max(1, trip.days) - 1)
+      const fmt = (date: Date) => `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, '0')}.${String(date.getDate()).padStart(2, '0')}`
+      return `${fmt(start)} — ${fmt(end)}`
+    }
+  }
+  const titleRange = trip.title.match(/(\d{1,2})[./月](\d{1,2})(?:日)?\s*[—–-]\s*(\d{1,2})[./月](\d{1,2})/)
+  if (!titleRange) return '日期待定'
+  return `${titleRange[1]}.${titleRange[2]} — ${titleRange[3]}.${titleRange[4]}`
+}
+
+function exportCoverTitle(trip: TripDetail): string {
+  const source = trip.destination || trip.title || '协同行程'
+  return source
+    .replace(/\s*\d+\s*天\s*\d*\s*晚.*$/, '')
+    .replace(/[+、，,]/g, ' · ')
+    .replace(/\s*·\s*/g, ' · ')
+    .trim() || '协同行程'
+}
+
+function cleanExportDayTitle(title: string, day: number): string {
+  let value = (title || '').trim()
+  value = value.replace(new RegExp(`^\\s*Day\\s*0?${day}\\b`, 'i'), '').trim()
+  value = value.replace(/^[·.、:：\-—–\s]+/, '')
+  value = value.replace(/^\(?\d{1,2}[./月]\d{1,2}(?:日)?(?:\s*周[一二三四五六日天])?\)?/, '').trim()
+  value = value.replace(/^[·.、:：\-—–\s]+/, '')
+  return value.replace(/\s+/g, ' ').trim()
+}
+
+function exportTransportCostHtml(stop: TripStop): string {
+  const transport = stop.transport.trim()
+  const price = stop.ticket_price ? `¥${stop.ticket_price}` : ''
+  if (!transport && !price) return '<span class="weak">—</span>'
+  return [
+    transport ? `<div>${escapeDocHtml(transport)}</div>` : '',
+    price ? `<div class="cost-price">${escapeDocHtml(price)}</div>` : '',
+  ].filter(Boolean).join('')
+}
+
+function escapeDocHtml(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function escapeDocXml(value: unknown): string {
+  return escapeDocHtml(value).replace(/&#39;/g, '&apos;')
+}
+
+function safeDocFilename(name: string, suffix: string): string {
+  const base = (name || '协同行程').replace(/[\\/:*?"<>|\n\r\t]/g, '_').trim() || '协同行程'
+  return `${base}_${suffix}`
+}
+
+function documentTimeRange(stop: TripStop, next?: TripStop): string {
+  return formatTripTimeRange(stop.start_time, stop.stay_min, next?.start_time || '')
+    .replace('开始', '')
+    .trim() || '时间待定'
+}
+
+function isFoodStop(stop: TripStop): boolean {
+  return stop.tags?.includes('food') || (stop.note || '').includes('美食') || /餐|咖啡|小吃|饭|食|甜品|早餐|午餐|晚餐/.test(stop.name)
+}
+
+function isStayStop(stop: TripStop): boolean {
+  return (stop.note || '').includes('🏨') || (stop.note || '').includes('住宿') || stop.name.startsWith('🏨')
+}
+
+function isTimelineStop(stop: TripStop): boolean {
+  return !(isStayStop(stop) && !stop.start_time)
+}
+
+function createCrcTable(): number[] {
+  return Array.from({ length: 256 }, (_, n) => {
+    let c = n
+    for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
+    return c >>> 0
+  })
+}
+
+const ZIP_CRC_TABLE = createCrcTable()
+
+function crc32(bytes: Uint8Array): number {
+  let crc = 0xffffffff
+  bytes.forEach((byte) => { crc = ZIP_CRC_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8) })
+  return (crc ^ 0xffffffff) >>> 0
+}
+
+function createZipBlob(files: { name: string; content: string }[], type: string): Blob {
+  const encoder = new TextEncoder()
+  const chunks: Uint8Array[] = []
+  const central: Uint8Array[] = []
+  let offset = 0
+  const now = new Date()
+  const dosTime = (now.getHours() << 11) | (now.getMinutes() << 5) | Math.floor(now.getSeconds() / 2)
+  const dosDate = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate()
+  const write16 = (view: DataView, pos: number, value: number) => view.setUint16(pos, value, true)
+  const write32 = (view: DataView, pos: number, value: number) => view.setUint32(pos, value >>> 0, true)
+
+  files.forEach((file) => {
+    const name = encoder.encode(file.name)
+    const data = encoder.encode(file.content)
+    const crc = crc32(data)
+    const local = new Uint8Array(30 + name.length)
+    const localView = new DataView(local.buffer)
+    write32(localView, 0, 0x04034b50)
+    write16(localView, 4, 20)
+    write16(localView, 8, 0)
+    write16(localView, 10, dosTime)
+    write16(localView, 12, dosDate)
+    write32(localView, 14, crc)
+    write32(localView, 18, data.length)
+    write32(localView, 22, data.length)
+    write16(localView, 26, name.length)
+    local.set(name, 30)
+    chunks.push(local, data)
+
+    const dir = new Uint8Array(46 + name.length)
+    const dirView = new DataView(dir.buffer)
+    write32(dirView, 0, 0x02014b50)
+    write16(dirView, 4, 20)
+    write16(dirView, 6, 20)
+    write16(dirView, 12, dosTime)
+    write16(dirView, 14, dosDate)
+    write32(dirView, 16, crc)
+    write32(dirView, 20, data.length)
+    write32(dirView, 24, data.length)
+    write16(dirView, 28, name.length)
+    write32(dirView, 42, offset)
+    dir.set(name, 46)
+    central.push(dir)
+    offset += local.length + data.length
+  })
+
+  const centralSize = central.reduce((sum, item) => sum + item.length, 0)
+  const end = new Uint8Array(22)
+  const endView = new DataView(end.buffer)
+  write32(endView, 0, 0x06054b50)
+  write16(endView, 8, files.length)
+  write16(endView, 10, files.length)
+  write32(endView, 12, centralSize)
+  write32(endView, 16, offset)
+  const parts = [...chunks, ...central, end].map((part) => part.buffer.slice(part.byteOffset, part.byteOffset + part.byteLength) as ArrayBuffer)
+  return new Blob(parts, { type })
+}
+
+function buildTripShareHtml(
+  trip: TripDetail,
+  foods: FoodItem[],
+  tips: TipItem[],
+  packing: PackingData,
+  expenses: Expense[],
+): string {
+  const stopsByDay = Array.from({ length: Math.max(1, trip.days) }, (_, i) => i + 1)
+    .map((day) => ({
+      day,
+      date: displayTripDayDate(trip, day),
+      title: trip.day_titles?.[day] || trip.destination || '',
+      stops: trip.stops.filter((s) => s.day === day && isTimelineStop(s)).sort((a, b) => a.order_no - b.order_no),
+    }))
+  const allStays = trip.stops.filter(isStayStop).map((s) => ({ ...s, date: displayTripDayDate(trip, s.day) }))
+  const foodStops = stopsByDay.map((d) => ({ ...d, foods: d.stops.filter(isFoodStop) })).filter((d) => d.foods.length)
+  const packingGroups = Array.from(new Set(packing.items.map((i) => i.category || '通用')))
+    .map((category) => ({ category, items: packing.items.filter((i) => (i.category || '通用') === category) }))
+    .filter((g) => g.items.length)
+  const coverTitle = exportCoverTitle(trip)
+  const nightCount = Math.max(0, trip.days - 1)
+  const printTitle = `${coverTitle}｜${trip.days} 天 ${nightCount} 晚`
+
+  const styles = `
+    <style>
+      * { box-sizing: border-box; }
+      html { background: #fff; }
+      body {
+        margin: 0;
+        background: #fff;
+        color: #27272a;
+        font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+        font-size: 11px;
+        line-height: 1.55;
+      }
+      .print-header,
+      .print-footer { display: none; }
+      .doc-page { max-width: 176mm; margin: 0 auto; padding: 18mm 18mm 16mm; background: #fff; }
+      .doc-cover { margin: 0 0 30px; padding: 0 0 18px; border-bottom: 1px solid #e4e4e7; }
+      .cover-label { margin: 0 0 8px; color: #71717a; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+      h1 { margin: 0; font-size: 26px; line-height: 1.25; font-weight: 700; letter-spacing: 0; color: #18181b; }
+      .cover-subtitle { margin: 8px 0 0; font-size: 13px; font-weight: 500; color: #52525b; }
+      .cover-date { margin: 4px 0 0; font-size: 11px; color: #71717a; }
+      .overview { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 16px; color: #71717a; font-size: 10px; }
+      .overview b { color: #18181b; font-size: 12px; }
+      .day-section { margin: 24px 0 30px; break-inside: avoid-page; page-break-inside: avoid; }
+      .day-head { display: grid; grid-template-columns: 70px 1fr; column-gap: 12px; align-items: baseline; margin-bottom: 9px; break-after: avoid; page-break-after: avoid; }
+      .day-kicker { color: #3155c6; font-size: 10px; font-weight: 700; letter-spacing: .08em; }
+      .day-head h2 { margin: 0; color: #18181b; font-size: 18px; line-height: 1.35; page-break-after: avoid; }
+      .day-head p { margin: 2px 0 0; color: #3f3f46; font-size: 14px; font-weight: 500; line-height: 1.45; }
+      .route-box { margin: 10px 0 13px; padding: 10px 14px; border-radius: 6px; background: #f7f7f8; color: #52525b; break-inside: avoid; page-break-inside: avoid; }
+      .route-box b { display: block; margin-bottom: 3px; color: #18181b; font-size: 11px; }
+      .route-box span { color: #52525b; }
+      table { width: 100%; border-collapse: collapse; margin: 8px 0 18px; table-layout: fixed; page-break-inside: auto; }
+      thead { display: table-header-group; }
+      tr { break-inside: avoid; page-break-inside: avoid; }
+      th, td { padding: 8px 6px; text-align: left; vertical-align: top; word-break: break-word; border: 0; border-bottom: 1px solid #e4e4e7; }
+      th { background: #fafafa; color: #71717a; font-weight: 600; font-size: 10px; }
+      .itinerary-table { border-top: 1px solid #d4d4d8; }
+      .time { color: #3155c6; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+      .compact { color: #3f3f46; }
+      .cost-cell { color: #3f3f46; line-height: 1.45; }
+      .cost-price { margin-top: 2px; color: #3155c6; font-weight: 600; }
+      .price { color: #3155c6; font-weight: 600; }
+      .stop-name { font-weight: 600; font-size: 12px; color: #18181b; }
+      .note { color: #71717a; margin-top: 3px; font-size: 9.5px; line-height: 1.5; }
+      .weak { color: #a1a1aa; }
+      .module-section { margin: 26px 0; break-inside: avoid-page; page-break-inside: avoid; }
+      .module-section h2 { margin: 0 0 12px; padding-top: 10px; border-top: 1px solid #e4e4e7; color: #18181b; font-size: 18px; line-height: 1.35; page-break-after: avoid; }
+      .module-section h3 { margin: 14px 0 6px; font-size: 13px; color: #18181b; page-break-after: avoid; }
+      .cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+      .card { border: 1px solid #e4e4e7; border-radius: 6px; padding: 9px 10px; background: #fff; page-break-inside: avoid; }
+      .card b { display: block; margin-bottom: 3px; color: #18181b; }
+      .list { margin: 8px 0 0; padding-left: 18px; }
+      .list li { margin: 4px 0; }
+      .muted { color: #71717a; }
+      .footer { margin-top: 32px; padding-top: 12px; border-top: 1px solid #e4e4e7; color: #a1a1aa; text-align: center; font-size: 10px; }
+      @media print {
+        body { background: #fff; }
+        .doc-page { max-width: none; padding: 0; }
+        .no-print { display: none !important; }
+        .print-header { display: block; position: fixed; top: -10mm; left: 0; right: 0; padding-bottom: 4px; border-bottom: 1px solid #f4f4f5; color: #a1a1aa; font-size: 9px; }
+        .print-footer { display: block; position: fixed; bottom: -10mm; left: 0; right: 0; color: #a1a1aa; text-align: center; font-size: 9px; }
+        .print-footer::after { content: "第 " counter(page) " 页"; }
+        .doc-cover { break-after: avoid; page-break-after: avoid; }
+        .day-head,
+        .route-box,
+        .module-section h2,
+        h2,
+        h3 { break-after: avoid; page-break-after: avoid; }
+        .day-section,
+        .route-box,
+        .card,
+        tr { break-inside: avoid; page-break-inside: avoid; }
+      }
+      @page {
+        size: A4 portrait;
+        margin: 17mm 18mm 16mm;
+        @top-left { content: "${escapeDocHtml(printTitle)}"; color: #a1a1aa; font-size: 9px; }
+        @bottom-center { content: "第 " counter(page) " 页"; color: #a1a1aa; font-size: 9px; }
+      }
+    </style>
+  `
+
+  const itinerary = stopsByDay.map(({ day, date, title, stops }) => {
+    const route = stops.map((s) => s.name.replace(/^🏨\s*/, '')).filter(Boolean).join(' → ')
+    const rows = stops.length ? stops.map((stop, idx) => {
+      return `
+      <tr>
+        <td class="time">${escapeDocHtml(documentTimeRange(stop, stops[idx + 1]))}</td>
+        <td>
+          <div class="stop-name">${escapeDocHtml(stop.name.replace(/^🏨\s*/, ''))}</div>
+          ${stop.note ? `<div class="note">${escapeDocHtml(stop.note)}</div>` : ''}
+          ${stop.location ? `<div class="note">地图定位：${escapeDocHtml(stop.location)}</div>` : ''}
+        </td>
+        <td class="cost-cell">${exportTransportCostHtml(stop)}</td>
+      </tr>
+    `}).join('') : '<tr><td colspan="3" class="muted">暂无行程安排</td></tr>'
+    const dateLabel = formatExportDayDate(date)
+    const weekLabel = exportWeekLabel(trip, day)
+    const dayTitle = cleanExportDayTitle(title, day)
+    return `
+      <section class="day-section">
+        <div class="day-head">
+          <div class="day-kicker">DAY ${String(day).padStart(2, '0')}</div>
+          <div>
+            <h2>${escapeDocHtml(dateLabel ? `${dateLabel}${weekLabel ? ` · ${weekLabel}` : ''}` : `第 ${day} 天`)}</h2>
+            ${dayTitle ? `<p>${escapeDocHtml(dayTitle)}</p>` : ''}
+          </div>
+        </div>
+        ${route ? `<div class="route-box"><b>今日路线</b><span>${escapeDocHtml(route)}</span></div>` : ''}
+        <table class="itinerary-table">
+          <colgroup><col style="width:18%"><col style="width:62%"><col style="width:20%"></colgroup>
+          <thead><tr><th>时间</th><th>地点与活动</th><th>交通/花费</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </section>
+    `
+  }).join('')
+
+  const foodHtml = `
+    <section class="module-section">
+      <h2>美食</h2>
+      ${foodStops.length ? foodStops.map((d) => `
+        <h3>DAY ${String(d.day).padStart(2, '0')}${d.date ? ` · ${escapeDocHtml(formatExportDayDate(d.date))}` : ''}</h3>
+        <div class="cards">
+          ${d.foods.map((f) => `<div class="card"><b>${escapeDocHtml(f.name)}</b>${f.note ? `<div class="muted">${escapeDocHtml(f.note)}</div>` : ''}</div>`).join('')}
+        </div>
+      `).join('') : '<p class="muted">每日行程里暂未标记美食。</p>'}
+      ${foods.length ? `
+        <h3>攻略推荐/收藏</h3>
+        <div class="cards">
+          ${foods.map((f) => `
+            <div class="card">
+              <b>${f.is_top ? 'TOP · ' : ''}${escapeDocHtml(f.name)}</b>
+              <div class="muted">${[f.category, f.city, f.price ? `人均 ¥${f.price}` : '', f.note].filter(Boolean).map(escapeDocHtml).join(' · ')}</div>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+    </section>
+  `
+
+  const stayHtml = `
+    <section class="module-section">
+      <h2>住宿</h2>
+      ${allStays.length ? `
+        <table class="simple-table">
+          <colgroup><col style="width:18%"><col style="width:42%"><col style="width:28%"><col style="width:12%"></colgroup>
+          <thead><tr><th>日期</th><th>住宿</th><th>备注</th><th>参考价</th></tr></thead>
+          <tbody>
+            ${allStays.map((s) => `
+              <tr>
+                <td class="time">DAY ${String(s.day).padStart(2, '0')}${s.date ? `<br>${escapeDocHtml(formatExportDayDate(s.date))}` : ''}</td>
+                <td><b>${escapeDocHtml(s.name.replace(/^🏨\s*/, ''))}</b></td>
+                <td class="muted">${escapeDocHtml(s.note || s.location || '-')}</td>
+                <td class="price">${s.ticket_price ? `¥${escapeDocHtml(s.ticket_price)}/晚` : '-'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      ` : '<p class="muted">暂未添加住宿安排。</p>'}
+    </section>
+  `
+
+  const tipsHtml = `
+    <section class="module-section">
+      <h2>避坑</h2>
+      ${tips.length ? `<ul class="list">${tips.map((t) => `<li><b>${t.level === 'important' ? '重要' : '提醒'}：</b>${escapeDocHtml(t.content)}</li>`).join('')}</ul>` : '<p class="muted">暂未添加避坑提醒。</p>'}
+    </section>
+  `
+
+  const packingHtml = `
+    <section class="module-section">
+      <h2>行李</h2>
+      ${packingGroups.length ? packingGroups.map((g) => `
+        <h3>${escapeDocHtml(g.category)} <span class="muted">共 ${g.items.length} 件</span></h3>
+        <table class="simple-table">
+          <thead><tr><th>物品</th>${packing.members.map((m) => `<th>${escapeDocHtml(m)}</th>`).join('')}</tr></thead>
+          <tbody>
+            ${g.items.map((item) => `
+              <tr>
+                <td><b>${escapeDocHtml(item.name)}</b></td>
+                ${packing.members.map((m) => {
+                  const state = item.states[m]
+                  return `<td>${state === 'packed' ? '已带' : state === 'unpacked' ? '未带' : '-'}</td>`
+                }).join('')}
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `).join('') : '<p class="muted">暂未添加行李清单。</p>'}
+    </section>
+  `
+
+  const ledgerHtml = `
+    <section class="module-section">
+      <h2>记账本</h2>
+      ${expenses.length ? `
+        <table class="simple-table">
+          <colgroup><col style="width:48%"><col style="width:18%"><col style="width:18%"><col style="width:16%"></colgroup>
+          <thead><tr><th>事项</th><th>分类</th><th>付款人</th><th>金额</th></tr></thead>
+          <tbody>
+            ${expenses.map((expense) => `
+              <tr>
+                <td><b>${escapeDocHtml(expense.title || '未命名')}</b></td>
+                <td>${escapeDocHtml(expense.category || '-')}</td>
+                <td>${escapeDocHtml(expense.payer || '-')}</td>
+                <td class="price">¥${escapeDocHtml(expense.amount.toFixed(0))}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      ` : '<p class="muted">暂未添加记账。</p>'}
+    </section>
+  `
+
+  return `<!doctype html>
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>${escapeDocHtml(trip.title || '协同行程')}</title>
+        ${styles}
+      </head>
+      <body>
+        <div class="print-header">${escapeDocHtml(printTitle)}</div>
+        <div class="print-footer"></div>
+        <main class="doc-page export-trip-view">
+          <section class="doc-cover">
+            <p class="cover-label">Travel Plan</p>
+            <h1>${escapeDocHtml(coverTitle)}</h1>
+            <p class="cover-subtitle">${escapeDocHtml(trip.days)} 天 ${escapeDocHtml(nightCount)} 晚 · 海岛跳岛旅行计划</p>
+            <p class="cover-date">${escapeDocHtml(formatExportDateRange(trip))}</p>
+            <div class="overview">
+              <span><b>${trip.stops.filter(isTimelineStop).length}</b> 个行程事件</span>
+              <span><b>${foodStops.reduce((sum, d) => sum + d.foods.length, 0) + foods.length}</b> 项美食</span>
+              <span><b>${allStays.length}</b> 项住宿</span>
+              <span><b>${packing.items.length}</b> 件行李</span>
+            </div>
+          </section>
+          ${itinerary}
+          ${foodHtml}
+          ${stayHtml}
+          ${tipsHtml}
+          ${packingHtml}
+          ${ledgerHtml}
+          <footer class="footer">由 17同游生成 · ${escapeDocHtml(new Date().toLocaleDateString('zh-CN'))}</footer>
+        </main>
+        <script>
+          window.addEventListener('load', function () {
+            window.setTimeout(function () { window.print(); }, 250);
+          });
+        </script>
+      </body>
+    </html>`
+}
+
+function buildTripDocxBlob(
+  trip: TripDetail,
+  foods: FoodItem[],
+  tips: TipItem[],
+  packing: PackingData,
+  expenses: Expense[],
+): Blob {
+  const stopsByDay = Array.from({ length: Math.max(1, trip.days) }, (_, i) => i + 1)
+    .map((day) => ({
+      day,
+      date: displayTripDayDate(trip, day),
+      title: trip.day_titles?.[day] || trip.destination || '',
+      stops: trip.stops.filter((s) => s.day === day && isTimelineStop(s)).sort((a, b) => a.order_no - b.order_no),
+    }))
+  const allStays = trip.stops.filter(isStayStop).map((s) => ({ ...s, date: displayTripDayDate(trip, s.day) }))
+  const foodStops = stopsByDay.map((d) => ({ ...d, foods: d.stops.filter(isFoodStop) })).filter((d) => d.foods.length)
+  const packingGroups = Array.from(new Set(packing.items.map((i) => i.category || '通用')))
+    .map((category) => ({ category, items: packing.items.filter((i) => (i.category || '通用') === category) }))
+    .filter((g) => g.items.length)
+  const coverTitle = exportCoverTitle(trip)
+  const nightCount = Math.max(0, trip.days - 1)
+  const line = (parts: unknown[]) => parts.filter(Boolean).map((part) => String(part)).join(' · ')
+  const runPr = (opts: { bold?: boolean; color?: string; size?: number } = {}) => [
+    opts.bold ? '<w:b/>' : '',
+    opts.color ? `<w:color w:val="${opts.color}"/>` : '',
+    opts.size ? `<w:sz w:val="${opts.size}"/>` : '',
+  ].join('')
+  const p = (
+    text: unknown,
+    style = '',
+    opts: { after?: number; before?: number; bold?: boolean; color?: string; size?: number } = {},
+  ) => `
+    <w:p>
+      <w:pPr>
+        ${style ? `<w:pStyle w:val="${style}"/>` : ''}
+        <w:spacing w:before="${opts.before ?? 0}" w:after="${opts.after ?? 120}" w:line="276" w:lineRule="auto"/>
+      </w:pPr>
+      <w:r>
+        <w:rPr>${runPr(opts)}</w:rPr>
+        <w:t xml:space="preserve">${escapeDocXml(text)}</w:t>
+      </w:r>
+    </w:p>`
+  const cell = (
+    content: string | string[],
+    width = 2400,
+    opts: { shade?: string; valign?: 'top' | 'center' } = {},
+  ) => `
+    <w:tc>
+      <w:tcPr>
+        <w:tcW w:w="${width}" w:type="dxa"/>
+        <w:vAlign w:val="${opts.valign || 'top'}"/>
+        ${opts.shade ? `<w:shd w:fill="${opts.shade}"/>` : ''}
+        <w:tcMar>
+          <w:top w:w="90" w:type="dxa"/><w:left w:w="90" w:type="dxa"/>
+          <w:bottom w:w="90" w:type="dxa"/><w:right w:w="90" w:type="dxa"/>
+        </w:tcMar>
+      </w:tcPr>
+      ${Array.isArray(content) ? content.join('') : content.trim().startsWith('<w:p') ? content : p(content, '', { after: 0 })}
+    </w:tc>`
+  const row = (cells: string[]) => `<w:tr>${cells.join('')}</w:tr>`
+  const table = (rows: string[], widths: number[] = []) => `
+    <w:tbl>
+      <w:tblPr>
+        <w:tblW w:w="10000" w:type="pct"/>
+        <w:tblLook w:firstRow="1" w:noHBand="0" w:noVBand="1"/>
+        <w:tblBorders>
+          <w:top w:val="single" w:sz="4" w:color="E4E4E7"/>
+          <w:left w:val="nil"/>
+          <w:bottom w:val="single" w:sz="4" w:color="E4E4E7"/>
+          <w:right w:val="nil"/>
+          <w:insideH w:val="single" w:sz="4" w:color="E4E4E7"/>
+          <w:insideV w:val="nil"/>
+        </w:tblBorders>
+      </w:tblPr>
+      ${widths.length ? `<w:tblGrid>${widths.map((width) => `<w:gridCol w:w="${width}"/>`).join('')}</w:tblGrid>` : ''}
+      ${rows.join('')}
+    </w:tbl>`
+  const sections: string[] = [
+    p(coverTitle, 'Title'),
+    p(`${trip.days} 天 ${nightCount} 晚 · 海岛跳岛旅行计划`, 'Subtitle'),
+    p(formatExportDateRange(trip), 'DateLine'),
+    p(line([`${trip.stops.filter(isTimelineStop).length} 个行程事件`, `${foodStops.reduce((sum, d) => sum + d.foods.length, 0) + foods.length} 项美食`, `${allStays.length} 项住宿`, `${packing.items.length} 件行李`]), 'MetaLine', { after: 280 }),
+  ]
+
+  stopsByDay.forEach(({ day, date, title, stops }) => {
+    const dateLabel = formatExportDayDate(date)
+    const weekLabel = exportWeekLabel(trip, day)
+    const dayTitle = cleanExportDayTitle(title, day)
+    sections.push(p(`DAY ${String(day).padStart(2, '0')}`, 'DayLabel', { before: 220, after: 20 }))
+    sections.push(p(dateLabel ? `${dateLabel}${weekLabel ? ` · ${weekLabel}` : ''}` : `第 ${day} 天`, 'Heading1', { after: dayTitle ? 20 : 100 }))
+    if (dayTitle) sections.push(p(dayTitle, 'DayRoute', { after: 110 }))
+    const route = stops.map((s) => s.name.replace(/^🏨\s*/, '')).filter(Boolean).join(' → ')
+    if (route) {
+      sections.push(table([
+        row([cell([
+          p('今日路线', 'RouteTitle', { after: 40 }),
+          p(route, 'RouteText', { after: 0 }),
+        ], 9000, { shade: 'F7F7F8' })]),
+      ], [9000]))
+    }
+    sections.push(table([
+      row([
+        cell(p('时间', 'TableHead', { after: 0 }), 1600, { shade: 'FAFAFA' }),
+        cell(p('地点与活动', 'TableHead', { after: 0 }), 5600, { shade: 'FAFAFA' }),
+        cell(p('交通 / 花费', 'TableHead', { after: 0 }), 1800, { shade: 'FAFAFA' }),
+      ]),
+      ...(stops.length ? stops.map((stop, idx) => row([
+        cell(p(documentTimeRange(stop, stops[idx + 1]), 'TimeCell', { after: 0 }), 1600),
+        cell([
+          p(stop.name.replace(/^🏨\s*/, ''), 'PlaceName', { after: stop.note || stop.location ? 35 : 0 }),
+          stop.note ? p(stop.note, 'BodySmall', { after: stop.location ? 25 : 0 }) : '',
+          stop.location ? p(`地图定位：${stop.location}`, 'AuxText', { after: 0 }) : '',
+        ].filter(Boolean) as string[], 5600),
+        cell([
+          stop.transport ? p(stop.transport, 'BodySmall', { after: stop.ticket_price ? 25 : 0 }) : '',
+          stop.ticket_price ? p(`¥${stop.ticket_price}`, 'CostText', { after: 0 }) : '',
+          !stop.transport && !stop.ticket_price ? p('—', 'WeakText', { after: 0 }) : '',
+        ].filter(Boolean) as string[], 1800),
+      ])) : [row([cell('暂无行程安排', 9000)])]),
+    ], [1600, 5600, 1800]))
+  })
+
+  sections.push(p('美食', 'Heading1', { before: 320, after: 120 }))
+  if (foodStops.length) {
+    foodStops.forEach((d) => {
+      sections.push(p(`DAY ${String(d.day).padStart(2, '0')}${d.date ? ` · ${d.date}` : ''}`, 'Heading2', { after: 50 }))
+      d.foods.forEach((food) => sections.push(p(line([food.name, food.note]), 'BodySmall', { after: 70 })))
+    })
+  } else {
+    sections.push(p('每日行程里暂未标记美食。', 'WeakText'))
+  }
+  if (foods.length) {
+    sections.push(p('攻略推荐 / 收藏', 'Heading2', { before: 120, after: 50 }))
+    foods.forEach((food) => sections.push(p(line([food.is_top ? 'TOP' : '', food.name, food.category, food.city, food.price ? `人均 ¥${food.price}` : '', food.note]), 'BodySmall', { after: 70 })))
+  }
+
+  sections.push(p('住宿', 'Heading1', { before: 320, after: 120 }))
+  sections.push(allStays.length ? table([
+    row([
+      cell(p('日期', 'TableHead', { after: 0 }), 1600, { shade: 'FAFAFA' }),
+      cell(p('住宿', 'TableHead', { after: 0 }), 3000, { shade: 'FAFAFA' }),
+      cell(p('备注', 'TableHead', { after: 0 }), 3200, { shade: 'FAFAFA' }),
+      cell(p('参考价', 'TableHead', { after: 0 }), 1400, { shade: 'FAFAFA' }),
+    ]),
+    ...allStays.map((stay) => row([
+      cell(p(`Day ${stay.day}${stay.date ? ` · ${stay.date}` : ''}`, 'TimeCell', { after: 0 }), 1600),
+      cell(p(stay.name.replace(/^🏨\s*/, ''), 'PlaceName', { after: 0 }), 3000),
+      cell(p(stay.note || stay.location || '—', stay.note || stay.location ? 'BodySmall' : 'WeakText', { after: 0 }), 3200),
+      cell(p(stay.ticket_price ? `¥${stay.ticket_price}/晚` : '—', stay.ticket_price ? 'CostText' : 'WeakText', { after: 0 }), 1400),
+    ])),
+  ], [1600, 3000, 3200, 1400]) : p('暂未添加住宿安排。', 'WeakText'))
+
+  sections.push(p('避坑', 'Heading1', { before: 320, after: 120 }))
+  sections.push(tips.length ? tips.map((tip) => p(`${tip.level === 'important' ? '重要' : '提醒'}：${tip.content}`, 'BodySmall', { after: 70 })).join('') : p('暂未添加避坑提醒。', 'WeakText'))
+
+  sections.push(p('行李', 'Heading1', { before: 320, after: 120 }))
+  if (packingGroups.length) {
+    packingGroups.forEach((group) => {
+      sections.push(p(`${group.category}（共 ${group.items.length} 件）`, 'Heading2', { after: 70 }))
+      sections.push(table([
+        row([
+          cell(p('物品', 'TableHead', { after: 0 }), 3600, { shade: 'FAFAFA' }),
+          ...packing.members.map((member) => cell(p(member, 'TableHead', { after: 0 }), 1400, { shade: 'FAFAFA' })),
+        ]),
+        ...group.items.map((item) => row([
+          cell(p(item.name, 'PlaceName', { after: 0 }), 3600),
+          ...packing.members.map((member) => cell(p(item.states[member] === 'packed' ? '已带' : item.states[member] === 'unpacked' ? '未带' : '—', item.states[member] ? 'BodySmall' : 'WeakText', { after: 0 }), 1400)),
+        ])),
+      ], [3600, ...packing.members.map(() => 1400)]))
+    })
+  } else {
+    sections.push(p('暂未添加行李清单。', 'WeakText'))
+  }
+
+  sections.push(p('记账本', 'Heading1', { before: 320, after: 120 }))
+  sections.push(expenses.length ? table([
+    row([
+      cell(p('事项', 'TableHead', { after: 0 }), 3600, { shade: 'FAFAFA' }),
+      cell(p('分类', 'TableHead', { after: 0 }), 1800, { shade: 'FAFAFA' }),
+      cell(p('付款人', 'TableHead', { after: 0 }), 1800, { shade: 'FAFAFA' }),
+      cell(p('金额', 'TableHead', { after: 0 }), 1600, { shade: 'FAFAFA' }),
+    ]),
+    ...expenses.map((expense) => row([
+      cell(p(expense.title || '未命名', 'PlaceName', { after: 0 }), 3600),
+      cell(p(expense.category || '—', expense.category ? 'BodySmall' : 'WeakText', { after: 0 }), 1800),
+      cell(p(expense.payer || '—', expense.payer ? 'BodySmall' : 'WeakText', { after: 0 }), 1800),
+      cell(p(`¥${expense.amount.toFixed(0)}`, 'CostText', { after: 0 }), 1600),
+    ])),
+  ], [3600, 1800, 1800, 1600]) : p('暂未添加记账。', 'WeakText'))
+
+  const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+    <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+      <w:body>
+        ${sections.join('')}
+        <w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134"/></w:sectPr>
+      </w:body>
+    </w:document>`
+  const stylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+    <w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+      <w:docDefaults>
+        <w:rPrDefault><w:rPr><w:rFonts w:ascii="Microsoft YaHei" w:hAnsi="Microsoft YaHei" w:eastAsia="Microsoft YaHei"/><w:color w:val="27272A"/><w:sz w:val="22"/></w:rPr></w:rPrDefault>
+      </w:docDefaults>
+      <w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:pPr><w:spacing w:after="120"/></w:pPr><w:rPr><w:b/><w:color w:val="18181B"/><w:sz w:val="42"/></w:rPr></w:style>
+      <w:style w:type="paragraph" w:styleId="Subtitle"><w:name w:val="Subtitle"/><w:rPr><w:color w:val="52525B"/><w:sz w:val="24"/></w:rPr></w:style>
+      <w:style w:type="paragraph" w:styleId="DateLine"><w:name w:val="Date Line"/><w:rPr><w:color w:val="71717A"/><w:sz w:val="20"/></w:rPr></w:style>
+      <w:style w:type="paragraph" w:styleId="MetaLine"><w:name w:val="Meta Line"/><w:rPr><w:color w:val="71717A"/><w:sz w:val="20"/></w:rPr></w:style>
+      <w:style w:type="paragraph" w:styleId="DayLabel"><w:name w:val="Day Label"/><w:rPr><w:b/><w:color w:val="3155C6"/><w:sz w:val="20"/></w:rPr></w:style>
+      <w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:rPr><w:b/><w:color w:val="18181B"/><w:sz w:val="30"/></w:rPr></w:style>
+      <w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:rPr><w:b/><w:color w:val="18181B"/><w:sz w:val="24"/></w:rPr></w:style>
+      <w:style w:type="paragraph" w:styleId="DayRoute"><w:name w:val="Day Route"/><w:rPr><w:color w:val="3F3F46"/><w:sz w:val="22"/></w:rPr></w:style>
+      <w:style w:type="paragraph" w:styleId="RouteTitle"><w:name w:val="Route Title"/><w:rPr><w:b/><w:color w:val="18181B"/><w:sz w:val="20"/></w:rPr></w:style>
+      <w:style w:type="paragraph" w:styleId="RouteText"><w:name w:val="Route Text"/><w:rPr><w:color w:val="52525B"/><w:sz w:val="20"/></w:rPr></w:style>
+      <w:style w:type="paragraph" w:styleId="TableHead"><w:name w:val="Table Head"/><w:rPr><w:b/><w:color w:val="71717A"/><w:sz w:val="19"/></w:rPr></w:style>
+      <w:style w:type="paragraph" w:styleId="TimeCell"><w:name w:val="Time Cell"/><w:rPr><w:b/><w:color w:val="3155C6"/><w:sz w:val="21"/></w:rPr></w:style>
+      <w:style w:type="paragraph" w:styleId="PlaceName"><w:name w:val="Place Name"/><w:rPr><w:b/><w:color w:val="18181B"/><w:sz w:val="22"/></w:rPr></w:style>
+      <w:style w:type="paragraph" w:styleId="BodySmall"><w:name w:val="Body Small"/><w:rPr><w:color w:val="3F3F46"/><w:sz w:val="20"/></w:rPr></w:style>
+      <w:style w:type="paragraph" w:styleId="AuxText"><w:name w:val="Aux Text"/><w:rPr><w:color w:val="71717A"/><w:sz w:val="19"/></w:rPr></w:style>
+      <w:style w:type="paragraph" w:styleId="CostText"><w:name w:val="Cost Text"/><w:rPr><w:b/><w:color w:val="3155C6"/><w:sz w:val="20"/></w:rPr></w:style>
+      <w:style w:type="paragraph" w:styleId="WeakText"><w:name w:val="Weak Text"/><w:rPr><w:color w:val="A1A1AA"/><w:sz w:val="20"/></w:rPr></w:style>
+    </w:styles>`
+  return createZipBlob([
+    { name: '[Content_Types].xml', content: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>' },
+    { name: '_rels/.rels', content: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>' },
+    { name: 'word/_rels/document.xml.rels', content: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>' },
+    { name: 'word/document.xml', content: documentXml },
+    { name: 'word/styles.xml', content: stylesXml },
+  ], 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
 }
 
 export default function TripsOverlay({
@@ -752,7 +1426,7 @@ function TripBoard({
 }) {
   const [trip, setTrip] = useState<TripDetail | null>(null)
   const [issues, setIssues] = useState<TripIssue[]>([])
-  const [ticketTotal, setTicketTotal] = useState(0)
+  const [, setTicketTotal] = useState(0)
   const [suggestions, setSuggestions] = useState<Suggestion[]>([])
   const [comments, setComments] = useState<TripComment[]>([])
   const [events, setEvents] = useState<{ username: string; action: string; created_at: string }[]>([])
@@ -777,6 +1451,10 @@ function TripBoard({
   const [mobilePane, setMobilePane] = useState<'timeline' | 'map' | 'assistant'>('timeline')
   const [workspaceView, setWorkspaceView] = useState<'day' | 'tool'>('day')
   const [mapCollapsed, setMapCollapsed] = useState(false)
+  const [exportingDoc, setExportingDoc] = useState(false)
+  const [dateEditorOpen, setDateEditorOpen] = useState(false)
+  const [dateInput, setDateInput] = useState('')
+  const [savingDate, setSavingDate] = useState(false)
   // Phase 47：右栏从「6 面板堆叠」改标签页，按用户心智分四块（一次只显一块）
   const [aiTab, setAiTab] = useState<TripToolTab>('assistant')
   // Phase 48：每天过夜城市（逆地理编码）+ 受控酒店搜索城市
@@ -830,6 +1508,10 @@ function TripBoard({
     const timer = window.setInterval(load, 2500)
     return () => window.clearInterval(timer)
   }, [load])
+
+  useEffect(() => {
+    if (trip) setDateInput(trip.start_date || '')
+  }, [trip?.id, trip?.start_date])
 
   useEffect(() => {
     if (aiTab === 'log') {
@@ -987,7 +1669,7 @@ function TripBoard({
       // 渲染每一天的内容
       const days = Array.from({ length: trip.days }, (_, i) => i + 1)
       for (const day of days) {
-        const dayStops = stopsOf(day)
+        const dayStops = timelineStopsOf(day)
         const dayTitle = getDayTitle(day)
         const dayDate = tripDayDate(trip.start_date, day)
 
@@ -1296,11 +1978,71 @@ function TripBoard({
     }
   }
 
+  const loadShareDocumentData = async (): Promise<{ foods: FoodItem[]; tips: TipItem[]; packing: PackingData } | null> => {
+    if (!trip || exportingDoc) return null
+    setExportingDoc(true)
+    try {
+      const [foodsRes, tipsRes, packingRes] = await Promise.all([
+        authFetch(`${API}/trips/${tripId}/foods`),
+        authFetch(`${API}/trips/${tripId}/tips`),
+        authFetch(`${API}/trips/${tripId}/packing`),
+      ])
+      const foods: FoodItem[] = foodsRes.ok ? await foodsRes.json() : []
+      const tips: TipItem[] = tipsRes.ok ? await tipsRes.json() : []
+      const packing: PackingData = packingRes.ok ? await packingRes.json() : { members: [], items: [], templates: [] }
+      return { foods, tips, packing }
+    } catch (error) {
+      console.error('生成分享文档失败:', error)
+      notify('生成分享文档失败，请重试', 'error')
+      return null
+    } finally {
+      setExportingDoc(false)
+    }
+  }
+
+  const exportToWord = async () => {
+    if (!trip) return
+    notify('正在生成 Word 文档…')
+    const data = await loadShareDocumentData()
+    if (!data) return
+    const blob = buildTripDocxBlob(trip, data.foods, data.tips, data.packing, expenses)
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = safeDocFilename(trip.title, '好友分享版.docx')
+    a.click()
+    URL.revokeObjectURL(url)
+    notify('Word 文档已下载', 'success')
+  }
+
+  const exportToPdf = async () => {
+    if (!trip) return
+    const win = window.open('', '_blank')
+    if (!win) {
+      notify('浏览器拦截了打印窗口，请允许弹窗后重试', 'error')
+      return
+    }
+    win.document.open()
+    win.document.write('<!doctype html><html><head><meta charset="utf-8"><title>正在生成 PDF...</title></head><body style="font-family: -apple-system, BlinkMacSystemFont, sans-serif; padding: 32px; color: #27272a;">正在生成旅行攻略 PDF 预览...</body></html>')
+    win.document.close()
+    notify('正在打开 PDF 打印页…')
+    const data = await loadShareDocumentData()
+    if (!data) {
+      win.close()
+      return
+    }
+    const html = buildTripShareHtml(trip, data.foods, data.tips, data.packing, expenses)
+    win.document.open()
+    win.document.write(html)
+    win.document.close()
+    win.focus()
+  }
+
   // Phase 51 批6：首次载入把当前日定位到「第一个有坐标的日」，避免开局地图空白/居中在别处
   const didInitDay = useRef('')
   useEffect(() => {
     if (!trip || didInitDay.current === tripId) return
-    const first = trip.stops.filter((s) => s.location)
+    const first = trip.stops.filter((s) => s.location && isTimelineStop(s))
       .sort((a, b) => a.day - b.day || a.order_no - b.order_no)[0]
     if (first) {
       setSelectedDay(first.day)
@@ -1327,16 +2069,31 @@ function TripBoard({
     return res.ok
   }, [tripId, load])
 
+  const saveStartDate = async () => {
+    const parsed = parseTripStartDateInput(dateInput)
+    if (!parsed) {
+      notify('请输入正确日期，比如 10.1、10月1日 或 2026-10-01', 'error')
+      return
+    }
+    setSavingDate(true)
+    const ok = await call('', 'PATCH', { start_date: parsed })
+    setSavingDate(false)
+    if (ok) {
+      setDateEditorOpen(false)
+      notify('出发日期已更新', 'success')
+    }
+  }
+
   if (trip === null) return <div className="modal-empty">加载中…</div>
 
   const isOwner = trip.members.some((m) => m.username === username && m.role === 'owner')
-  const status = tripStatus(trip.start_date, trip.days)
   // 工具页按模块保留快捷入口；日程页的添加入口放在表格内，避免右下角重复悬浮按钮遮挡地图。
   const fabLabel = workspaceView === 'tool' ? FAB_BY_TAB[aiTab] : ''
   const days = Array.from(
     new Set([...Array.from({ length: trip.days }, (_, i) => i + 1), ...trip.stops.map((s) => s.day)]),
   ).sort((a, b) => a - b)
   const stopsOf = (d: number) => trip.stops.filter((s) => s.day === d).sort((a, b) => a.order_no - b.order_no)
+  const timelineStopsOf = (d: number) => stopsOf(d).filter(isTimelineStop)
   const isStay = (s: TripStop) => (s.note || '').includes('🏨') || (s.note || '').includes('住宿')
   // 「已加入」按**当前选中天**判定（去掉 🏨 前缀）：从真实 stops 派生，删除即复原；
   // 不同天可重复加同一家酒店（切天后该家又显示「加入」）——只避免同一天重复添加。
@@ -1487,11 +2244,9 @@ function TripBoard({
     }
   }
 
-  const mapStops = stopsOf(selectedDay).filter((s) => s.location)
+  const mapStops = timelineStopsOf(selectedDay).filter((s) => s.location)
   const mapStopIndexById = new Map(mapStops.map((s, i) => [s.id, i + 1]))
   const actualTotal = expenses.reduce((sum, expense) => sum + expense.amount, 0)
-  const plannedTotal = trip.budget || Object.values(trip.budget_breakdown || {}).reduce((sum, value) => sum + value, 0)
-  const budgetPercent = plannedTotal > 0 ? Math.min(100, Math.round((actualTotal / plannedTotal) * 100)) : 0
   const mapUrl = mapStops.length
     ? `${API}/staticmap?pts=${mapStops.map((s) => s.location).join(';')}` +
       `&labels=${mapStops.map((_, i) => i + 1).join(',')}` +
@@ -1500,7 +2255,7 @@ function TripBoard({
 
   const optimizeRoute = async () => {
     if (optimizingRoute) return
-    if (stopsOf(selectedDay).length < 2) {
+    if (timelineStopsOf(selectedDay).length < 2) {
       setMsg('当天至少需要 2 个行程点才能优化路线')
       window.setTimeout(() => setMsg(''), 3500)
       return
@@ -1529,12 +2284,50 @@ function TripBoard({
     <div className="trip-board">
       <div className="trip-board-head">
         <button className="trip-btn" onClick={onBack}>← 返回</button>
-        <button className="trip-btn" onClick={exportToImage} style={{ marginLeft: '8px' }}>📸 导出长图</button>
+        <details className="trip-export-menu">
+          <summary className="trip-btn">导出</summary>
+          <div className="trip-export-popover">
+            <button onClick={exportToImage}>📸 长图</button>
+            <button onClick={exportToWord} disabled={exportingDoc}>📄 Word</button>
+            <button onClick={exportToPdf} disabled={exportingDoc}>🖨️ PDF</button>
+          </div>
+        </details>
         <span className="trip-title-stack">
           <strong className="trip-board-title">
             {trip.title}
-            {/* PRD 4.2：行程状态角标。没填出发日期时显示「未定日期」而不是硬猜一个状态 */}
-            <i className={`trip-status-badge status-${status.key}`}>{status.label}</i>
+            <span className="trip-date-setter">
+              <button
+                type="button"
+                className="trip-date-chip"
+                onClick={() => {
+                  setDateInput(trip.start_date || '')
+                  setDateEditorOpen((open) => !open)
+                }}
+              >
+                {trip.start_date ? `${displayTripDayDate(trip, 1)} 出发` : '+ 设置日期'}
+              </button>
+              {dateEditorOpen && (
+                <span className="trip-date-popover">
+                  <label>出发日期</label>
+                  <input
+                    value={dateInput}
+                    onChange={(e) => setDateInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') saveStartDate()
+                      if (e.key === 'Escape') setDateEditorOpen(false)
+                    }}
+                    placeholder="10.1 / 10月1日 / 2026-10-01"
+                    autoFocus
+                  />
+                  <span>
+                    <button type="button" className="trip-btn tiny ghost" onClick={() => setDateEditorOpen(false)}>取消</button>
+                    <button type="button" className="trip-btn tiny primary" onClick={saveStartDate} disabled={savingDate}>
+                      {savingDate ? '保存中…' : '保存'}
+                    </button>
+                  </span>
+                </span>
+              )}
+            </span>
           </strong>
           <span className="trip-board-sub">
             {trip.destination || '未定目的地'} · {trip.days} 天{trip.start_date ? ` · ${trip.start_date} 出发` : ''}
@@ -1621,7 +2414,7 @@ function TripBoard({
               }}
             >
               Day {d}
-              <small>{stopsOf(d).length}</small>
+              <small>{timelineStopsOf(d).length}</small>
             </button>
           ))}
         </div>
@@ -1646,27 +2439,70 @@ function TripBoard({
       </nav>
 
       <div className="trip-mobile-tabs" role="tablist" aria-label="行程板块">
-        <button role="tab" aria-selected={mobilePane === 'timeline'} className={mobilePane === 'timeline' ? 'active' : ''} onClick={() => setMobilePane('timeline')}>
+        <button
+          role="tab"
+          aria-selected={mobilePane === 'timeline' && workspaceView === 'day'}
+          className={mobilePane === 'timeline' && workspaceView === 'day' ? 'active' : ''}
+          onClick={() => {
+            setWorkspaceView('day')
+            setMobilePane('timeline')
+          }}
+        >
           🗓️ 行程
         </button>
-        <button role="tab" aria-selected={mobilePane === 'map'} className={mobilePane === 'map' ? 'active' : ''} onClick={() => setMobilePane('map')}>
+        <button
+          role="tab"
+          aria-selected={mobilePane === 'map'}
+          className={mobilePane === 'map' ? 'active' : ''}
+          onClick={() => setMobilePane('map')}
+        >
           🗺️ 地图
         </button>
-        <button role="tab" aria-selected={mobilePane === 'assistant'} className={mobilePane === 'assistant' ? 'active' : ''} onClick={() => setMobilePane('assistant')}>
-          ✨ 助手{issues.length > 0 ? ` · ${issues.length}` : ''}
-        </button>
+        {TRIP_TOOL_TABS.map((tab) => (
+          <button
+            key={tab.id}
+            role="tab"
+            aria-selected={mobilePane === 'assistant' && workspaceView === 'tool' && aiTab === tab.id}
+            className={mobilePane === 'assistant' && workspaceView === 'tool' && aiTab === tab.id ? 'active' : ''}
+            onClick={() => {
+              setAiTab(tab.id)
+              setWorkspaceView('tool')
+              setMobilePane('assistant')
+            }}
+          >
+            <span aria-hidden="true">{tab.icon}</span>{tab.label}
+            {tab.id === 'assistant' && issues.length > 0 ? ` · ${issues.length}` : ''}
+          </button>
+        ))}
+      </div>
+
+      <div className="trip-mobile-day-nav" role="tablist" aria-label="选择行程日期">
+        {days.map((d) => (
+          <button
+            key={d}
+            role="tab"
+            aria-selected={workspaceView === 'day' && selectedDay === d}
+            className={workspaceView === 'day' && selectedDay === d ? 'active' : ''}
+            onClick={() => {
+              setSelectedDay(d)
+              setWorkspaceView('day')
+              setMobilePane('timeline')
+            }}
+          >
+            <b>Day {d}</b>
+            {displayTripDayDate(trip, d) ? <small>{displayTripDayDate(trip, d)}</small> : null}
+            <i>{timelineStopsOf(d).length}</i>
+          </button>
+        ))}
       </div>
 
       <div className={`trip-3col trip-view-${workspaceView}${mapCollapsed ? ' trip-map-collapsed' : ''}`}>
-        {/* 左：预算概览 + 每天导航（与参考 HTML 一致） */}
-        <aside className="trip-day-sidebar" aria-label="预算与行程天数">
+        {/* 左：支出概览 + 每天导航（与参考 HTML 一致） */}
+        <aside className="trip-day-sidebar" aria-label="支出与行程天数">
           <section className="trip-budget-summary">
-            <span>总预算 {plannedTotal > 0 ? `¥${plannedTotal.toLocaleString()} / 人` : '未设置'}</span>
-            <strong>已花费 ¥{actualTotal.toLocaleString()}</strong>
-            <div className="trip-budget-progress" aria-label={`预算已使用 ${budgetPercent}%`}>
-              <i style={{ width: `${budgetPercent}%` }} />
-            </div>
-            <small>{plannedTotal > 0 ? `已使用 ${budgetPercent}%` : '可在「费用」中设置预算'}</small>
+            <span>总支出</span>
+            <strong>¥{actualTotal.toLocaleString()}</strong>
+            <small>{expenses.length ? `记账本 ${expenses.length} 笔记录` : '还没有记账记录'}</small>
           </section>
           <div className="trip-sidebar-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span>行程天数</span>
@@ -1698,8 +2534,8 @@ function TripBoard({
                 className={workspaceView === 'day' && selectedDay === d ? 'active' : ''}
                 onClick={() => { setSelectedDay(d); setWorkspaceView('day') }}
               >
-                <span><b>Day {d}</b><small>{displayTripDayDate(trip, d) || `${stopsOf(d).length} 个事件`}</small></span>
-                <i>{stopsOf(d).length}</i>
+                <span><b>Day {d}</b><small>{displayTripDayDate(trip, d) || `${timelineStopsOf(d).length} 个事件`}</small></span>
+                <i>{timelineStopsOf(d).length}</i>
               </button>
             ))}
           </nav>
@@ -1753,7 +2589,7 @@ function TripBoard({
                 {formatDayTitle(selectedDay)}
               </h2>
             )}
-            <p>{[displayTripDayDate(trip, selectedDay), `${stopsOf(selectedDay).length} 个事件`].filter(Boolean).join(' · ')}</p>
+            <p>{[displayTripDayDate(trip, selectedDay), `${timelineStopsOf(selectedDay).length} 个事件`].filter(Boolean).join(' · ')}</p>
           </header>
           <section className="trip-route-summary">
             <div className="trip-route-summary-head">
@@ -1768,8 +2604,8 @@ function TripBoard({
               </span>
             </div>
             <div className="trip-route-points">
-              {stopsOf(selectedDay).length
-                ? stopsOf(selectedDay).map((stop) => stop.name.replace(/^🏨\s*/, '')).join('　→　')
+              {timelineStopsOf(selectedDay).length
+                ? timelineStopsOf(selectedDay).map((stop) => stop.name.replace(/^🏨\s*/, '')).join('　→　')
                 : '添加事件后，这里会自动形成当天路线'}
             </div>
           </section>
@@ -1795,10 +2631,10 @@ function TripBoard({
                       <div className="trip-table-col-price">参考花费</div>
                       <div className="trip-table-col-ops">操作</div>
                     </div>
-                    {stopsOf(d).length === 0 ? (
+                    {timelineStopsOf(d).length === 0 ? (
                       <div className="trip-table-empty">暂无行程</div>
                     ) : (
-                      stopsOf(d).map((s, i, arr) => (
+                      timelineStopsOf(d).map((s, i, arr) => (
                         <div
                           key={s.id}
                           ref={(el) => { if (el) stopRefs.current.set(s.id, el) }}
@@ -2068,56 +2904,15 @@ function TripBoard({
             </>
           )}
 
-          {/* ---- 费用 tab：预算 + 记账 ---- */}
+          {/* ---- 费用 tab：记账 ---- */}
           {aiTab === 'money' && (
-            <>
-              <div className="trip-panel">
-                <div className="trip-panel-head">💰 预算</div>
-                <div className="trip-budget-row">
-                  <span>景点票价已录入 <b>¥{ticketTotal.toFixed(0)}</b></span>
-                  <span className={trip.budget && ticketTotal > trip.budget ? 'trip-over' : ''}>
-                    预算 <input className="trip-budget-input" defaultValue={trip.budget ?? ''} placeholder="未设"
-                      key={`b${trip.updated_at}`}
-                      onBlur={(e) => {
-                        const v = Number(e.target.value)
-                        if (e.target.value !== String(trip.budget ?? '')) call('', 'PATCH', { budget: v > 0 ? v : 0 })
-                      }} />
-                  </span>
-                </div>
-                {trip.budget_breakdown && Object.keys(trip.budget_breakdown).length > 0 && (
-                  <div className="trip-budget-breakdown">
-                    <div className="trip-budget-bd-head">计划预算（按类别）</div>
-                    {BUDGET_CAT_ORDER.filter((c) => trip.budget_breakdown![c] > 0).map((c) => (
-                      <div key={c} className="trip-budget-bd-row">
-                        <span>{c}</span><b>¥{trip.budget_breakdown![c].toFixed(0)}</b>
-                      </div>
-                    ))}
-                    <div className="trip-budget-bd-row trip-budget-bd-total">
-                      <span>合计</span>
-                      <b>¥{Object.values(trip.budget_breakdown).reduce((a, v) => a + v, 0).toFixed(0)}</b>
-                    </div>
-                  </div>
-                )}
-                <div className="trip-budget-row">
-                  <span>已记账实际支出</span>
-                  <b className={trip.budget && expenses.reduce((a, e) => a + e.amount, 0) > trip.budget ? 'trip-over' : ''}>
-                    ¥{expenses.reduce((a, e) => a + e.amount, 0).toFixed(0)}
-                  </b>
-                </div>
-                <div className="trip-budget-row">
-                  <span>出发日期</span>
-                  <input type="date" className="trip-budget-input wide" defaultValue={trip.start_date} key={`d${trip.updated_at}`}
-                    onBlur={(e) => { if (e.target.value !== trip.start_date) call('', 'PATCH', { start_date: e.target.value }) }} />
-                </div>
-              </div>
-              <LedgerPanel
-                expenses={expenses}
-                members={trip.members.map((m) => m.username)}
-                tripId={tripId}
-                username={username}
-                onChanged={() => { updatedRef.current = ''; load() }}
-              />
-            </>
+            <LedgerPanel
+              expenses={expenses}
+              members={trip.members.map((m) => m.username)}
+              tripId={tripId}
+              username={username}
+              onChanged={() => { updatedRef.current = ''; load() }}
+            />
           )}
 
           {/* ---- 助手 tab：检查中心 + Copilot ---- */}
