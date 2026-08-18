@@ -5,12 +5,12 @@ import { formatLastSeen } from '../interaction'
 
 export interface ProductNotification {
   id: string
-  type: 'friend_request' | 'friend_accepted' | 'relay_reaction' | string
+  type: 'friend_request' | 'friend_accepted' | 'relay_reaction' | 'trip_chat' | string
   title: string
   body: string
-  target_kind: 'friends' | 'relay' | string
+  target_kind: 'friends' | 'relay' | 'trip' | string
   target_id: string
-  meta: { destination?: string; reaction?: string; tab?: string }
+  meta: { destination?: string; reaction?: string; tab?: string; trip_id?: string; trip_title?: string; count?: number }
   read: boolean
   created_at: string | null
   actor: { id: string; username: string; display_name: string; avatar_url: string }
@@ -22,7 +22,9 @@ function NotificationAvatar({ item }: { item: ProductNotification }) {
       {item.actor.avatar_url
         ? <img src={item.actor.avatar_url} alt="" onError={(event) => { event.currentTarget.hidden = true }} />
         : <b>{(item.actor.display_name || item.actor.username || '旅')[0].toUpperCase()}</b>}
-      <i>{item.type === 'relay_reaction' ? '♥' : item.type === 'friend_accepted' ? '✓' : '+'}</i>
+      <i>{item.type === 'trip_chat' ? '💬'
+        : item.type === 'relay_reaction' ? '♥'
+        : item.type === 'friend_accepted' ? '✓' : '+'}</i>
     </span>
   )
 }
@@ -93,11 +95,15 @@ export function NotificationPanel({
         </header>
         <div className="notification-list">
           {items === null && <div className="notification-empty"><span className="spinner" /><p>正在查看新消息…</p></div>}
-          {items?.length === 0 && <div className="notification-empty"><span>✓</span><b>暂时没有新通知</b><p>好友申请和接力反馈会出现在这里。</p></div>}
+          {items?.length === 0 && <div className="notification-empty"><span>✓</span><b>暂时没有新通知</b><p>好友申请、接力反馈和同行群聊会出现在这里。</p></div>}
           {items?.map((item) => (
             <button className={`notification-item${item.read ? '' : ' unread'}`} key={item.id} onClick={() => readOne(item)}>
               <NotificationAvatar item={item} />
-              <span className="notification-copy"><b>{item.title}</b><span>{item.body}</span><small>{formatLastSeen(item.created_at, now)}</small></span>
+              <span className="notification-copy">
+                <b>{item.title}{(item.meta.count ?? 0) > 1 && <em className="notification-count">等 {item.meta.count} 条</em>}</b>
+                <span>{item.body}</span>
+                <small>{formatLastSeen(item.created_at, now)}</small>
+              </span>
               {!item.read && <i className="notification-unread" aria-label="未读" />}
             </button>
           ))}

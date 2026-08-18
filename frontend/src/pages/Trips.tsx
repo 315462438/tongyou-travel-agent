@@ -225,11 +225,16 @@ function displayTripDayDate(trip: TripDetail, day: number): string {
 }
 
 export default function TripsOverlay({
-  username, layoutMode = 'desktop', initialBoardId = null, onBoardChange, onClose, onOpenConversation, onAskInChat,
+  username, layoutMode = 'desktop', initialBoardId = null, openChatSignal = 0, onChatRead,
+  onBoardChange, onClose, onOpenConversation, onAskInChat,
 }: {
   username: string
   layoutMode?: 'desktop' | 'mobile'
   initialBoardId?: string | null
+  /** 自增序号：变化即请求展开群聊抽屉（从主页群聊通知点进来时用） */
+  openChatSignal?: number
+  /** 群聊已读上报后回调，让主页铃铛立刻掉未读 */
+  onChatRead?: () => void
   onBoardChange?: (id: string | null) => void
   onClose: () => void
   onOpenConversation?: (cid: string) => void
@@ -264,7 +269,15 @@ export default function TripsOverlay({
       {boardId === null ? (
         <TripList onOpen={setBoardId} />
       ) : (
-        <TripBoard tripId={boardId} username={username} onBack={() => setBoardId(null)} onOpenConversation={onOpenConversation} onAskInChat={onAskInChat} />
+        <TripBoard
+          tripId={boardId}
+          username={username}
+          onBack={() => setBoardId(null)}
+          onOpenConversation={onOpenConversation}
+          onAskInChat={onAskInChat}
+          openChatSignal={openChatSignal}
+          onChatRead={onChatRead}
+        />
       )}
     </div>
   )
@@ -376,10 +389,16 @@ function TripChat({
   tripId,
   tripTitle,
   members,
+  openSignal = 0,
+  onRead,
 }: {
   tripId: string
   tripTitle: string
   members: TripMember[]
+  /** 自增序号：变化即展开抽屉（从主页群聊通知点进来） */
+  openSignal?: number
+  /** 已读上报后回调，让主页铃铛立刻掉未读，而不用等下一轮 30s 轮询 */
+  onRead?: () => void
 }) {
   const [open, setOpen] = useState(false)
   const [messages, setMessages] = useState<TripChatMessage[]>([])
@@ -462,13 +481,23 @@ function TripChat({
     if (list) list.scrollTo({ top: list.scrollHeight, behavior: 'smooth' })
   }, [messages, open])
 
-  const openChat = () => {
+  const openChat = useCallback(() => {
     openRef.current = true
     setOpen(true)
     setUnread(0)
     nearBottomRef.current = true
     loadChat()
-  }
+    // Phase 97：把主页铃铛上那条群聊通知置为已读。失败静默——已读上报不该打扰用户，
+    // 下次打开会再试一次。
+    authFetch(`${API}/trips/${tripId}/chat/read`, { method: 'POST' })
+      .then(() => onRead?.())
+      .catch(() => {})
+  }, [loadChat, onRead, tripId])
+
+  // 从主页群聊通知点进来：序号一变就展开抽屉（初始 0 不触发）
+  useEffect(() => {
+    if (openSignal > 0) openChat()
+  }, [openSignal, openChat])
 
   const send = async (raw?: string) => {
     const content = (raw ?? input).trim()
@@ -711,13 +740,15 @@ function SourceGuideDrawer({
 }
 
 function TripBoard({
-  tripId, username, onBack, onOpenConversation, onAskInChat,
+  tripId, username, onBack, onOpenConversation, onAskInChat, openChatSignal = 0, onChatRead,
 }: {
   tripId: string
   username: string
   onBack: () => void
   onOpenConversation?: (cid: string) => void
   onAskInChat?: (text: string) => void
+  openChatSignal?: number
+  onChatRead?: () => void
 }) {
   const [trip, setTrip] = useState<TripDetail | null>(null)
   const [issues, setIssues] = useState<TripIssue[]>([])
@@ -1541,6 +1572,8 @@ function TripBoard({
           tripId={tripId}
           tripTitle={trip.title}
           members={trip.members}
+          openSignal={openChatSignal}
+          onRead={onChatRead}
         />
         {(isOwner || trip.source_conversation_id) && (
           <details className="trip-actions-menu">

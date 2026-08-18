@@ -8,6 +8,7 @@ AI：起草与检查走 BackgroundTasks（trip.ai_status 标记进行中，轮�
 """
 
 import asyncio
+import json
 import logging
 import re
 import time
@@ -20,8 +21,8 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user
 from app.config import settings
 from app.db.models import (
-    TravelTrip, TravelTripChatMessage, TravelTripComment, TravelTripEvent, TravelTripMember,
-    TravelTripStop, TravelTripSuggestion, TravelUser,
+    TravelNotification, TravelTrip, TravelTripChatMessage, TravelTripComment, TravelTripEvent,
+    TravelTripMember, TravelTripStop, TravelTripSuggestion, TravelUser,
 )
 from app.db.session import get_db, get_session
 
@@ -295,6 +296,10 @@ def delete_trip(trip_id: str, db: Session = Depends(get_db), user: TravelUser = 
         select(TravelTripChatMessage).where(TravelTripChatMessage.trip_id == trip_id)
     ).scalars():
         db.delete(message)
+    # Phase 97：行程没了，指向它的群聊通知也要撤销，否则点开通知跳到一个 404 的行程
+    from app.api.notification_api import delete_target_notifications
+
+    delete_target_notifications(db, "trip", trip_id)
     db.delete(trip)
     db.commit()
     return {"ok": True}
@@ -1876,11 +1881,65 @@ def list_chat_messages(trip_id: str, after: str = "",
     return [_chat_dict(message, author, user.id) for message, author in rows]
 
 
+def _chat_dedupe_key(trip_id: str, user_id: str) -> str:
+    """(行程, 接收者) 唯一。一个行程刷 20 条消息，每人只有一条通知在刷新，不会冲爆铃铛。"""
+    return f"trip-chat:{trip_id}:{user_id}"
+
+
+def _notify_chat_members(db: Session, trip: TravelTrip, sender: TravelUser, content: str) -> int:
+    """给除发送者外的每个 accepted 成员写/刷新一条群聊通知（Phase 97）。返回通知人数。
+
+    **必须与消息写入同事务**（本函数只 flush，由调用方 commit）——消息成功了通知没落，
+    或反过来，都比两者一起失败更难查。见 `docs/pitfalls/事件通知必须与业务同事务且按事件去重.md`。
+    """
+    from app.api.notification_api import upsert_notification
+
+    members = db.execute(
+        select(TravelTripMember).where(
+            TravelTripMember.trip_id == trip.id,
+            TravelTripMember.status == "accepted",
+            TravelTripMember.user_id != sender.id,
+        )
+    ).scalars().all()
+    if not members:
+        return 0
+
+    actor_name = (sender.display_name or sender.username or "同行者").strip()
+    trip_title = (trip.title or "协同行程").strip()
+    excerpt = " ".join(content.split())[:80]
+    for member in members:
+        key = _chat_dedupe_key(trip.id, member.user_id)
+        # upsert 会把行覆盖成未读，`meta.count` 因此永远是 1 —— 先读一次才能累计。
+        # 已读过的（read_at 非空）说明用户已经看过上一批，这是新一轮未读的开始。
+        prev = db.execute(select(TravelNotification).where(
+            TravelNotification.dedupe_key == key,
+        )).scalar_one_or_none()
+        count = 1
+        if prev is not None and prev.read_at is None:
+            try:
+                count = int((json.loads(prev.meta_json or "{}") or {}).get("count", 0)) + 1
+            except Exception:  # noqa: BLE001 — meta 脏了不能影响发消息
+                count = 1
+        upsert_notification(
+            db,
+            user_id=member.user_id,
+            actor_id=sender.id,
+            type="trip_chat",
+            title=f"{actor_name} 在「{trip_title}」发了消息",
+            body=excerpt,
+            target_kind="trip",
+            target_id=trip.id,
+            dedupe_key=key,
+            meta={"trip_id": trip.id, "trip_title": trip_title, "count": count},
+        )
+    return len(members)
+
+
 @router.post("/{trip_id}/chat")
 def add_chat_message(trip_id: str, body: ChatMessageBody,
                      db: Session = Depends(get_db),
                      user: TravelUser = Depends(get_current_user)):
-    _member(db, trip_id, user)
+    trip = _member(db, trip_id, user)
     content = body.content.strip()
     if not content:
         raise HTTPException(400, "消息不能为空")
@@ -1890,9 +1949,31 @@ def add_chat_message(trip_id: str, body: ChatMessageBody,
         content=content[:1000],
     )
     db.add(message)
+    # Phase 97：同事务写通知，让同行者在**主页铃铛**上就能看到，而不是必须进这个页面
+    _notify_chat_members(db, trip, user, message.content)
     db.commit()
     db.refresh(message)
     return _chat_dict(message, user, user.id)
+
+
+@router.post("/{trip_id}/chat/read")
+def mark_chat_read(trip_id: str, db: Session = Depends(get_db),
+                   user: TravelUser = Depends(get_current_user)):
+    """打开群聊时把自己那条群聊通知置为已读（Phase 97）。
+
+    **刻意做成显式端点**而不是在 `GET /chat` 里顺手改状态：前端关着面板时也在轮询
+    检查未读，GET 带副作用会让它自己把自己标成已读。
+    """
+    _member(db, trip_id, user)
+    row = db.execute(select(TravelNotification).where(
+        TravelNotification.dedupe_key == _chat_dedupe_key(trip_id, user.id),
+    )).scalar_one_or_none()
+    if row is not None and row.read_at is None:
+        from app.db.models import _now
+
+        row.read_at = _now()
+        db.commit()
+    return {"ok": True}
 
 
 @router.delete("/{trip_id}/chat/{message_id}")

@@ -416,7 +416,20 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
   const [showNotifications, setShowNotifications] = useState(false)
   const [socialUnread, refreshSocialUnread] = useNotificationUnread(showNotifications)
   const notificationUnread = annUnread + socialUnread
+  // 群聊通知点开后要**自动展开群聊抽屉**——否则用户落到行程板还得自己找入口，
+  // 等于把「有人说话了」的提示又还回去了一半。用一个自增序号触发，而不是布尔值：
+  // 连续点两条不同行程的群聊通知时，布尔值第二次不会变化，抽屉就打不开。
+  const [openChatSignal, setOpenChatSignal] = useState(0)
   const openNotificationTarget = useCallback((item: ProductNotification) => {
+    if (item.target_kind === 'trip') {
+      const tripId = item.meta.trip_id || item.target_id
+      if (tripId) {
+        setTripsBoard(tripId)
+        setShowTrips(true)
+        setOpenChatSignal((n) => n + 1)
+        return
+      }
+    }
     if (item.target_kind === 'relay') {
       openSocial('station', item.meta.destination || '天堂寨')
       return
@@ -1006,6 +1019,8 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
             username={user.username}
             layoutMode={layoutMode}
             initialBoardId={tripsBoard}
+            openChatSignal={openChatSignal}
+            onChatRead={refreshSocialUnread}
             onBoardChange={setTripsBoard}
             onClose={() => { setShowTrips(false); setTripsBoard(null) }}
             onOpenConversation={(convId) => {

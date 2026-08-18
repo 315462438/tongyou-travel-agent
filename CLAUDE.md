@@ -433,6 +433,22 @@ React Bits `Aurora`（低透明、pointer-events none、低动态偏好不挂载
 好友页，接力通知直达对应目的地；未读数每 30 秒及窗口聚焦时刷新。坑见
 `docs/pitfalls/事件通知必须与业务同事务且按事件去重.md`。
 
+**Phase 97 — 群聊消息进通知中心**：Phase 61 的群聊未读**只在行程板内部**（`Trips.tsx` 的本地
+state 靠轮询比对算出），人不进那个页面就永远不知道有人说话。现在 `add_chat_message` **同事务**
+给除发送者外的每个 accepted 成员写 `TravelNotification`（`type=trip_chat`、`target_kind=trip`），
+主页铃铛（Phase 84）直接可见。**`dedupe_key=trip-chat:{trip_id}:{接收者}`**——一个行程刷 20 条
+消息每人只有**一条**通知在刷新，不会冲爆铃铛（沿用 Phase 84 的模式）；`meta.count` 需**先读一次
+旧行**才能累计（`upsert_notification` 会覆盖成未读，否则永远是 1），已读过的则从 1 重新数。
+已读走**显式** `POST /api/trips/{id}/chat/read`，**刻意不在 `GET /chat` 里顺手标已读**——前端关着
+面板也在 8s 轮询，GET 带副作用会让它自己把自己标成已读、徽标永不亮。**不加 `last_read_at` 列**：
+通知行自带 `read_at`，语义够用，少一张状态表少一处不同步。`delete_trip` 里
+`delete_target_notifications("trip", …)` 撤销（否则点开跳 404）；**删单条消息不撤销**（「有人说过话」
+仍成立，撤销要判断是否最新条+回退 count，复杂度换不来价值——有回归测试钉住这个有意决策）。
+前端：通知面板认 `trip_chat`（💬 图标、`count>1` 显示「等 N 条」），点击跳到对应行程并
+**自动展开群聊抽屉**——用**自增序号**而非布尔值触发，否则连点两条不同行程的通知时第二条打不开。
+计划 `docs/task_plans/群聊消息进通知中心-2026-08-18.md`，用例
+`docs/test_cases/群聊消息进通知中心-验收用例.md`（`tests/test_trip_chat_notify.py` 11 passed）。
+
 **Phase 96 — 工具输出按结构裁剪**：`app/agent/reducers.py`（借鉴 dsh 社区插件 toolshrink）。
 Phase 90 的 `truncate.py` 解决「截断要幂等」，没解决「**截哪里**」——按位置下刀在网页上的
 真正后果是**前面全是导航**：维基百科「西湖」在生产参数 limit=4000 下，窗口里 3566 字是主菜单
