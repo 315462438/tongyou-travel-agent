@@ -13,9 +13,16 @@ class TestSnapshotTruncation:
         assert len(result) <= settings.max_snapshot_chars + 20
         assert result.endswith("[截断]")
 
-    def test_short_snapshot_untouched(self):
-        short = "uid=1_0 RootWebArea \"test\""
-        assert BrowserTool._snapshot_to_text(short) == short
+    def test_short_snapshot_not_truncated(self):
+        """短快照不该被截断。
+
+        Phase 96 起本函数会真正**提取**可读文本（此前只做头部截断、原样透传 a11y 树），
+        所以这里断言的是「没有截断标记 + 可读文字还在」，而不是原样返回。
+        """
+        out = BrowserTool._snapshot_to_text('uid=1_0 RootWebArea "test"')
+        assert "[截断]" not in out
+        assert "test" in out
+        assert "uid=" not in out  # 结构噪声已剥离
 
 
 class TestTitleUrlExtraction:

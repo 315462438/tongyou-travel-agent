@@ -129,11 +129,19 @@ def _is_private_host(host: str) -> bool:
 
 
 def _html_to_text(html: str, limit: int = 4000) -> str:
-    """粗提取正文：去 script/style/标签，折叠空白。"""
-    html = re.sub(r"(?is)<(script|style|noscript)[^>]*>.*?</\1>", " ", html)
-    html = re.sub(r"(?s)<[^>]+>", " ", html)
-    text = re.sub(r"\s+", " ", html).strip()
-    return text[:limit]
+    """提取正文：丢弃导航/页脚/目录等 chrome，保留标题与段落结构，再按 limit 截断。
+
+    Phase 96：此前是「去标签 + 折叠空白 + `text[:limit]`」，按**位置**下刀。实测维基百科
+    「西湖」词条在生产参数 limit=4000 下，窗口里 **3566 字是主菜单和目录，正文只剩 434 字**
+    ——位置截断的真正问题不是「丢了后面」，是「前面全是导航」，预算再大也先被 chrome 吃掉。
+    现在改为按**结构**下刀（`app.agent.reducers`，纯 stdlib、零模型调用），同一页 chrome
+    占比降到 0。
+
+    契约不变：返回纯文本、长度 ≤ limit。裁剪失败会退化为朴素提取，不抛异常。
+    """
+    from app.agent.reducers import reduce_html
+
+    return reduce_html(html).text[:limit]
 
 
 

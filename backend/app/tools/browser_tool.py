@@ -457,10 +457,24 @@ class BrowserTool:
 
     @staticmethod
     def _snapshot_to_text(snapshot: str) -> str:
-        """从可访问性树提取正文文本 + token 截断（评审 🟡2）"""
-        if len(snapshot) > settings.max_snapshot_chars:
-            snapshot = snapshot[: settings.max_snapshot_chars] + "\n...[截断]"
-        return snapshot
+        """从可访问性树提取可读文本 + 超长截断。
+
+        Phase 96：此前这个函数**名不副实**——docstring 写着「提取正文」，函数体只做了
+        头部截断，喂给模型的是带 uid / role / `level="1"` 属性 / 嵌套缩进的 a11y 树原文。
+        而 a11y 树里父节点 label 与子 StaticText **必然重复**（`link "登录"` 下面紧跟
+        `StaticText "登录"`），冗余极大。现在真正做提取（`app.agent.reducers.reduce_a11y`，
+        纯 stdlib、零模型调用）：真机快照实测去哪儿 31144→4324（-86%）、必应 8896→3130（-65%）、
+        百度百科 995→203（-80%），结构残留为 0。
+
+        契约不变：返回字符串、超 `max_snapshot_chars` 仍截断并带 `[截断]` 标记。
+        裁剪不适用或失败时原样返回，不抛异常。
+        """
+        from app.agent.reducers import reduce_a11y
+
+        text = reduce_a11y(snapshot).text
+        if len(text) > settings.max_snapshot_chars:
+            text = text[: settings.max_snapshot_chars] + "\n...[截断]"
+        return text
 
     @staticmethod
     def _extract_title_url(snapshot: str, fallback_url: str) -> tuple[str, str]:

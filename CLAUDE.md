@@ -433,6 +433,31 @@ React Bits `Aurora`（低透明、pointer-events none、低动态偏好不挂载
 好友页，接力通知直达对应目的地；未读数每 30 秒及窗口聚焦时刷新。坑见
 `docs/pitfalls/事件通知必须与业务同事务且按事件去重.md`。
 
+**Phase 96 — 工具输出按结构裁剪**：`app/agent/reducers.py`（借鉴 dsh 社区插件 toolshrink）。
+Phase 90 的 `truncate.py` 解决「截断要幂等」，没解决「**截哪里**」——按位置下刀在网页上的
+真正后果是**前面全是导航**：维基百科「西湖」在生产参数 limit=4000 下，窗口里 3566 字是主菜单
+和目录、正文只剩 434 字。现在按**结构**下刀，纯 stdlib（`html.parser`）、**零模型调用**
+（"语义"不是理解内容，是**认得格式**；判断力在写 reducer 时付出，运行时只做模式匹配，
+所以不增加延迟）。两个 reducer：`reduce_html`（丢 `script/style/nav/header/footer/aside` 及
+class/id 命中 `nav|menu|sidebar|footer|toc|comment…` 的容器，保留 h1-h6/列表/表格行，解码实体，
+去引用角标）接 `research_tools._html_to_text`；`reduce_a11y`（**只取引号里的 label**，无引号
+即纯结构节点丢弃，连续重复行折叠）接 `browser_tool._snapshot_to_text`——该函数此前**名不副实**，
+docstring 写"提取正文"而实际只做头部截断，喂进模型的是带 uid/role/属性的 a11y 树原文。
+认不得的格式**原样通过**（`reduce_auto`），兜底仍是 `TruncateBudget`。真机实测：HTML 省
+13-33%、chrome 特征串归零；a11y 快照去哪儿 31144→4324(-86%)、必应 -65%、百度百科 -80%，
+结构残留 0。⚠️ 三个**静默失效点**（不抛异常、日志干净、内容悄悄少了，全是真实样本才暴露的）：
+①维基 `<html class="…-toc-pinned-…">` 命中 chrome 规则致整页归零 → 根元素永不按属性丢弃 +
+**过度裁剪检测**（裁完不足朴素提取 15% 就退回，真实数据上救过 JS 空壳页）；②裁剪产物已无引号，
+a11y reducer 第二遍会把内容吃光 → 入口加「认不得就别动」的门保幂等；③相邻内联标签文本无分隔
+拼接（`清除<i>历史</i>记录`→`清除历史记录`，中文无害但英文会粘成 `HotelBooking`）→ 仅在两侧
+都是 ASCII 字母数字时补空格。**不动**：高德（`build_amap_source` 早就是手写 reducer）、
+`web_search`（已是紧凑行）、小红书正文（散文，且走 xhs_mcp 不经此链路）。**不引入
+readability/bs4**（stdlib 够用、服务器内存紧）；**不做相关性裁剪**（会依赖调用上下文、破坏幂等）。
+真实页面与**真机快照** fixture 冻结入库（`tests/fixtures/pages/`，gzip ~220KB，快照复现不了
+故不能按需拉取）。坑见 `docs/pitfalls/按结构裁剪文本的三个静默失效点.md`，计划
+`docs/task_plans/工具输出按结构裁剪-2026-08-18.md`，用例
+`docs/test_cases/工具输出按结构裁剪-验收用例.md`（`tests/test_reducers.py` 37 passed）。
+
 **Phase 89/95 — 重复调用守卫按调用方分链**：`app/agent/repeat_guard.py`（从 dsh 移植）与
 Phase 28 硬配额互补——配额治「总量超标」，它治「同一个查询反复调」：链键 =（工具名, 深度排序
 参数），连续到阈值就在工具返回值后**追加**升级式提醒，**不阻断**（合法重复一次都不该被拦）；
