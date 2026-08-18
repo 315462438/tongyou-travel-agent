@@ -433,6 +433,26 @@ React Bits `Aurora`（低透明、pointer-events none、低动态偏好不挂载
 好友页，接力通知直达对应目的地；未读数每 30 秒及窗口聚焦时刷新。坑见
 `docs/pitfalls/事件通知必须与业务同事务且按事件去重.md`。
 
+**Phase 89/95 — 重复调用守卫按调用方分链**：`app/agent/repeat_guard.py`（从 dsh 移植）与
+Phase 28 硬配额互补——配额治「总量超标」，它治「同一个查询反复调」：链键 =（工具名, 深度排序
+参数），连续到阈值就在工具返回值后**追加**升级式提醒，**不阻断**（合法重复一次都不该被拦）；
+排除的工具对链透明（否则记账工具能把 `search X → read_source → search X` 洗白）；失败调用也计数。
+**Phase 95 改为按调用方分链**：此前主 agent 与全部 subagent 共享一条链，并发子代理用相同参数调
+`amap_*`/`fetch_url` 会互相累加成假重复——注入的是一句**事实错误**的系统提示（「你已连续 3 次
+调用 X」而它其实是第一次），模型无从核对只能采信，可能因此放弃合法的首次查询。身份取自 LangChain
+注入的 `config` 里 **`checkpoint_ns` 的父链前缀**（`owner_from_config`）：实测同一子代理跨
+superstep 稳定、并发子代理互不相同；而 `parent_run_id` 每个 superstep 都变，**不能**直接当键
+（要用它就得耦合 `SubagentTracker` 的 run 树）。**不用 dsh 的 WeakMap**——它需要弱引用是因为链表
+长生命周期靠 GC 清理，我们的 guard 每轮新建、轮末丢弃，普通 dict 即可（另有 `MAX_OWNERS` 兜底）。
+分链后放宽阈值的理由消失，改回 dsh 的 **3/5/8**（原 3/6/10）。⚠️ 给 wrapper 加 `config` 参数有
+三个**静默失效**点（`functools.wraps` 让新参数对 LangChain 不可见 / 它复制的是同一个
+`__annotations__` dict 会污染原函数 / config 混进链键则守卫彻底失效），全部有回归测试钉住，
+另有 `ToolNode` 集成测试钉住「真实路径确实注入 config」——否则退化成共享单链是无声的。
+注意**硬配额仍是全轮共享**，那是整轮预算的有意设计，别顺手一起分开。
+坑见 `docs/pitfalls/给工具加参数时functools-wraps会让它隐形.md`，计划
+`docs/task_plans/重复调用守卫按调用方分链-2026-08-18.md`，用例
+`docs/test_cases/重复调用守卫按调用方分链-验收用例.md`（`tests/test_dsh_ports.py` 53 passed）。
+
 **Phase 93 — 评估集扩建（路由 + 本体抽取 + 过程验证换证据源）**：`evals/` 原本只测攻略正文
 （11 条 query、三层验证、一轮 1 小时），本体层与路由分流落在射程外。新增两个**轻量离线集**，
 不动原来那个重家伙：① `evals/routes.yaml` + `route_eval.py`——`decide_route` 三分类 35 条，

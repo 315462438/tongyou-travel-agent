@@ -392,6 +392,11 @@ def build_tools(cid: str, user_id: str, session: BrowserSession, sources: list[d
     # 提醒是建议性的，不阻断；守卫与配额共享同一批闭包，所以也是按轮记账。
     # read_source 排除在外：它靠 offset 翻页，连续调用是正常用法（参数不同本就不算重复，
     # 但把它排除掉可以让「search → read_source → search」不被记账工具打断链）。
+    #
+    # Phase 95：守卫**按调用方分链**（身份取自 LangChain 注入的 config，见
+    # `repeat_guard.owner_from_config`），并发子代理用相同参数调 amap/fetch_url 不再
+    # 互相累加成假重复。注意这与上面的**硬配额**是两件事：配额是整轮预算，全轮共享
+    # 是有意设计，不要顺手一起「分开」。
     from app.agent.repeat_guard import RepeatGuard, guard_tools
 
     guard = RepeatGuard(exclude=("read_source",))
