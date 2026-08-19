@@ -222,12 +222,6 @@ function parseTripStartDateInput(input: string): string | null {
   return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
 }
 
-function formatExportDayDate(date: string): string {
-  const shortDate = date.match(/^(\d{1,2})\.(\d{1,2})$/)
-  if (shortDate) return `${Number(shortDate[1])} 月 ${Number(shortDate[2])} 日`
-  return date.replace(/(\d+)年(\d+)月(\d+)日/, '$2 月 $3 日')
-}
-
 function exportWeekLabel(trip: TripDetail, day: number): string {
   if (!trip.start_date) {
     const title = trip.day_titles?.[day] || ''
@@ -272,16 +266,6 @@ function cleanExportDayTitle(title: string, day: number): string {
   return value.replace(/\s+/g, ' ').trim()
 }
 
-function exportTransportCostHtml(stop: TripStop): string {
-  const transport = stop.transport.trim()
-  const price = stop.ticket_price ? `¥${stop.ticket_price}` : ''
-  if (!transport && !price) return '<span class="weak">—</span>'
-  return [
-    transport ? `<div>${escapeDocHtml(transport)}</div>` : '',
-    price ? `<div class="cost-price">${escapeDocHtml(price)}</div>` : '',
-  ].filter(Boolean).join('')
-}
-
 function escapeDocHtml(value: unknown): string {
   return String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -304,6 +288,138 @@ function documentTimeRange(stop: TripStop, next?: TripStop): string {
   return formatTripTimeRange(stop.start_time, stop.stay_min, next?.start_time || '')
     .replace('开始', '')
     .trim() || '时间待定'
+}
+
+type ExportDaySectionV2 = {
+  day: number
+  date: string
+  monthLabel: string
+  weekLabel: string
+  routeTitle: string
+  description: string
+  stops: TripStop[]
+}
+
+type ExportHotelStayV2 = {
+  name: string
+  startDay: number
+  endDay: number
+  startDate: string
+  endDate: string
+  nights: number
+  city: string
+  note: string
+  price: number | null
+}
+
+type ExportFoodCityGroup = {
+  city: string
+  foods: FoodItem[]
+}
+
+const EXPORT_MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
+
+function parseExportDateParts(date: string): { month: number; day: number } | null {
+  const value = date.trim()
+  const zh = value.match(/(\d{1,2})\s*月\s*(\d{1,2})\s*日/)
+  const dot = value.match(/^(\d{1,2})[./](\d{1,2})$/)
+  const iso = value.match(/^\d{4}-(\d{1,2})-(\d{1,2})$/)
+  const match = zh || dot || iso
+  if (!match) return null
+  return { month: Number(match[1]), day: Number(match[2]) }
+}
+
+function exportMonthDayLabel(date: string): string {
+  const parts = parseExportDateParts(date)
+  if (!parts) return ''
+  return `${EXPORT_MONTHS[Math.max(0, Math.min(11, parts.month - 1))]} ${String(parts.day).padStart(2, '0')}`
+}
+
+function normalizeExportStopName(name: string): string {
+  return name.replace(/^🏨\s*/, '').trim()
+}
+
+function splitExportDayTitle(title: string, day: number): { routeTitle: string; description: string } {
+  const value = cleanExportDayTitle(title, day)
+  if (!value) return { routeTitle: '', description: '' }
+  const parts = value.split(/[：:]/).map((part) => part.trim()).filter(Boolean)
+  if (parts.length >= 2) return { routeTitle: parts[0], description: parts.slice(1).join('：') }
+  return { routeTitle: value, description: '' }
+}
+
+function buildExportDaySectionsV2(trip: TripDetail): ExportDaySectionV2[] {
+  return Array.from({ length: Math.max(1, trip.days) }, (_, i) => i + 1).map((day) => {
+    const date = displayTripDayDate(trip, day)
+    const title = trip.day_titles?.[day] || trip.destination || ''
+    const { routeTitle, description } = splitExportDayTitle(title, day)
+    return {
+      day,
+      date,
+      monthLabel: exportMonthDayLabel(date),
+      weekLabel: exportWeekLabel(trip, day),
+      routeTitle,
+      description,
+      stops: trip.stops.filter((s) => s.day === day && isTimelineStop(s)).sort((a, b) => a.order_no - b.order_no),
+    }
+  })
+}
+
+function exportCityFromStay(stay: TripStop): string {
+  const source = [stay.location, stay.note, stay.name].filter(Boolean).join(' ')
+  const known = ['吉隆坡', '仙本那', '亚庇', 'Semporna', 'Kuala Lumpur', 'KL', 'Kota Kinabalu']
+  return known.find((city) => source.toLowerCase().includes(city.toLowerCase())) || ''
+}
+
+function mergeExportHotelStays(stays: (TripStop & { date: string })[]): ExportHotelStayV2[] {
+  const sorted = [...stays].sort((a, b) => a.day - b.day || a.order_no - b.order_no)
+  const groups: ExportHotelStayV2[] = []
+  sorted.forEach((stay) => {
+    const name = normalizeExportStopName(stay.name)
+    const last = groups[groups.length - 1]
+    if (last && last.name === name && stay.day <= last.endDay + 1) {
+      last.endDay = Math.max(last.endDay, stay.day)
+      last.endDate = stay.date || last.endDate
+      last.nights = Math.max(1, last.endDay - last.startDay + 1)
+      last.note = last.note || stay.note || stay.location
+      last.city = last.city || exportCityFromStay(stay)
+      last.price = last.price ?? stay.ticket_price
+      return
+    }
+    groups.push({
+      name,
+      startDay: stay.day,
+      endDay: stay.day,
+      startDate: stay.date,
+      endDate: stay.date,
+      nights: 1,
+      city: exportCityFromStay(stay),
+      note: stay.note || stay.location,
+      price: stay.ticket_price,
+    })
+  })
+  return groups
+}
+
+function exportNoteTitle(content: string): string {
+  const value = content.trim()
+  const colon = value.match(/^(.{2,12}?)[：:，,。.\s]/)
+  if (colon) return colon[1].replace(/[0-9.、]/g, '').trim() || '提醒'
+  return value.slice(0, 8) || '提醒'
+}
+
+function exportNoteBody(content: string): string {
+  const value = content.trim()
+  const title = exportNoteTitle(value)
+  return value.startsWith(title) ? value.slice(title.length).replace(/^[：:，,。.\s]+/, '').trim() : value
+}
+
+function groupExportFoodsByCity(foods: FoodItem[]): ExportFoodCityGroup[] {
+  const groups = new Map<string, FoodItem[]>()
+  foods.forEach((food) => {
+    const city = food.city?.trim() || '未标城市'
+    groups.set(city, [...(groups.get(city) || []), food])
+  })
+  return Array.from(groups.entries()).map(([city, groupedFoods]) => ({ city, foods: groupedFoods }))
 }
 
 function isFoodStop(stop: TripStop): boolean {
@@ -399,21 +515,23 @@ function buildTripShareHtml(
   packing: PackingData,
   expenses: Expense[],
 ): string {
-  const stopsByDay = Array.from({ length: Math.max(1, trip.days) }, (_, i) => i + 1)
-    .map((day) => ({
-      day,
-      date: displayTripDayDate(trip, day),
-      title: trip.day_titles?.[day] || trip.destination || '',
-      stops: trip.stops.filter((s) => s.day === day && isTimelineStop(s)).sort((a, b) => a.order_no - b.order_no),
-    }))
+  const stopsByDay = buildExportDaySectionsV2(trip)
   const allStays = trip.stops.filter(isStayStop).map((s) => ({ ...s, date: displayTripDayDate(trip, s.day) }))
+  const hotelStays = mergeExportHotelStays(allStays)
   const foodStops = stopsByDay.map((d) => ({ ...d, foods: d.stops.filter(isFoodStop) })).filter((d) => d.foods.length)
+  const foodCityGroups = groupExportFoodsByCity(foods)
   const packingGroups = Array.from(new Set(packing.items.map((i) => i.category || '通用')))
     .map((category) => ({ category, items: packing.items.filter((i) => (i.category || '通用') === category) }))
     .filter((g) => g.items.length)
   const coverTitle = exportCoverTitle(trip)
   const nightCount = Math.max(0, trip.days - 1)
   const printTitle = `${coverTitle}｜${trip.days} 天 ${nightCount} 晚`
+  const dateRange = formatExportDateRange(trip)
+  const [rangeStart, rangeEnd = ''] = dateRange.split('—').map((part) => part.trim())
+  const coverMonth = stopsByDay[0]?.monthLabel?.split(' ')[0] || 'TRAVEL'
+  const coverYear = trip.start_date ? new Date(`${trip.start_date}T00:00:00`).getFullYear() : ''
+  const coverRegion = /吉隆坡|仙本那|亚庇|马来|KL|Kuala|Semporna|Sabah/i.test(coverTitle) ? 'MALAYSIA' : 'TRAVEL'
+  const stayNightCount = hotelStays.reduce((sum, stay) => sum + stay.nights, 0)
 
   const styles = `
     <style>
@@ -422,68 +540,99 @@ function buildTripShareHtml(
       body {
         margin: 0;
         background: #fff;
-        color: #27272a;
+        color: #2f3137;
         font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
-        font-size: 11px;
-        line-height: 1.55;
+        font-size: 11.5px;
+        line-height: 1.62;
       }
       .print-header,
       .print-footer { display: none; }
       .doc-page { max-width: 176mm; margin: 0 auto; padding: 18mm 18mm 16mm; background: #fff; }
-      .doc-cover { margin: 0 0 30px; padding: 0 0 18px; border-bottom: 1px solid #e4e4e7; }
-      .cover-label { margin: 0 0 8px; color: #71717a; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
-      h1 { margin: 0; font-size: 26px; line-height: 1.25; font-weight: 700; letter-spacing: 0; color: #18181b; }
-      .cover-subtitle { margin: 8px 0 0; font-size: 13px; font-weight: 500; color: #52525b; }
-      .cover-date { margin: 4px 0 0; font-size: 11px; color: #71717a; }
-      .overview { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 16px; color: #71717a; font-size: 10px; }
-      .overview b { color: #18181b; font-size: 12px; }
-      .day-section { margin: 24px 0 30px; break-inside: avoid-page; page-break-inside: avoid; }
-      .day-head { display: grid; grid-template-columns: 70px 1fr; column-gap: 12px; align-items: baseline; margin-bottom: 9px; break-after: avoid; page-break-after: avoid; }
-      .day-kicker { color: #3155c6; font-size: 10px; font-weight: 700; letter-spacing: .08em; }
-      .day-head h2 { margin: 0; color: #18181b; font-size: 18px; line-height: 1.35; page-break-after: avoid; }
-      .day-head p { margin: 2px 0 0; color: #3f3f46; font-size: 14px; font-weight: 500; line-height: 1.45; }
-      .route-box { margin: 10px 0 13px; padding: 10px 14px; border-radius: 6px; background: #f7f7f8; color: #52525b; break-inside: avoid; page-break-inside: avoid; }
-      .route-box b { display: block; margin-bottom: 3px; color: #18181b; font-size: 11px; }
-      .route-box span { color: #52525b; }
+      .doc-cover { margin: 0 0 34px; padding: 0 0 22px; border-bottom: 1px solid #e8e8ea; }
+      .cover-label { margin: 0 0 9px; color: #3155c6; font-size: 10px; font-weight: 700; letter-spacing: .11em; text-transform: uppercase; }
+      h1 { margin: 0; font-size: 29px; line-height: 1.18; font-weight: 750; letter-spacing: 0; color: #16181d; }
+      .cover-subtitle { margin: 12px 0 0; color: #24262d; font-size: 14px; font-weight: 650; letter-spacing: .02em; text-transform: uppercase; }
+      .cover-kind { margin: 2px 0 0; color: #666b78; font-size: 12px; }
+      .cover-date { display: flex; align-items: center; gap: 12px; margin-top: 16px; color: #6d7280; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+      .cover-date-line { flex: 1; height: 1px; max-width: 210px; background: #d8dbe2; }
+      .overview { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 18px; color: #6d7280; font-size: 10px; }
+      .overview b { color: #181b22; font-size: 12px; }
+      .day-section { margin: 0 0 34px; break-inside: auto; page-break-inside: auto; }
+      .day-section + .day-section { padding-top: 24px; border-top: 1px solid #e7e9ef; }
+      .day-head { margin: 0 0 12px; break-after: avoid; page-break-after: avoid; }
+      .day-label-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 5px; }
+      .day-kicker { color: #3155c6; font-size: 10px; font-weight: 750; letter-spacing: .1em; text-transform: uppercase; }
+      .day-month { color: #9297a3; font-size: 10px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; }
+      .day-head h2 { margin: 0; color: #171a21; font-size: 20px; line-height: 1.28; font-weight: 750; page-break-after: avoid; }
+      .day-desc { margin: 3px 0 0; color: #666b78; font-size: 11px; line-height: 1.55; }
+      .route-line { margin: 12px 0 16px; break-inside: avoid; page-break-inside: avoid; }
+      .route-title { margin: 0 0 7px; color: #171a21; font-size: 9.5px; font-weight: 750; letter-spacing: .09em; text-transform: uppercase; }
+      .route-flow { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 7px; color: #5f6572; font-size: 10.5px; }
+      .route-dot { width: 6px; height: 6px; border-radius: 999px; background: #3155c6; display: inline-block; }
+      .route-arrow { color: #b5bac5; }
+      .timeline { position: relative; margin: 0; padding: 2px 0 0; }
+      .timeline::before { content: ""; position: absolute; top: 7px; bottom: 10px; left: 92px; width: 1px; background: #dfe3eb; }
+      .timeline-item { position: relative; display: grid; grid-template-columns: 76px 1fr; column-gap: 28px; padding: 0 0 18px; break-inside: avoid; page-break-inside: avoid; }
+      .timeline-time { color: #3155c6; font-weight: 750; font-size: 10.8px; line-height: 1.35; font-variant-numeric: tabular-nums; }
+      .timeline-dot { position: absolute; top: 2px; left: 88px; width: 9px; height: 9px; border-radius: 999px; background: #fff; border: 2px solid #3155c6; }
+      .timeline-body { padding-bottom: 1px; }
+      .stop-name { color: #181b22; font-size: 12.4px; font-weight: 680; line-height: 1.45; }
+      .note { color: #6f7582; margin-top: 2px; font-size: 10.2px; line-height: 1.55; }
+      .meta-row { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
+      .meta-pill { color: #636a76; font-size: 9.4px; line-height: 1.35; }
+      .price { color: #3155c6; font-weight: 650; }
+      .weak { color: #a0a5af; }
+      .muted { color: #737987; }
+      .module-section { margin: 34px 0 0; break-inside: auto; page-break-inside: auto; }
+      .module-section h2 { margin: 0 0 14px; padding-top: 12px; border-top: 1px solid #e6e8ee; color: #171a21; font-size: 18px; line-height: 1.35; page-break-after: avoid; }
+      .module-section h3 { margin: 14px 0 8px; font-size: 12px; color: #171a21; page-break-after: avoid; }
+      .cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
+      .city-food-group { margin: 12px 0 14px; break-inside: avoid; page-break-inside: avoid; }
+      .city-food-head { display: flex; align-items: baseline; gap: 8px; margin: 0 0 7px; color: #171a21; font-size: 12px; font-weight: 720; }
+      .city-food-count { color: #8c929f; font-size: 9.5px; font-weight: 600; }
+      .food-line-list { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; }
+      .food-line { display: grid; grid-template-columns: 28px 1fr; gap: 8px; color: #3f4450; font-size: 10.4px; line-height: 1.48; }
+      .food-line-index { color: #3155c6; font-weight: 760; letter-spacing: .04em; }
+      .food-line-main b { color: #171a21; font-weight: 680; }
+      .food-line-meta { color: #737987; }
+      .food-card,
+      .stay-card,
+      .card { padding: 0 0 10px; border-bottom: 1px solid #eceef3; page-break-inside: avoid; break-inside: avoid; }
+      .food-index,
+      .note-index { color: #3155c6; font-size: 10px; font-weight: 750; letter-spacing: .08em; }
+      .card-title { margin-top: 2px; color: #171a21; font-size: 12.2px; font-weight: 680; }
+      .card-meta { margin-top: 2px; color: #727884; font-size: 9.8px; }
+      .stay-list { display: grid; gap: 10px; }
+      .stay-card { display: grid; grid-template-columns: 1fr auto; column-gap: 12px; align-items: start; }
+      .stay-date { color: #3155c6; font-size: 10px; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+      .notes-list { display: grid; gap: 12px; }
+      .note-item { display: grid; grid-template-columns: 36px 1fr; gap: 10px; page-break-inside: avoid; break-inside: avoid; }
+      .note-title { color: #171a21; font-size: 12px; font-weight: 680; }
+      .list { margin: 8px 0 0; padding-left: 18px; }
+      .list li { margin: 4px 0; }
       table { width: 100%; border-collapse: collapse; margin: 8px 0 18px; table-layout: fixed; page-break-inside: auto; }
       thead { display: table-header-group; }
       tr { break-inside: avoid; page-break-inside: avoid; }
-      th, td { padding: 8px 6px; text-align: left; vertical-align: top; word-break: break-word; border: 0; border-bottom: 1px solid #e4e4e7; }
+      th, td { padding: 7px 6px; text-align: left; vertical-align: top; word-break: break-word; border: 0; border-bottom: 1px solid #e6e8ee; }
       th { background: #fafafa; color: #71717a; font-weight: 600; font-size: 10px; }
-      .itinerary-table { border-top: 1px solid #d4d4d8; }
       .time { color: #3155c6; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
-      .compact { color: #3f3f46; }
-      .cost-cell { color: #3f3f46; line-height: 1.45; }
-      .cost-price { margin-top: 2px; color: #3155c6; font-weight: 600; }
-      .price { color: #3155c6; font-weight: 600; }
-      .stop-name { font-weight: 600; font-size: 12px; color: #18181b; }
-      .note { color: #71717a; margin-top: 3px; font-size: 9.5px; line-height: 1.5; }
-      .weak { color: #a1a1aa; }
-      .module-section { margin: 26px 0; break-inside: avoid-page; page-break-inside: avoid; }
-      .module-section h2 { margin: 0 0 12px; padding-top: 10px; border-top: 1px solid #e4e4e7; color: #18181b; font-size: 18px; line-height: 1.35; page-break-after: avoid; }
-      .module-section h3 { margin: 14px 0 6px; font-size: 13px; color: #18181b; page-break-after: avoid; }
-      .cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-      .card { border: 1px solid #e4e4e7; border-radius: 6px; padding: 9px 10px; background: #fff; page-break-inside: avoid; }
-      .card b { display: block; margin-bottom: 3px; color: #18181b; }
-      .list { margin: 8px 0 0; padding-left: 18px; }
-      .list li { margin: 4px 0; }
-      .muted { color: #71717a; }
-      .footer { margin-top: 32px; padding-top: 12px; border-top: 1px solid #e4e4e7; color: #a1a1aa; text-align: center; font-size: 10px; }
+      .footer { margin-top: 34px; padding-top: 12px; border-top: 1px solid #e6e8ee; color: #a0a5af; text-align: center; font-size: 10px; }
       @media print {
         body { background: #fff; }
         .doc-page { max-width: none; padding: 0; }
         .no-print { display: none !important; }
         .print-header { display: block; position: fixed; top: -10mm; left: 0; right: 0; padding-bottom: 4px; border-bottom: 1px solid #f4f4f5; color: #a1a1aa; font-size: 9px; }
-        .print-footer { display: block; position: fixed; bottom: -10mm; left: 0; right: 0; color: #a1a1aa; text-align: center; font-size: 9px; }
-        .print-footer::after { content: "第 " counter(page) " 页"; }
-        .doc-cover { break-after: avoid; page-break-after: avoid; }
+        .print-footer { display: none !important; }
+        .doc-cover,
         .day-head,
-        .route-box,
+        .route-line,
         .module-section h2,
         h2,
         h3 { break-after: avoid; page-break-after: avoid; }
-        .day-section,
-        .route-box,
+        .timeline-item,
+        .food-card,
+        .stay-card,
+        .note-item,
         .card,
         tr { break-inside: avoid; page-break-inside: avoid; }
       }
@@ -496,38 +645,49 @@ function buildTripShareHtml(
     </style>
   `
 
-  const itinerary = stopsByDay.map(({ day, date, title, stops }) => {
-    const route = stops.map((s) => s.name.replace(/^🏨\s*/, '')).filter(Boolean).join(' → ')
-    const rows = stops.length ? stops.map((stop, idx) => {
+  const itinerary = stopsByDay.map(({ day, monthLabel, weekLabel, routeTitle, description, stops }) => {
+    const routeStops = stops.map((s) => normalizeExportStopName(s.name)).filter(Boolean)
+    const routeHtml = routeStops.length ? `
+      <div class="route-line">
+        <p class="route-title">Today's Route</p>
+        <div class="route-flow">
+          <span class="route-dot"></span>
+          ${routeStops.map((name, idx) => `
+            <span>${escapeDocHtml(name)}</span>
+            ${idx < routeStops.length - 1 ? '<span class="route-arrow">→</span>' : ''}
+          `).join('')}
+        </div>
+      </div>
+    ` : ''
+    const items = stops.length ? stops.map((stop, idx) => {
+      const meta = [
+        stop.transport ? `交通：${stop.transport}` : '',
+        stop.ticket_price ? `费用：¥${stop.ticket_price}` : '',
+      ].filter(Boolean)
       return `
-      <tr>
-        <td class="time">${escapeDocHtml(documentTimeRange(stop, stops[idx + 1]))}</td>
-        <td>
-          <div class="stop-name">${escapeDocHtml(stop.name.replace(/^🏨\s*/, ''))}</div>
-          ${stop.note ? `<div class="note">${escapeDocHtml(stop.note)}</div>` : ''}
-          ${stop.location ? `<div class="note">地图定位：${escapeDocHtml(stop.location)}</div>` : ''}
-        </td>
-        <td class="cost-cell">${exportTransportCostHtml(stop)}</td>
-      </tr>
-    `}).join('') : '<tr><td colspan="3" class="muted">暂无行程安排</td></tr>'
-    const dateLabel = formatExportDayDate(date)
-    const weekLabel = exportWeekLabel(trip, day)
-    const dayTitle = cleanExportDayTitle(title, day)
+        <div class="timeline-item">
+          <div class="timeline-time">${escapeDocHtml(documentTimeRange(stop, stops[idx + 1]))}</div>
+          <span class="timeline-dot"></span>
+          <div class="timeline-body">
+            <div class="stop-name">${escapeDocHtml(normalizeExportStopName(stop.name))}</div>
+            ${stop.note ? `<div class="note">${escapeDocHtml(stop.note)}</div>` : ''}
+            ${meta.length ? `<div class="meta-row">${meta.map((m) => `<span class="meta-pill">${escapeDocHtml(m)}</span>`).join('')}</div>` : ''}
+          </div>
+        </div>
+      `
+    }).join('') : '<p class="muted">暂无行程安排。</p>'
     return `
       <section class="day-section">
         <div class="day-head">
-          <div class="day-kicker">DAY ${String(day).padStart(2, '0')}</div>
-          <div>
-            <h2>${escapeDocHtml(dateLabel ? `${dateLabel}${weekLabel ? ` · ${weekLabel}` : ''}` : `第 ${day} 天`)}</h2>
-            ${dayTitle ? `<p>${escapeDocHtml(dayTitle)}</p>` : ''}
+          <div class="day-label-row">
+            <span class="day-kicker">DAY ${String(day).padStart(2, '0')}</span>
+            ${monthLabel ? `<span class="day-month">${escapeDocHtml(monthLabel)}</span>` : ''}
           </div>
+          <h2>${escapeDocHtml(routeTitle || `第 ${day} 天`)}</h2>
+          ${weekLabel || description ? `<p class="day-desc">${escapeDocHtml([weekLabel, description].filter(Boolean).join(' · '))}</p>` : ''}
         </div>
-        ${route ? `<div class="route-box"><b>今日路线</b><span>${escapeDocHtml(route)}</span></div>` : ''}
-        <table class="itinerary-table">
-          <colgroup><col style="width:18%"><col style="width:62%"><col style="width:20%"></colgroup>
-          <thead><tr><th>时间</th><th>地点与活动</th><th>交通/花费</th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
+        ${routeHtml}
+        <div class="timeline">${items}</div>
       </section>
     `
   }).join('')
@@ -536,21 +696,36 @@ function buildTripShareHtml(
     <section class="module-section">
       <h2>美食</h2>
       ${foodStops.length ? foodStops.map((d) => `
-        <h3>DAY ${String(d.day).padStart(2, '0')}${d.date ? ` · ${escapeDocHtml(formatExportDayDate(d.date))}` : ''}</h3>
+        <h3>DAY ${String(d.day).padStart(2, '0')}${d.monthLabel ? ` · ${escapeDocHtml(d.monthLabel)}` : ''}</h3>
         <div class="cards">
-          ${d.foods.map((f) => `<div class="card"><b>${escapeDocHtml(f.name)}</b>${f.note ? `<div class="muted">${escapeDocHtml(f.note)}</div>` : ''}</div>`).join('')}
-        </div>
-      `).join('') : '<p class="muted">每日行程里暂未标记美食。</p>'}
-      ${foods.length ? `
-        <h3>攻略推荐/收藏</h3>
-        <div class="cards">
-          ${foods.map((f) => `
-            <div class="card">
-              <b>${f.is_top ? 'TOP · ' : ''}${escapeDocHtml(f.name)}</b>
-              <div class="muted">${[f.category, f.city, f.price ? `人均 ¥${f.price}` : '', f.note].filter(Boolean).map(escapeDocHtml).join(' · ')}</div>
+          ${d.foods.map((f, idx) => `
+            <div class="food-card">
+              <div class="food-index">${String(idx + 1).padStart(2, '0')}</div>
+              <div class="card-title">${escapeDocHtml(normalizeExportStopName(f.name))}</div>
+              ${f.transport || f.ticket_price ? `<div class="card-meta">${[f.transport, f.ticket_price ? `¥${f.ticket_price}/人` : ''].filter(Boolean).map(escapeDocHtml).join(' · ')}</div>` : ''}
+              ${f.note ? `<div class="note">${escapeDocHtml(f.note)}</div>` : ''}
             </div>
           `).join('')}
         </div>
+      `).join('') : '<p class="muted">每日行程里暂未标记美食。</p>'}
+      ${foodCityGroups.length ? `
+        <h3>攻略推荐/收藏</h3>
+        ${foodCityGroups.map((group) => `
+          <div class="city-food-group">
+            <div class="city-food-head">${escapeDocHtml(group.city)} <span class="city-food-count">${group.foods.length} 项</span></div>
+            <ol class="food-line-list">
+              ${group.foods.map((f, idx) => `
+                <li class="food-line">
+                  <span class="food-line-index">${String(idx + 1).padStart(2, '0')}</span>
+                  <span class="food-line-main">
+                    <b>${escapeDocHtml(f.name)}</b>
+                    ${[f.is_top ? '推荐' : '', f.category, f.price ? `¥${f.price}/人` : '', f.note].filter(Boolean).length ? `<span class="food-line-meta"> · ${[f.is_top ? '推荐' : '', f.category, f.price ? `¥${f.price}/人` : '', f.note].filter(Boolean).map(escapeDocHtml).join(' · ')}</span>` : ''}
+                  </span>
+                </li>
+              `).join('')}
+            </ol>
+          </div>
+          `).join('')}
       ` : ''}
     </section>
   `
@@ -558,21 +733,19 @@ function buildTripShareHtml(
   const stayHtml = `
     <section class="module-section">
       <h2>住宿</h2>
-      ${allStays.length ? `
-        <table class="simple-table">
-          <colgroup><col style="width:18%"><col style="width:42%"><col style="width:28%"><col style="width:12%"></colgroup>
-          <thead><tr><th>日期</th><th>住宿</th><th>备注</th><th>参考价</th></tr></thead>
-          <tbody>
-            ${allStays.map((s) => `
-              <tr>
-                <td class="time">DAY ${String(s.day).padStart(2, '0')}${s.date ? `<br>${escapeDocHtml(formatExportDayDate(s.date))}` : ''}</td>
-                <td><b>${escapeDocHtml(s.name.replace(/^🏨\s*/, ''))}</b></td>
-                <td class="muted">${escapeDocHtml(s.note || s.location || '-')}</td>
-                <td class="price">${s.ticket_price ? `¥${escapeDocHtml(s.ticket_price)}/晚` : '-'}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
+      ${hotelStays.length ? `
+        <div class="stay-list">
+          ${hotelStays.map((stay) => `
+            <div class="stay-card">
+              <div>
+                <div class="card-title">${escapeDocHtml(stay.name)}</div>
+                <div class="card-meta">${[stay.city, `${stay.nights} NIGHTS`].filter(Boolean).map(escapeDocHtml).join(' · ')}</div>
+                ${stay.note ? `<div class="note">${escapeDocHtml(stay.note)}</div>` : ''}
+              </div>
+              <div class="stay-date">${escapeDocHtml(stay.startDate || `DAY ${stay.startDay}`)}${stay.endDate && stay.endDate !== stay.startDate ? ` — ${escapeDocHtml(stay.endDate)}` : ''}</div>
+            </div>
+          `).join('')}
+        </div>
       ` : '<p class="muted">暂未添加住宿安排。</p>'}
     </section>
   `
@@ -580,7 +753,19 @@ function buildTripShareHtml(
   const tipsHtml = `
     <section class="module-section">
       <h2>避坑</h2>
-      ${tips.length ? `<ul class="list">${tips.map((t) => `<li><b>${t.level === 'important' ? '重要' : '提醒'}：</b>${escapeDocHtml(t.content)}</li>`).join('')}</ul>` : '<p class="muted">暂未添加避坑提醒。</p>'}
+      ${tips.length ? `
+        <div class="notes-list">
+          ${tips.map((t, idx) => `
+            <div class="note-item">
+              <div class="note-index">${String(idx + 1).padStart(2, '0')}</div>
+              <div>
+                <div class="note-title">${escapeDocHtml(exportNoteTitle(t.content))}</div>
+                <div class="note">${escapeDocHtml(exportNoteBody(t.content))}</div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      ` : '<p class="muted">暂未添加避坑提醒。</p>'}
     </section>
   `
 
@@ -641,14 +826,15 @@ function buildTripShareHtml(
         <div class="print-footer"></div>
         <main class="doc-page export-trip-view">
           <section class="doc-cover">
-            <p class="cover-label">Travel Plan</p>
+            <p class="cover-label">${escapeDocHtml([coverRegion, coverMonth, coverYear].filter(Boolean).join(' · '))}</p>
             <h1>${escapeDocHtml(coverTitle)}</h1>
-            <p class="cover-subtitle">${escapeDocHtml(trip.days)} 天 ${escapeDocHtml(nightCount)} 晚 · 海岛跳岛旅行计划</p>
-            <p class="cover-date">${escapeDocHtml(formatExportDateRange(trip))}</p>
+            <p class="cover-subtitle">${escapeDocHtml(trip.days)} DAYS · ${escapeDocHtml(nightCount)} NIGHTS</p>
+            <p class="cover-kind">海岛跳岛旅行计划</p>
+            <div class="cover-date"><span>${escapeDocHtml(rangeStart || dateRange)}</span><span class="cover-date-line"></span><span>${escapeDocHtml(rangeEnd || rangeStart || '')}</span></div>
             <div class="overview">
               <span><b>${trip.stops.filter(isTimelineStop).length}</b> 个行程事件</span>
               <span><b>${foodStops.reduce((sum, d) => sum + d.foods.length, 0) + foods.length}</b> 项美食</span>
-              <span><b>${allStays.length}</b> 项住宿</span>
+              <span><b>${stayNightCount}</b> 晚住宿</span>
               <span><b>${packing.items.length}</b> 件行李</span>
             </div>
           </section>
@@ -676,20 +862,21 @@ function buildTripDocxBlob(
   packing: PackingData,
   expenses: Expense[],
 ): Blob {
-  const stopsByDay = Array.from({ length: Math.max(1, trip.days) }, (_, i) => i + 1)
-    .map((day) => ({
-      day,
-      date: displayTripDayDate(trip, day),
-      title: trip.day_titles?.[day] || trip.destination || '',
-      stops: trip.stops.filter((s) => s.day === day && isTimelineStop(s)).sort((a, b) => a.order_no - b.order_no),
-    }))
+  const DOCX_TABLE_DXA = 9000
+  const stopsByDay = buildExportDaySectionsV2(trip)
   const allStays = trip.stops.filter(isStayStop).map((s) => ({ ...s, date: displayTripDayDate(trip, s.day) }))
+  const hotelStays = mergeExportHotelStays(allStays)
   const foodStops = stopsByDay.map((d) => ({ ...d, foods: d.stops.filter(isFoodStop) })).filter((d) => d.foods.length)
+  const foodCityGroups = groupExportFoodsByCity(foods)
   const packingGroups = Array.from(new Set(packing.items.map((i) => i.category || '通用')))
     .map((category) => ({ category, items: packing.items.filter((i) => (i.category || '通用') === category) }))
     .filter((g) => g.items.length)
   const coverTitle = exportCoverTitle(trip)
   const nightCount = Math.max(0, trip.days - 1)
+  const stayNightCount = hotelStays.reduce((sum, stay) => sum + stay.nights, 0)
+  const coverMonth = stopsByDay[0]?.monthLabel?.split(' ')[0] || 'TRAVEL'
+  const coverYear = trip.start_date ? new Date(`${trip.start_date}T00:00:00`).getFullYear() : ''
+  const coverRegion = /吉隆坡|仙本那|亚庇|马来|KL|Kuala|Semporna|Sabah/i.test(coverTitle) ? 'MALAYSIA' : 'TRAVEL'
   const line = (parts: unknown[]) => parts.filter(Boolean).map((part) => String(part)).join(' · ')
   const runPr = (opts: { bold?: boolean; color?: string; size?: number } = {}) => [
     opts.bold ? '<w:b/>' : '',
@@ -732,7 +919,8 @@ function buildTripDocxBlob(
   const table = (rows: string[], widths: number[] = []) => `
     <w:tbl>
       <w:tblPr>
-        <w:tblW w:w="10000" w:type="pct"/>
+        <w:tblW w:w="5000" w:type="pct"/>
+        <w:tblLayout w:type="fixed"/>
         <w:tblLook w:firstRow="1" w:noHBand="0" w:noVBand="1"/>
         <w:tblBorders>
           <w:top w:val="single" w:sz="4" w:color="E4E4E7"/>
@@ -746,98 +934,101 @@ function buildTripDocxBlob(
       ${widths.length ? `<w:tblGrid>${widths.map((width) => `<w:gridCol w:w="${width}"/>`).join('')}</w:tblGrid>` : ''}
       ${rows.join('')}
     </w:tbl>`
+  const divider = () => `
+    <w:p>
+      <w:pPr>
+        <w:pBdr><w:top w:val="single" w:sz="6" w:space="8" w:color="E7E9EF"/></w:pBdr>
+        <w:spacing w:before="200" w:after="120"/>
+      </w:pPr>
+    </w:p>`
   const sections: string[] = [
+    p([coverRegion, coverMonth, coverYear].filter(Boolean).join(' · '), 'DayLabel', { after: 60 }),
     p(coverTitle, 'Title'),
-    p(`${trip.days} 天 ${nightCount} 晚 · 海岛跳岛旅行计划`, 'Subtitle'),
+    p(`${trip.days} DAYS · ${nightCount} NIGHTS`, 'Subtitle'),
+    p('海岛跳岛旅行计划', 'DayRoute'),
     p(formatExportDateRange(trip), 'DateLine'),
-    p(line([`${trip.stops.filter(isTimelineStop).length} 个行程事件`, `${foodStops.reduce((sum, d) => sum + d.foods.length, 0) + foods.length} 项美食`, `${allStays.length} 项住宿`, `${packing.items.length} 件行李`]), 'MetaLine', { after: 280 }),
+    p(line([`${trip.stops.filter(isTimelineStop).length} 个行程事件`, `${foodStops.reduce((sum, d) => sum + d.foods.length, 0) + foods.length} 项美食`, `${stayNightCount} 晚住宿`, `${packing.items.length} 件行李`]), 'MetaLine', { after: 280 }),
   ]
 
-  stopsByDay.forEach(({ day, date, title, stops }) => {
-    const dateLabel = formatExportDayDate(date)
-    const weekLabel = exportWeekLabel(trip, day)
-    const dayTitle = cleanExportDayTitle(title, day)
-    sections.push(p(`DAY ${String(day).padStart(2, '0')}`, 'DayLabel', { before: 220, after: 20 }))
-    sections.push(p(dateLabel ? `${dateLabel}${weekLabel ? ` · ${weekLabel}` : ''}` : `第 ${day} 天`, 'Heading1', { after: dayTitle ? 20 : 100 }))
-    if (dayTitle) sections.push(p(dayTitle, 'DayRoute', { after: 110 }))
-    const route = stops.map((s) => s.name.replace(/^🏨\s*/, '')).filter(Boolean).join(' → ')
+  stopsByDay.forEach(({ day, monthLabel, weekLabel, routeTitle, description, stops }, dayIndex) => {
+    const route = stops.map((s) => normalizeExportStopName(s.name)).filter(Boolean).join(' → ')
+    if (dayIndex > 0) sections.push(divider())
+    sections.push(p(`DAY ${String(day).padStart(2, '0')}${monthLabel ? `                                      ${monthLabel}` : ''}`, 'DayLabel', { before: 260, after: 20 }))
+    sections.push(p(routeTitle || `第 ${day} 天`, 'Heading1', { after: 30 }))
+    if (weekLabel || description) sections.push(p([weekLabel, description].filter(Boolean).join(' · '), 'DayRoute', { after: 110 }))
     if (route) {
-      sections.push(table([
-        row([cell([
-          p('今日路线', 'RouteTitle', { after: 40 }),
-          p(route, 'RouteText', { after: 0 }),
-        ], 9000, { shade: 'F7F7F8' })]),
-      ], [9000]))
+      sections.push(p(`TODAY'S ROUTE  ${route}`, 'RouteText', { after: 120 }))
     }
-    sections.push(table([
-      row([
-        cell(p('时间', 'TableHead', { after: 0 }), 1600, { shade: 'FAFAFA' }),
-        cell(p('地点与活动', 'TableHead', { after: 0 }), 5600, { shade: 'FAFAFA' }),
-        cell(p('交通 / 花费', 'TableHead', { after: 0 }), 1800, { shade: 'FAFAFA' }),
-      ]),
-      ...(stops.length ? stops.map((stop, idx) => row([
-        cell(p(documentTimeRange(stop, stops[idx + 1]), 'TimeCell', { after: 0 }), 1600),
-        cell([
-          p(stop.name.replace(/^🏨\s*/, ''), 'PlaceName', { after: stop.note || stop.location ? 35 : 0 }),
-          stop.note ? p(stop.note, 'BodySmall', { after: stop.location ? 25 : 0 }) : '',
-          stop.location ? p(`地图定位：${stop.location}`, 'AuxText', { after: 0 }) : '',
-        ].filter(Boolean) as string[], 5600),
-        cell([
-          stop.transport ? p(stop.transport, 'BodySmall', { after: stop.ticket_price ? 25 : 0 }) : '',
-          stop.ticket_price ? p(`¥${stop.ticket_price}`, 'CostText', { after: 0 }) : '',
-          !stop.transport && !stop.ticket_price ? p('—', 'WeakText', { after: 0 }) : '',
-        ].filter(Boolean) as string[], 1800),
-      ])) : [row([cell('暂无行程安排', 9000)])]),
-    ], [1600, 5600, 1800]))
+    if (stops.length) {
+      stops.forEach((stop, idx) => {
+        const meta = line([
+          stop.transport ? `交通：${stop.transport}` : '',
+          stop.ticket_price ? `费用：¥${stop.ticket_price}` : '',
+        ])
+        sections.push(p(documentTimeRange(stop, stops[idx + 1]), 'TimeCell', { after: 20 }))
+        sections.push(p(`● ${normalizeExportStopName(stop.name)}`, 'PlaceName', { after: stop.note || meta ? 25 : 100 }))
+        if (stop.note) sections.push(p(stop.note, 'BodySmall', { after: meta ? 20 : 90 }))
+        if (meta) sections.push(p(meta, 'AuxText', { after: 100 }))
+      })
+    } else {
+      sections.push(p('暂无行程安排。', 'WeakText', { after: 100 }))
+    }
   })
 
   sections.push(p('美食', 'Heading1', { before: 320, after: 120 }))
   if (foodStops.length) {
     foodStops.forEach((d) => {
-      sections.push(p(`DAY ${String(d.day).padStart(2, '0')}${d.date ? ` · ${d.date}` : ''}`, 'Heading2', { after: 50 }))
-      d.foods.forEach((food) => sections.push(p(line([food.name, food.note]), 'BodySmall', { after: 70 })))
+      sections.push(p(`DAY ${String(d.day).padStart(2, '0')}${d.monthLabel ? ` · ${d.monthLabel}` : ''}`, 'Heading2', { after: 50 }))
+      d.foods.forEach((food) => sections.push(p(line([normalizeExportStopName(food.name), food.transport, food.ticket_price ? `¥${food.ticket_price}/人` : '', food.note]), 'BodySmall', { after: 70 })))
     })
   } else {
     sections.push(p('每日行程里暂未标记美食。', 'WeakText'))
   }
-  if (foods.length) {
+  if (foodCityGroups.length) {
     sections.push(p('攻略推荐 / 收藏', 'Heading2', { before: 120, after: 50 }))
-    foods.forEach((food) => sections.push(p(line([food.is_top ? 'TOP' : '', food.name, food.category, food.city, food.price ? `人均 ¥${food.price}` : '', food.note]), 'BodySmall', { after: 70 })))
+    foodCityGroups.forEach((group) => {
+      sections.push(p(`${group.city}（${group.foods.length} 项）`, 'PlaceName', { after: 35 }))
+      group.foods.forEach((food, idx) => {
+        sections.push(p(line([`${String(idx + 1).padStart(2, '0')}`, food.name, food.is_top ? '推荐' : '', food.category, food.price ? `¥${food.price}/人` : '', food.note]), 'BodySmall', { after: 55 }))
+      })
+    })
   }
 
   sections.push(p('住宿', 'Heading1', { before: 320, after: 120 }))
-  sections.push(allStays.length ? table([
-    row([
-      cell(p('日期', 'TableHead', { after: 0 }), 1600, { shade: 'FAFAFA' }),
-      cell(p('住宿', 'TableHead', { after: 0 }), 3000, { shade: 'FAFAFA' }),
-      cell(p('备注', 'TableHead', { after: 0 }), 3200, { shade: 'FAFAFA' }),
-      cell(p('参考价', 'TableHead', { after: 0 }), 1400, { shade: 'FAFAFA' }),
-    ]),
-    ...allStays.map((stay) => row([
-      cell(p(`Day ${stay.day}${stay.date ? ` · ${stay.date}` : ''}`, 'TimeCell', { after: 0 }), 1600),
-      cell(p(stay.name.replace(/^🏨\s*/, ''), 'PlaceName', { after: 0 }), 3000),
-      cell(p(stay.note || stay.location || '—', stay.note || stay.location ? 'BodySmall' : 'WeakText', { after: 0 }), 3200),
-      cell(p(stay.ticket_price ? `¥${stay.ticket_price}/晚` : '—', stay.ticket_price ? 'CostText' : 'WeakText', { after: 0 }), 1400),
-    ])),
-  ], [1600, 3000, 3200, 1400]) : p('暂未添加住宿安排。', 'WeakText'))
+  if (hotelStays.length) {
+    hotelStays.forEach((stay) => {
+      sections.push(p(stay.name, 'PlaceName', { after: 30 }))
+      sections.push(p(line([`${stay.startDate || `DAY ${stay.startDay}`} — ${stay.endDate || `DAY ${stay.endDay}`}`, `${stay.nights} NIGHTS`, stay.city, stay.price ? `¥${stay.price}/晚` : '']), 'BodySmall', { after: stay.note ? 20 : 100 }))
+      if (stay.note) sections.push(p(stay.note, 'AuxText', { after: 100 }))
+    })
+  } else {
+    sections.push(p('暂未添加住宿安排。', 'WeakText'))
+  }
 
   sections.push(p('避坑', 'Heading1', { before: 320, after: 120 }))
-  sections.push(tips.length ? tips.map((tip) => p(`${tip.level === 'important' ? '重要' : '提醒'}：${tip.content}`, 'BodySmall', { after: 70 })).join('') : p('暂未添加避坑提醒。', 'WeakText'))
+  sections.push(tips.length ? tips.map((tip, idx) => [
+    p(`${String(idx + 1).padStart(2, '0')} ${exportNoteTitle(tip.content)}`, 'Heading2', { after: 20 }),
+    p(exportNoteBody(tip.content), 'BodySmall', { after: 90 }),
+  ].join('')).join('') : p('暂未添加避坑提醒。', 'WeakText'))
 
   sections.push(p('行李', 'Heading1', { before: 320, after: 120 }))
   if (packingGroups.length) {
+    const memberWidth = packing.members.length
+      ? Math.max(900, Math.floor((DOCX_TABLE_DXA - 3000) / packing.members.length))
+      : 0
+    const itemWidth = DOCX_TABLE_DXA - memberWidth * packing.members.length
     packingGroups.forEach((group) => {
       sections.push(p(`${group.category}（共 ${group.items.length} 件）`, 'Heading2', { after: 70 }))
       sections.push(table([
         row([
-          cell(p('物品', 'TableHead', { after: 0 }), 3600, { shade: 'FAFAFA' }),
-          ...packing.members.map((member) => cell(p(member, 'TableHead', { after: 0 }), 1400, { shade: 'FAFAFA' })),
+          cell(p('物品', 'TableHead', { after: 0 }), itemWidth, { shade: 'FAFAFA' }),
+          ...packing.members.map((member) => cell(p(member, 'TableHead', { after: 0 }), memberWidth, { shade: 'FAFAFA' })),
         ]),
         ...group.items.map((item) => row([
-          cell(p(item.name, 'PlaceName', { after: 0 }), 3600),
-          ...packing.members.map((member) => cell(p(item.states[member] === 'packed' ? '已带' : item.states[member] === 'unpacked' ? '未带' : '—', item.states[member] ? 'BodySmall' : 'WeakText', { after: 0 }), 1400)),
+          cell(p(item.name, 'PlaceName', { after: 0 }), itemWidth),
+          ...packing.members.map((member) => cell(p(item.states[member] === 'packed' ? '已带' : item.states[member] === 'unpacked' ? '未带' : '—', item.states[member] ? 'BodySmall' : 'WeakText', { after: 0 }), memberWidth)),
         ])),
-      ], [3600, ...packing.members.map(() => 1400)]))
+      ], [itemWidth, ...packing.members.map(() => memberWidth)]))
     })
   } else {
     sections.push(p('暂未添加行李清单。', 'WeakText'))

@@ -72,12 +72,13 @@ test('collaborative trip follows the reference layout while inheriting platform 
   assert.match(phase86, /\.trips-overlay \.trip-jsmap,[\s\S]*max-width:\s*none/s)
 })
 
-test('desktop trip board uses budget-days, itinerary table, and map columns', () => {
+test('desktop trip board uses spending summary, itinerary table, and map columns', () => {
   const phase86 = css.slice(css.indexOf('Phase 86：协同行程参考稿视觉重构'))
   assert.match(trips, /trip-3col trip-view-\$\{workspaceView\}/)
   assert.match(trips, /days\.filter\(\(d\) => d === selectedDay\)\.map/)
   assert.match(trips, /className="trip-day-sidebar"/)
   assert.match(trips, /className="trip-budget-summary"/)
+  assert.match(trips, />总支出</)
   assert.match(trips, /className="trip-table-shell"/)
   assert.match(trips, /className="trip-table-header"/)
   assert.match(trips, /className=\{`trip-table-row/)
@@ -112,10 +113,10 @@ test('trip invite controls stay inside the actions popover', () => {
   assert.match(css, /\.trip-actions-popover\s*\{[^}]*max-width:\s*calc\(100vw - 24px\)[^}]*overflow:\s*hidden/s)
 })
 
-test('trip import exposes hotel candidates and unambiguous budget labels', () => {
+test('trip import exposes hotel candidates and unambiguous spending labels', () => {
   assert.match(trips, /攻略推荐酒店/)
   assert.match(trips, /hotel_recommendations/)
-  assert.match(trips, /景点票价已录入/)
+  assert.match(trips, />总支出</)
   assert.doesNotMatch(trips, />门票合计/)
   assert.match(home, /正在提取地点、酒店与预算/)
 })
