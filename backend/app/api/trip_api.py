@@ -61,11 +61,16 @@ def _log_event(db: Session, trip_id: str, user: TravelUser, action: str) -> None
 
 
 def _stop_dict(s: TravelTripStop) -> dict:
+    from app.agent.nav_links import build_nav_links
+
     return {"id": s.id, "day": s.day, "order_no": s.order_no,
             "name": s.name, "note": s.note or "", "location": s.location or "",
             "start_time": s.start_time or "", "stay_min": s.stay_min,
             "transport": s.transport or "", "ticket_price": s.ticket_price,
-            "tags": [t for t in (s.tags or "").split(",") if t]}
+            "tags": [t for t in (s.tags or "").split(",") if t],
+            # Phase 100：导航 deep link 在**后端**算。坐标系分流（境内 GCJ→WGS 才给苹果）
+            # 只有这一处实现，不让前端重算——两端各写一份必然漂移。无坐标时为 None。
+            "nav": build_nav_links(s.location, s.name)}
 
 
 def _looks_like_lnglat(text: str) -> bool:

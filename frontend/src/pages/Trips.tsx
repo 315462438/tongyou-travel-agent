@@ -33,6 +33,8 @@ interface TripStop {
   transport: string
   ticket_price: number | null
   tags: string[]
+  /** Phase 100：后端算好的导航 deep link（坐标系分流在后端，前端不重算）。无坐标时为 null */
+  nav: { amap: string; apple: string } | null
 }
 
 interface TripMember {
@@ -2886,6 +2888,21 @@ function TripBoard({
                               title="下移"
                               disabled={i === arr.length - 1}
                             >↓</button>
+                            {s.nav && (
+                              // 用 <a> 而非 button：deep link 就是普通链接，让浏览器自己
+                              // 决定唤起 App 还是落网页版。iOS 优先苹果地图（多数没装高德），
+                              // 其余一律高德。不消耗我们的 key——请求由用户设备发起。
+                              <a
+                                className="trip-table-btn-edit"
+                                href={/iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent)
+                                  ? s.nav.apple : s.nav.amap}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                aria-label={`导航到 ${s.name}`}
+                                title="导航到这里"
+                              >🧭</a>
+                            )}
                             <button
                               className="trip-table-btn-edit"
                               aria-label={`编辑 ${s.name}`}
