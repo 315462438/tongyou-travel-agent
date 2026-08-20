@@ -433,6 +433,16 @@ React Bits `Aurora`（低透明、pointer-events none、低动态偏好不挂载
 好友页，接力通知直达对应目的地；未读数每 30 秒及窗口聚焦时刷新。坑见
 `docs/pitfalls/事件通知必须与业务同事务且按事件去重.md`。
 
+**Phase 99 — 导航超时不再盲目重试**：线上 Langfuse 实测两轮 guide 各出现一个 **~62s 的
+open_page span**（62.4s/62.7s，整齐得不像偶然）——`browser_tool.open_page` 对导航失败一律盲目
+重试，坏页面 = 30s 超时 + 再烧 30s。且重导航有**反作用**：超时 ≠ 页面为空，首次超时时页面往往
+已部分加载，直接 snapshot 常能拿到内容（reduce_a11y 还会清干净），重导航反而把它重置。现按失败
+类型分流（`_looks_like_timeout`，模块级纯函数）：**超时不重导航**、warning + snapshot 兜底
+（62s→~32s）；**非超时**（CDP 抖动/连接断）维持重试——那是当初加重试的合理场景，别一起砍。
+识别不出来一律当非超时 → 退化方向是保留重试，不会更差。刻意不缩短 30s 首次超时（慢站点真需要）。
+计划 `docs/task_plans/导航超时不再盲目重试-2026-08-20.md`，用例
+`docs/test_cases/导航超时不再盲目重试-验收用例.md`（`tests/test_open_page_retry.py` 13 passed）。
+
 **Phase 98 — 标签页未读提醒**：Phase 97 之后同行者仍需**打开页面**才看得到铃铛。自然的下一步
 Web Push **实测否掉**：投递由浏览器厂商的推送服务中转，服务器实测 `fcm.googleapis.com` **连不上**
 （Chrome/Edge 全走它，是绝大多数用户），Mozilla/APNs 通但份额可忽略（Safari 还要先装 PWA）；

@@ -8,6 +8,7 @@
 """
 
 import asyncio
+import logging
 import random
 import re
 from dataclasses import dataclass, field
@@ -19,6 +20,20 @@ from app.schemas.note_schema import PageClassification
 from app.tools.action_guard import Decision, GuardResult, judge_action, judge_page_type
 from app.tools.mcp_client import ChromeMCP
 from app.tools.url_guard import UnsafeURLError, ensure_safe_url
+
+logger = logging.getLogger(__name__)
+
+
+def _looks_like_timeout(err: BaseException) -> bool:
+    """这个导航失败是不是超时（Phase 99）。
+
+    识别不出来就返回 False——退化方向是保留重试（今天的行为），不会更差。
+    `TimeoutError()` 的 str 常为空，所以 isinstance 单独判。
+    """
+    if isinstance(err, (TimeoutError, asyncio.TimeoutError)):
+        return True
+    msg = str(err).lower()
+    return "timeout" in msg or "timed out" in msg
 
 
 @dataclass
@@ -63,8 +78,16 @@ class BrowserTool:
 
         try:
             await self.chrome.call("navigate_page", {"url": url, "timeout": 30000})
-        except Exception:  # noqa: BLE001 — 慢站点重试一次
-            await self.chrome.call("navigate_page", {"url": url, "timeout": 30000})
+        except Exception as e:  # noqa: BLE001
+            # Phase 99：按失败类型分流。**超时不重导航**——导航超时 ≠ 页面为空，
+            # 首次超时时页面往往已部分加载，直接 snapshot 常能拿到内容；盲目重导航
+            # 把已加载的内容重置掉，还再烧一次 30s（线上实测两轮各出现一个 ~62s 的
+            # open_page，正是 30s+30s 的痕迹）。非超时（CDP 抖动/连接断）仍重试一次，
+            # 那类失败是瞬时的且失败得快——这才是当初加重试的合理场景。
+            if _looks_like_timeout(e):
+                logger.warning("navigate timeout, salvaging via snapshot: %s", url)
+            else:
+                await self.chrome.call("navigate_page", {"url": url, "timeout": 30000})
         try:
             await self.chrome.call("wait_for", {"text": "", "timeout": 5000})
         except Exception:  # noqa: BLE001 — wait 失败不致命，snapshot 兜底
