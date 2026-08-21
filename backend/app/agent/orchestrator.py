@@ -1750,6 +1750,65 @@ async def _collect_xhs(cid: str, pref: Preference) -> list[dict]:
         _progress(cid, f"已获取 {len(sources)} 篇小红书笔记（{'、'.join(s['title'][4:20] for s in sources[:3])}）")
     else:
         _progress(cid, "小红书暂不可用，改用网页搜索")
+    return await _enrich_xhs_with_vision(cid, sources)
+
+
+async def _enrich_xhs_with_vision(cid: str, sources: list[dict]) -> list[dict]:
+    """Phase 105：读小红书笔记**图片里**的文字，并进 summary。
+
+    为什么只在这条路：小红书是图片媒介。实测 4 篇样本里 1 篇的 desc 是纯话题标签
+    （`#杭州[话题]##本地人做的攻略[话题]#`，零信息），而它的图里有完整的
+    景点+票价+开放时间表——我们花 75 秒预算把它抓回来，最值钱的部分一个字没读。
+
+    ⚠️ 只对 **desc 信息薄**的笔记跑。样本里 3/4 的 desc 本身就是干货，看图纯浪费；
+    按这条过滤成本降约 75%，而且精准命中收益点。
+
+    ⚠️ 时机不能挪：小红书图 URL **有效期不到 30 分钟**（实测 40 分钟前的已 403，
+    库里 660 条历史 URL 全部 403）。所以只能在采集当时做，事后一律拿不到图。
+    复用旧来源的那条路径因此天然不跑视觉——那些 URL 必然已经死了。
+
+    这里**不需要判快路径**：`xhs_pending` 为真（也就是走到这个函数）时
+    `search_mode` 已被预判为 "light"，浏览器道一定会跑，而实测浏览器道始终是长杆
+    （272s/208s/457s vs xhs 96s/120s/96s），所以视觉是零墙钟增量。
+    """
+    from app.agent import vision
+
+    if not vision.enabled() or not settings.vision_xhs_enabled or not sources:
+        return sources
+    targets = [
+        s for s in sources
+        if s.get("site") == "xhs" and s.get("images") and vision.desc_is_thin(s.get("summary", ""))
+    ]
+    if not targets:
+        return sources
+    _progress(cid, f"正在看 {len(targets)} 篇笔记的图片内容…")
+
+    async def _one(src: dict) -> None:
+        urls = [i.get("url", "") for i in (src.get("images") or []) if i.get("url")]
+        text = await vision.extract_note_images(urls, cid=cid)
+        if not text:
+            return
+        # 视觉产出是**外部内容**：图片输入绕过了 Phase 69 的全部文本防线，
+        # 一张图里印着「忽略之前的指令」是直接进模型的。这里补上标签包裹。
+        from app.agent.context_security import wrap_external
+
+        # source 标 note_image 而不是默认的 webpage —— 审计口径要准：这段文字来自
+        # 图片 OCR，不是网页正文。Langfuse 里回看时能一眼分清哪些内容是模型「看」出来的。
+        src["summary"] = (src.get("summary", "") + "\n\n"
+                          + wrap_external(text, source="note_image",
+                                          title=f"{src.get('title','')}·图片内文字"))
+        src["vision_used"] = True
+
+    got = 0
+    try:
+        await asyncio.gather(*(_one(s) for s in targets))
+        got = sum(1 for s in targets if s.get("vision_used"))
+    except asyncio.CancelledError:
+        raise  # 用户停止不得被吞
+    except Exception:  # noqa: BLE001 — 视觉是增强，失败一律当作没有图
+        logger.warning("vision enrich failed cid=%s", cid, exc_info=True)
+    if got:
+        _progress(cid, f"从 {got} 篇笔记的图片里读到了额外信息")
     return sources
 
 
@@ -2172,7 +2231,7 @@ def run_direct_answer(cid: str, user_text: str, user_id: str) -> None:
 
 def run_conversation_turn(
     cid: str, user_text: str, user_id: str, turn_id: str = "", deep_reasoning: bool = False,
-    sandbox_enabled: bool = False,
+    sandbox_enabled: bool = False, image_ids: list[str] | None = None,
 ) -> None:
     """BackgroundTasks 入口：三路路由（Phase 22/23）→ 各链路。
 
@@ -2187,6 +2246,26 @@ def run_conversation_turn(
     from app.llm.client import get_llm
 
     _mark_inflight(cid, turn_id, user_id)
+    # Phase 105：带图消息。**图先变成文本，再走现有路由**——刻意不给路由新增一条
+    # 「图片链路」，也不换成开放式 agent（那个我们已经有了，就是 Phase 21 的
+    # deep_research，而它的教训写在 CLAUDE.md 里：弱模型会挥霍浏览器超时，只能靠
+    # system_prompt 里的硬性资源纪律硬压）。固定流水线换来的可预测/可观测/可停止/
+    # checkpoint 续跑/部分收成，是 Phase 14/16/101/102 一路攒出来的，不该为「更开放」丢掉。
+    # 真正放开的是**输入端**：意图现在可能藏在图里，先把图翻译成结构化线索喂给现有路由。
+    if image_ids:
+        try:
+            from app.agent import vision
+            from app.agent.context_security import wrap_external
+
+            _progress(cid, f"正在看你发的 {len(image_ids)} 张图…")
+            desc = vision.describe_user_images(image_ids, cid=cid)
+            if desc:
+                # 用户上传的图，内容本身仍是**外部的**（可能是别人的聊天截图、网页截图），
+                # 必须走与网页正文同一条防线。
+                user_text = (user_text + "\n\n" if user_text else "") + wrap_external(
+                    desc, source="user_image", title="用户上传的图片")
+        except Exception:  # noqa: BLE001 — 看不了图不该让整轮失败
+            logger.warning("user image analysis failed cid=%s", cid, exc_info=True)
     try:
         # Langfuse turn trace（Phase 24）：本轮所有 LLM 调用/工具 span 都嵌套在其下
         with obs.turn_trace(

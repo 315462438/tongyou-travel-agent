@@ -62,7 +62,7 @@ class LLMClient:
 
     def parse(
         self,
-        prompt: str,
+        prompt: str | list[dict],
         schema: type[T],
         *,
         model: str | None = None,
@@ -85,6 +85,7 @@ class LLMClient:
             + "你必须只输出一个 JSON 对象（不要 markdown 代码块），严格符合以下 JSON Schema：\n"
             + schema_json
         )
+        # prompt 可以是字符串，也可以是多模态 content parts（Phase 105 视觉走这条）
         messages = [
             {"role": "system", "content": sys_prompt},
             {"role": "user", "content": prompt},
@@ -123,6 +124,41 @@ class LLMClient:
                     "content": f"你输出的 JSON 未通过校验，错误如下，请修正后重新只输出 JSON：\n{e}",
                 })
         raise ValueError(f"LLM 结构化输出解析失败（重试后仍不合法）: {last_err}")
+
+    def parse_image(
+        self,
+        prompt: str,
+        schema: type[T],
+        *,
+        images: list[str],
+        model: str | None = None,
+        system: str | None = None,
+        max_tokens: int = 3000,
+        cid: str | None = None,
+    ) -> T:
+        """视觉结构化抽取（Phase 105）。`images` 是 http(s) URL 或 data: URI。
+
+        ⚠️ **强制 `response_format=json_object`，这不是格式讲究是性能开关。**
+        实测（6 张真实小红书图，max_tokens 都是 3000）：
+
+            裸 prompt     空正文 2/6   延迟中位 23.7s   out 中位 2622
+            json_object   空正文 0/6   延迟中位  7.4s   out 中位  743
+
+        prompt 里**已经写了** Phase 101/102 那套思考纪律，它照样把预算烧满；json_object
+        一开思考链自己收住。这是第四次撞 DeepSeek 思考模式过度推理（Phase 11 ITINERARY /
+        101 quick_take / 102 五处抽取 / 本次），也是「结构化输出必须走 parse() 而非裸
+        prompt」这条不变式在视觉输入下的新证据。
+
+        走的仍是 `parse()`：schema 校验、截断重试、传输层重试（Phase 103）全都复用，
+        不另写一套。
+        """
+        parts: list[dict] = [{"type": "text", "text": prompt}]
+        for url in images:
+            parts.append({"type": "image_url", "image_url": {"url": url}})
+        return self.parse(
+            parts, schema, model=model or settings.model_vision,
+            system=system, max_tokens=max_tokens, cid=cid,
+        )
 
     def classify(
         self, prompt: str, schema: type[T], *, system: str | None = None, cid: str | None = None

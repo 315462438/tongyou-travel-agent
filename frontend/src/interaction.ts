@@ -589,3 +589,49 @@ export function pickNavUrl(nav: NavLinks, userAgent: string): string {
   const isApple = /iPhone|iPad|iPod|Macintosh/.test(userAgent || '')
   return isApple ? nav.apple : (nav.google || nav.apple)
 }
+
+// ---------- 对话框图片附件（Phase 105） ----------
+
+/** 单条消息最多带几张图。与后端 settings.vision_max_user_images 保持一致 */
+export const MAX_COMPOSER_IMAGES = 4
+
+export interface PendingImage {
+  id: string
+  url: string
+}
+
+/** 能不能发送：有文字**或**有图就行——只发图（「这是哪，帮我安排」）是真实用法。 */
+export function canSendComposer(text: string, imageCount: number): boolean {
+  return text.trim().length > 0 || imageCount > 0
+}
+
+/**
+ * 追加待发图片并按上限截断。
+ *
+ * 去重按 id：同一张图重复上传会拿到不同 id（服务端每次新建 upload 行），
+ * 这里去的是「同一次上传被加两遍」（拖拽同时触发 drop 与 change）。
+ */
+export function addPendingImages(
+  existing: PendingImage[],
+  incoming: PendingImage[],
+  max: number,
+): PendingImage[] {
+  const seen = new Set(existing.map((i) => i.id))
+  const merged = [...existing]
+  for (const img of incoming) {
+    if (!img?.id || seen.has(img.id)) continue
+    if (merged.length >= max) break
+    seen.add(img.id)
+    merged.push(img)
+  }
+  return merged
+}
+
+export function removePendingImage(list: PendingImage[], id: string): PendingImage[] {
+  return list.filter((i) => i.id !== id)
+}
+
+/** 从粘贴/拖拽事件里挑出图片文件，按剩余额度截断。 */
+export function pickImageFiles(files: File[], remaining: number): File[] {
+  return files.filter((f) => f && f.type.startsWith('image/')).slice(0, Math.max(0, remaining))
+}

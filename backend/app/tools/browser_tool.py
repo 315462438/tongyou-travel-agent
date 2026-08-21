@@ -110,7 +110,25 @@ class BrowserTool:
         text = self._snapshot_to_text(snapshot)
         title, current_url = self._extract_title_url(snapshot, fallback_url)
 
-        page_type = await self._detect_page_type(current_url, text[:3000])
+        # Phase 105：视觉判定作为**对照通道**。
+        # ⚠️ 只在规则快判拿不准（要走模型兜底）时才跑。多数内容页命中 Phase 11 的
+        # 「正文>1500 字直接判 content」规则，文本侧是 **0 秒**，此时并行跑视觉是净增
+        # 1.4s/页（8 页就是 +11s）。而那个已知误判恰好就在模型兜底这一档：知乎返回
+        # 55 字的 JSON 错误页 → 规则不命中 → 模型判成 `content` 放行，视觉判 `error`。
+        # **刻意不直接替换**文本判定——它是 Action Guard 三层守卫的一环、跑了很久。
+        # 先让两者打对台，不一致只记日志、仍以文本判定为准，攒够数据再决定谁说了算。
+        head = text[:3000]
+        rule_type = self._rule_page_type(current_url, head)
+        if rule_type is not None:
+            page_type = rule_type
+        else:
+            page_type, vision_type = await asyncio.gather(
+                self._detect_page_type(current_url, head),
+                self._vision_page_type(),
+            )
+            if vision_type and vision_type != page_type:
+                logger.warning("page_type 分歧 url=%s 文本=%s 视觉=%s", current_url[:80],
+                               page_type, vision_type)
         disposition: GuardResult = judge_page_type(page_type)
         if disposition.decision == Decision.REQUIRE_HANDOFF:
             return PageResult(
@@ -436,6 +454,36 @@ class BrowserTool:
             return val["id"]
         return None
 
+    async def _vision_page_type(self) -> str | None:
+        """截图 → 视觉判页面类型。任何失败返回 None（调用方只做对照，不依赖它）。
+
+        实测（3 个真实页面）：截图 0.0–0.1s、推理 1.2–1.7s、in=471 token —— 比现有
+        `_detect_page_type`（喂 3000 字给 v4-flash）更便宜。而且在知乎那条上更准：
+        文本链路把一个 55 字的 JSON 错误页判成 `content` 放行了，视觉判 `error`
+        并给出理由「页面显示的是 JSON 格式的错误信息」。
+        """
+        from app.agent import vision
+
+        if not vision.enabled() or not settings.vision_page_type_enabled:
+            return None
+        import os
+        import tempfile
+
+        path = os.path.join(tempfile.gettempdir(), f"vpt_{os.getpid()}.jpg")
+        try:
+            await self.screenshot_to_file(path)
+            data = await asyncio.to_thread(lambda: open(path, "rb").read())
+            got = await asyncio.to_thread(vision.judge_page_image, data, "image/jpeg")
+            return got.page_type if got else None
+        except Exception:  # noqa: BLE001 — 对照通道绝不能影响主判定
+            logger.warning("vision page type failed", exc_info=True)
+            return None
+        finally:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+
     async def screenshot(self) -> str:
         return await self.chrome.call("take_screenshot", {})
 
@@ -450,8 +498,12 @@ class BrowserTool:
     # 滑块/拖动类验证码的文案特征（远程模式无法操作，必须与可扫码的登录墙区分开）
     CAPTCHA_MARKERS = ("拖动滑块", "拖动下方滑块", "完成下方验证", "安全验证", "访问异常", "请进行验证")
 
-    async def _detect_page_type(self, url: str, text_head: str) -> str:
-        """第三层检测：URL pattern / 文案特征快判 + LLM(Haiku) 兜底"""
+    def _rule_page_type(self, url: str, text_head: str) -> str | None:
+        """规则快判。返回 None = 规则拿不准，需要模型兜底。
+
+        Phase 105 从 `_detect_page_type` 里抽出来（不是新逻辑，一字未改）：
+        调用方要据此决定**要不要跑视觉对照**——规则已经确定的页面跑视觉是纯浪费。
+        """
         path = url.lower()
         if any(p in path for p in ("/verify", "/captcha", "wappass.")):
             return "captcha"
@@ -467,6 +519,13 @@ class BrowserTool:
             return "content"
         if any(p in path for p in ("/pay", "/checkout", "/payment")):
             return "payment"
+        return None
+
+    async def _detect_page_type(self, url: str, text_head: str) -> str:
+        """第三层检测：URL pattern / 文案特征快判 + LLM 兜底"""
+        rule = self._rule_page_type(url, text_head)
+        if rule is not None:
+            return rule
         try:
             result = get_llm().classify(
                 f"判断以下网页的类型。\n\nURL: {url}\n\n页面开头内容:\n{text_head}",

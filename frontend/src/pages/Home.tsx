@@ -39,6 +39,12 @@ import {
   THINKING_STAGES,
   thinkingProgressRatio,
   waitReassurance,
+  canSendComposer,
+  MAX_COMPOSER_IMAGES,
+  addPendingImages,
+  removePendingImage,
+  pickImageFiles,
+  type PendingImage,
   type LayoutMode,
 } from '../interaction'
 
@@ -66,6 +72,7 @@ interface Msg {
   reasoning?: string | null
   meta?: {
     sources?: { title: string; url: string }[]
+    images?: string[]  // Phase 105：随用户消息发出的图片（upload id）
     handoff?: {
       site: string
       site_name: string
@@ -693,13 +700,44 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
     // 后端在检查点终稿本轮，轮询会将 running 置为 false
   }, [cid, notify])
 
+  const [pendingImages, setPendingImages] = useState<PendingImage[]>([])
+  const [uploadingImage, setUploadingImage] = useState(false)
+
+  /** 选/粘/拖进来的图片 → 逐张上传（复用 Phase 74 的 /api/uploads）→ 进缩略图条。 */
+  const addImages = async (files: File[]) => {
+    if (!files.length) return
+    setUploadingImage(true)
+    try {
+      const got: PendingImage[] = []
+      for (const file of files) {
+        const form = new FormData()
+        form.append('file', file)
+        const res = await authFetch(`${API}/uploads`, { method: 'POST', body: form })
+        if (!res.ok) {
+          // 后端会明确说是格式还是超限；原样透出，别自己编
+          notify((await res.json().catch(() => ({}))).detail || '图片上传失败')
+          continue
+        }
+        const data = await res.json()
+        got.push({ id: data.id, url: `${API}/uploads/${data.id}` })
+      }
+      if (got.length) {
+        setPendingImages((cur) => addPendingImages(cur, got, MAX_COMPOSER_IMAGES))
+      }
+    } finally {
+      setUploadingImage(false)
+    }
+  }
+
   const send = async (text: string, options: { deepReasoning?: boolean } = {}) => {
     const content = normalizePrompt(text)
     // `running` 是 React 状态，setRunning 要到下一次渲染才生效；而它本身又在 await 之后
     // 才设置——两次快速点击都会读到 false 从而都发出去（线上实测双发）。
     // 用 ref 做**同步**门闩：赋值立即可见，覆盖整个 await 窗口。
-    if (!content || running || sendingRef.current) return
+    // Phase 105：只发图（无文字）也算有效输入——「这是哪，帮我安排」是真实用法。
+    if (!canSendComposer(content, pendingImages.length) || running || sendingRef.current) return
     sendingRef.current = true
+    const imageIds = pendingImages.map((i) => i.id)
     const requestDeep = options.deepReasoning ?? deep
     try {
       let conv = cid
@@ -712,7 +750,9 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
       const res = await authFetch(`${API}/chat/${conv}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content, deep_reasoning: requestDeep, sandbox_enabled: sandbox }),
+        body: JSON.stringify({
+          content, deep_reasoning: requestDeep, sandbox_enabled: sandbox, image_ids: imageIds,
+        }),
       })
       if (res.status === 409) {
         // 后端说这轮还在跑（多标签页、或门闩之外的重复提交）。
@@ -723,6 +763,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
       }
       if (!res.ok) throw new Error('发送失败')
       setInput('')
+      setPendingImages([])  // 已随消息发出，清掉缩略图条
       setMessages((m) => [...m, { id: 'tmp', role: 'user', content }])
       setRunning(true)
       stickBottomRef.current = true  // 自己发了新消息 → 重新贴底跟随
@@ -1208,7 +1249,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
             </div>
             )}
             <div className="composer-wrap">
-              <Composer value={input} onChange={setInput} onSend={send} onStop={stop} running={running} deep={deep} onToggleDeep={toggleDeep} sandbox={sandbox} onToggleSandbox={toggleSandbox} chips={starterChips} />
+              <Composer value={input} onChange={setInput} onSend={send} onStop={stop} running={running} deep={deep} onToggleDeep={toggleDeep} sandbox={sandbox} onToggleSandbox={toggleSandbox} chips={starterChips} images={pendingImages} onAddImages={addImages} onRemoveImage={(id) => setPendingImages((cur) => removePendingImage(cur, id))} uploading={uploadingImage} />
             </div>
             <div className="composer-hint">内容由 AI 生成，价格与营业信息请以平台实时数据为准</div>
           </>
@@ -2310,6 +2351,10 @@ function Composer({
   sandbox,
   onToggleSandbox,
   chips = CHIPS,
+  images = [],
+  onAddImages,
+  onRemoveImage,
+  uploading,
 }: {
   value: string
   onChange: (v: string) => void
@@ -2322,9 +2367,15 @@ function Composer({
   sandbox?: boolean
   onToggleSandbox?: () => void
   chips?: StarterChip[]
+  images?: PendingImage[]
+  onAddImages?: (files: File[]) => void
+  onRemoveImage?: (id: string) => void
+  uploading?: boolean
 }) {
   const ref = useRef<HTMLTextAreaElement>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
   const [menuOpen, setMenuOpen] = useState(false)
+  const remaining = MAX_COMPOSER_IMAGES - images.length
 
   useEffect(() => {
     const el = ref.current
@@ -2357,7 +2408,41 @@ function Composer({
           </div>
         </>
       )}
-      <div className="composer">
+      {images.length > 0 && (
+        <div className="composer-thumbs" aria-label="待发送的图片">
+          {images.map((img) => (
+            <div className="composer-thumb" key={img.id}>
+              <img src={img.url} alt="待发送图片" />
+              <button
+                className="composer-thumb-x"
+                onClick={() => onRemoveImage?.(img.id)}
+                aria-label="移除这张图片"
+              >×</button>
+            </div>
+          ))}
+          {uploading && <div className="composer-thumb loading"><span className="spinner" /></div>}
+        </div>
+      )}
+      <div
+        className="composer"
+        onDragOver={(e) => { if (onAddImages) e.preventDefault() }}
+        onDrop={(e) => {
+          if (!onAddImages) return
+          e.preventDefault()
+          onAddImages(pickImageFiles(Array.from(e.dataTransfer.files || []), remaining))
+        }}
+      >
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/png,image/jpeg,image/gif,image/webp"
+          multiple
+          hidden
+          onChange={(e) => {
+            onAddImages?.(pickImageFiles(Array.from(e.target.files || []), remaining))
+            e.target.value = ''  // 同一张图连选两次也要能触发 change
+          }}
+        />
         <button
           className="composer-plus"
           aria-label="快捷模板"
@@ -2367,6 +2452,21 @@ function Composer({
             <path d="M12 5v14M5 12h14" />
           </svg>
         </button>
+        {onAddImages && (
+          <button
+            className="composer-image"
+            aria-label={remaining > 0 ? '添加图片' : `最多 ${MAX_COMPOSER_IMAGES} 张`}
+            title={remaining > 0 ? '添加图片（也可直接粘贴或拖拽）' : `最多 ${MAX_COMPOSER_IMAGES} 张`}
+            disabled={remaining <= 0 || running}
+            onClick={() => fileRef.current?.click()}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+              <circle cx="8.5" cy="8.5" r="1.6" />
+              <path d="M21 15l-5-5L5 21" />
+            </svg>
+          </button>
+        )}
         <textarea
           ref={ref}
           rows={1}
@@ -2377,10 +2477,16 @@ function Composer({
           aria-describedby="composer-shortcut"
           autoFocus={autoFocus}
           onChange={(e) => onChange(e.target.value)}
+          onPaste={(e) => {
+            if (!onAddImages) return
+            const files = pickImageFiles(
+              Array.from(e.clipboardData?.files || []), remaining)
+            if (files.length) { e.preventDefault(); onAddImages(files) }
+          }}
           onKeyDown={(e) => {
             if (shouldSubmitComposer({ key: e.key, shiftKey: e.shiftKey, isComposing: e.nativeEvent.isComposing })) {
               e.preventDefault()
-              onSend(value)
+              if (canSendComposer(value, images.length) && !uploading) onSend(value)
             }
           }}
         />
@@ -2414,7 +2520,7 @@ function Composer({
           <button
             className="send-btn"
             onClick={() => onSend(value)}
-            disabled={!value.trim()}
+            disabled={!canSendComposer(value, images.length) || uploading}
             aria-label="发送"
           >
             ↑
@@ -2751,9 +2857,18 @@ function Message({
     )
   }
   if (msg.role === 'user') {
+    // Phase 105：随消息发出的图片。后端把 upload id 存在 meta.images 里
+    const imgs: string[] = Array.isArray(msg.meta?.images) ? msg.meta.images : []
     return (
       <div className="msg-user">
-        <div>{msg.content}</div>
+        {imgs.length > 0 && (
+          <div className="msg-user-images">
+            {imgs.map((id) => (
+              <img key={id} src={`${API}/uploads/${id}`} alt="用户上传的图片" loading="lazy" />
+            ))}
+          </div>
+        )}
+        {msg.content && <div>{msg.content}</div>}
       </div>
     )
   }

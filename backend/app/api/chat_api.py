@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -12,7 +12,7 @@ from app.agent.orchestrator import run_conversation_turn
 from app.agent.site_router import handoff_screenshot_path
 from app.api.deps import get_current_user
 from app.config import settings
-from app.db.models import TravelConversation, TravelMessage, TravelUser
+from app.db.models import TravelConversation, TravelMessage, TravelUpload, TravelUser
 from app.db.session import get_db
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -35,6 +35,7 @@ class SendMessageRequest(BaseModel):
     deep_reasoning: bool = False  # 深度推理开关（Phase 23）：开则本轮强制走研究模式
     sandbox_enabled: bool = False  # 沙箱执行开关（Phase 27c）：本轮深度研究是否给 agent 代码执行能力
     # （最终是否生效还要看服务器 docker_sandbox_enabled 是否开启，见 _build_backend）
+    image_ids: list[str] = Field(default_factory=list)  # Phase 105：随消息带的图（复用 Phase 74 上传）
 
 
 class ConfirmRequest(BaseModel):
@@ -120,6 +121,23 @@ def list_conversations(db: Session = Depends(get_db), user: TravelUser = Depends
     return out
 
 
+def _own_image_ids(db: Session, ids: list[str], user: TravelUser) -> list[str]:
+    """过滤出**属于当前用户**的上传 id，并截到上限。
+
+    不抛异常而是静默丢弃越权/不存在的 id：前端不会构造这种请求，构造了的是攻击者，
+    给他一个明确的 403 反而是在确认「这个 id 存在但不是你的」。
+    """
+    wanted = [i for i in (ids or []) if i][: settings.vision_max_user_images]
+    if not wanted:
+        return []
+    rows = db.execute(
+        select(TravelUpload).where(
+            TravelUpload.id.in_(wanted), TravelUpload.user_id == user.id)
+    ).scalars().all()
+    owned = {r.id for r in rows}
+    return [i for i in wanted if i in owned]
+
+
 @router.post("/{cid}/messages")
 def send_message(
     cid: str, req: SendMessageRequest, background: BackgroundTasks,
@@ -140,16 +158,23 @@ def send_message(
         # 409 而不是 400：这是**状态冲突**，前端据此静默忽略重复点击（不弹错误吓人）
         raise HTTPException(409, "这轮还在进行中，等它结束再发下一条")
 
+    # Phase 105：带图消息。**必须校验归属**——只能引用自己名下的 upload，
+    # 否则拿别人的 uuid 就能让模型读别人的图（`GET /api/uploads/{id}` 故意不鉴权，
+    # 防护本来只靠 id 不可枚举；这里是第二道，也是真正按用户隔离的那道）。
+    image_ids = _own_image_ids(db, req.image_ids, user)
+
     user_msg = TravelMessage(conversation_id=cid, role="user", content=req.content)
+    if image_ids:
+        user_msg.meta_json = json.dumps({"images": image_ids}, ensure_ascii=False)
     db.add(user_msg)
-    # 首条用户消息作为会话标题
+    # 首条用户消息作为会话标题。带图但没打字时用占位，不留「新对话」
     if conv.title == "新对话":
-        conv.title = req.content[:30]
+        conv.title = (req.content[:30] or ("图片消息" if image_ids else "新对话"))
     db.commit()
     # turn_id = 用户消息 id，作为 checkpoint thread_id（每轮唯一，天然 fresh）
     background.add_task(
         run_conversation_turn, cid, req.content, user.id, user_msg.id,
-        req.deep_reasoning, req.sandbox_enabled,
+        req.deep_reasoning, req.sandbox_enabled, image_ids,
     )
     return {"status": "running", "user_message_id": user_msg.id}
 

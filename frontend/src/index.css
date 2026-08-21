@@ -901,6 +901,40 @@ textarea { font-family: inherit; }
 }
 .composer-plus:hover { background: #f0f0f0; }
 
+/* 图片附件（Phase 105）：与 composer-plus 同规格，保持左侧按钮组视觉一致 */
+.composer-image {
+  width: 34px; height: 34px; flex-shrink: 0; border-radius: 50%;
+  color: #5d5d5d; display: flex; align-items: center; justify-content: center;
+}
+.composer-image:hover:not(:disabled) { background: #f0f0f0; }
+.composer-image:disabled { opacity: .4; cursor: not-allowed; }
+
+.composer-thumbs {
+  display: flex; gap: 8px; flex-wrap: wrap;
+  padding: 8px 12px 0;
+}
+.composer-thumb {
+  position: relative; width: 62px; height: 62px; border-radius: 10px;
+  overflow: hidden; border: 1px solid #e3e3e3; background: #f7f7f8;
+  display: flex; align-items: center; justify-content: center;
+}
+.composer-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.composer-thumb-x {
+  position: absolute; top: 2px; right: 2px;
+  width: 18px; height: 18px; border-radius: 50%;
+  background: rgba(0, 0, 0, .58); color: #fff;
+  font-size: 13px; line-height: 1; display: flex; align-items: center; justify-content: center;
+}
+.composer-thumb-x:hover { background: rgba(0, 0, 0, .78); }
+
+/* 已发送的图片（用户气泡内） */
+.msg-user-images { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+.msg-user-images img {
+  width: 96px; height: 96px; object-fit: cover; border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, .35);
+}
+@media (prefers-reduced-motion: reduce) { .composer-thumb .spinner { animation: none; } }
+
 /* 深度推理开关（Phase 23）：默认灰胶囊，开启后品牌渐变 */
 .deep-toggle {
   flex-shrink: 0;

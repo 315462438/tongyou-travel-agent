@@ -4,6 +4,10 @@ import assert from 'node:assert/strict'
 import {
   ATTENTION_BADGE_MAX,
   pickNavUrl,
+  canSendComposer,
+  addPendingImages,
+  removePendingImage,
+  pickImageFiles,
   badgedTitle,
   extractGuideHeadings,
   formatTripTimeRange,
@@ -465,4 +469,40 @@ test('userAgent 缺失时不炸', () => {
   assert.equal(pickNavUrl(NAV_CN, ''), NAV_CN.amap)
   // 境外 + 认不出设备 → 谷歌（宁可给个通用地图，也不给没数据的高德）
   assert.equal(pickNavUrl(NAV_JP, undefined), NAV_JP.google)
+})
+
+// ---------- 对话框图片附件（Phase 105） ----------
+
+const IMG = (id) => ({ id, url: `/api/uploads/${id}` })
+
+test('只发图也能发送——「这是哪，帮我安排」是真实用法', () => {
+  assert.equal(canSendComposer('', 0), false)
+  assert.equal(canSendComposer('   ', 0), false)
+  assert.equal(canSendComposer('', 1), true)
+  assert.equal(canSendComposer('杭州三天', 0), true)
+})
+
+test('追加图片受上限约束', () => {
+  const got = addPendingImages([IMG('a')], [IMG('b'), IMG('c'), IMG('d')], 3)
+  assert.deepEqual(got.map((i) => i.id), ['a', 'b', 'c'])
+})
+
+test('同一次上传被加两遍要去重', () => {
+  // 拖拽会同时触发 drop 与 change，不去重就出现两个一样的缩略图
+  const got = addPendingImages([IMG('a')], [IMG('a'), IMG('b')], 4)
+  assert.deepEqual(got.map((i) => i.id), ['a', 'b'])
+})
+
+test('移除图片不影响其余顺序', () => {
+  const got = removePendingImage([IMG('a'), IMG('b'), IMG('c')], 'b')
+  assert.deepEqual(got.map((i) => i.id), ['a', 'c'])
+})
+
+test('粘贴时只挑图片文件并按剩余额度截断', () => {
+  const files = [
+    { type: 'text/plain' }, { type: 'image/png' }, { type: 'image/jpeg' }, { type: 'image/webp' },
+  ]
+  assert.equal(pickImageFiles(files, 2).length, 2)
+  assert.equal(pickImageFiles(files, 0).length, 0)
+  assert.equal(pickImageFiles([{ type: 'application/pdf' }], 4).length, 0)
 })

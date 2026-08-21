@@ -219,6 +219,15 @@ class Settings(BaseSettings):
     # 而 DeepSeek 没有 embedding 接口（Phase 4 记过）。
     # **全文落库照常进行**——数据在手上，是将来任何检索方案的地基，且零风险。
     source_focus_enabled: bool = False
+    # ---- 视觉模型（Phase 105）----
+    model_vision: str = "deepseek-v4-flash-vision-exp"
+    vision_enabled: bool = True          # 总开关。exp 模型，随时可一键退回
+    vision_xhs_enabled: bool = True      # 小红书图抽取
+    vision_page_type_enabled: bool = True  # 页面类型判定（互补通道，不替换文本判定）
+    vision_budget_s: float = 20.0        # 单轮视觉总预算，超时交回已完成的（照搬 Phase 102）
+    vision_max_images_per_note: int = 2  # 每篇笔记最多看几张
+    vision_max_user_images: int = 4      # 用户单条消息最多带几张图
+    vision_desc_thin_chars: int = 120    # desc 短于此视为「信息薄」，才值得看图
     llm_timeout_s: float = 180.0  # 单次 DeepSeek 请求超时（Phase 103；默认 600s 等于没有）
     guide_max_tokens: int = 16000
     guide_max_continuations: int = 2  # 最多续写几轮（16000×3 远超任何真实攻略长度）
