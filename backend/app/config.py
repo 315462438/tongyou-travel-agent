@@ -208,6 +208,10 @@ class Settings(BaseSettings):
 
     # 攻略生成长度（2026-08-04）：8000 对多城长行程明显不够——线上被从「**人均（含」
     # 这种半句处切断。抬高上限 + 触到上限自动续写，用户拿到的应当是完整攻略。
+    source_full_text_max_chars: int = 40000  # 单页全文入库上限（Phase 103，防 DB 膨胀）
+    source_page_keep: int = 24               # 每会话保留的来源页数
+    source_focus_max_chars: int = 2400       # 复用时按关键词重取的摘录上限
+    llm_timeout_s: float = 180.0  # 单次 DeepSeek 请求超时（Phase 103；默认 600s 等于没有）
     guide_max_tokens: int = 16000
     guide_max_continuations: int = 2  # 最多续写几轮（16000×3 远超任何真实攻略长度）
     # guide 快答先行（2026-08-13，Phase 71 机制的 guide 版）：parse 后立刻用快模型给

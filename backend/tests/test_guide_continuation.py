@@ -19,7 +19,7 @@ class _FakeLLM:
         self.script = list(script)
         self.calls: list[list[dict]] = []
 
-    def stream_generate_with_reasoning(self, *, messages, model=None, max_tokens=None):
+    def stream_generate_with_reasoning(self, *, messages, model=None, max_tokens=None, cid=None):
         self.calls.append(messages)
         text, finish = self.script.pop(0) if self.script else ("", "stop")
         if text:

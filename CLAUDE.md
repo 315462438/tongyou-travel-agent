@@ -433,6 +433,55 @@ React Bits `Aurora`（低透明、pointer-events none、低动态偏好不挂载
 好友页，接力通知直达对应目的地；未读数每 30 秒及窗口聚焦时刷新。坑见
 `docs/pitfalls/事件通知必须与业务同事务且按事件去重.md`。
 
+**Phase 103 — 借鉴 opencode 的四处改造**（扫 `~/Desktop/opencode` 上游仓库后挑的，
+每处对着一个具体缺口，不是「它有我们也来一个」）：
+① **轮末压缩挪出关键路径**：`update_history_summary` 无返回值也不进 meta，与终稿**没有数据
+依赖**，却是一次同步 v4-flash 调用（2-5s）——排在 `_finalize_streaming_message` 前面时，这几秒
+里流式消息还挂着 `streaming=true`、前端还在转圈，而用户早就把攻略读完了。guide/direct 两处挪到
+终稿之后，与 research 链路（本来就是对的）对齐。⚠️ `extract_and_save` **有**依赖（`saved` 进
+`meta.memories_saved`）必须留在前面，有回归测试钉住；顺序断言用 `rindex` 而非 `index`——
+`_finalize_streaming_message` 在取消分支里也出现一次，比对首次出现会让断言变成**永真**。
+② **摘要提示词补两条纪律 + 标签分区**（抄 opencode `core/session/compaction.ts` 的
+`SUMMARY_UPDATE_INSTRUCTIONS`）：旧摘要此前是裸的「（此前的摘要）」前缀混在原文 listing 里，
+而 `HISTORY_SUMMARY_SYSTEM` 从头到尾没提过它的存在——模型既不知道它**即将被丢弃**，也不知道
+它比下面的对话更老。我们的压缩是「**增量范围 + 全量重写**」（范围上只折叠掉出近窗的早期消息，
+近 5 轮永远逐字；产物上每次整篇重写去顶替旧摘要），正因为是全量重写，「没写进新摘要就永久
+丢失」才字面成立——20 轮会话里最早那条约束已被逐轮重写过好几遍，每遍都是一次有损传递。现在
+`<prior-summary>` / `<conversation>` 分块，无旧摘要时**不出现空标签**，旧摘要过 `_strip_tag`
+防穿透（同 Phase 69 ④）。原有四小节模板不动——「已排除的选项+原因」opencode 都没有，是防复读机的。
+③ **LLMClient 传输层重试**（`app/llm/retry.py`，移植自 opencode `session/retry.ts`）：改造前全仓
+`grep tenacity|max_retries|APIError|RateLimit` 是 **0 结果**——`parse()` 里那个 `for _ in range(2)`
+只治「JSON 不合法」，传输错误一次都不重试，而一轮 guide 要打 6-10 次 DeepSeek，**任何一次撞上
+429/503/连接重置整轮 4-6 分钟直接作废**。现在：错误文本正则兜底（SDK 的 isRetryable 常漏标）、
+5xx 一律重试、优先读 `Retry-After`/`retry-after-ms`、指数 2s×2ⁿ + 25% 抖动、无头封顶 30s、最多 5 次、
+**context overflow 永不重试**（判定顺序是**先看不可重试**，否则一条含 5xx 数字的 overflow 报文会被
+放进循环）。两条我们独有的约束：**退避必须可被停止打断**（切 0.5s 片轮询 `is_cancelled(cid)`，
+裸 sleep 会让停止在退避窗口里失灵）、**流式只在还没吐出任何内容时重试**（`produced` 标志——已 yield
+过 delta 就重开流的话，用户会看到「攻略写到一半又从头写一遍」）。顺带 OpenAI client 加显式
+`llm_timeout_s`(180)，默认 600s 等于没有。**刻意不做**：不上 tenacity（判断全要自定义，装饰器帮不上）；
+暂不把重试状态推给前端（opencode 的 `policy()` 会 `set({attempt, next})` 让 UI 显示「12 秒后第 2/5 次」，
+跟 Phase 71「静默空隙才是流失原因」对味，但要动 `_progress` 调用链和前端渲染，下一步做）。
+④ **来源全文落库 + 多轮按需重取**（`app/agent/source_pages.py` + `travel_source_page` 表）：
+`_search_and_collect_queries` 此前是 `"summary": _excerpt(page.text)`，1500 字摘录进 sources、
+`page.text` 抓完即弃；而多轮复用分支复用的**就是这 1500 字**——用户追问「第 3 家酒店的取消政策」
+时信息在原页面有、在我们手上没有。**深度研究链路早就解决了**（`research_tools._stash_source` 存全文
++ `read_source(id, offset)` 按需取），guide 链路缺的就是这一半。现在全文入库（`(conversation_id, url)`
+唯一、上限 40000 字、每会话留 24 页），`sources` 带 `page_id`，复用时 `refresh_reused_summaries`
+按**本轮**关键词重取窗口。**重取只发生在复用路径**——采集期仍是无关键词的 `_excerpt`（相关性裁剪
+依赖调用上下文会破坏幂等，Phase 96 的教训）；未命中/无 page_id 一律退回旧 summary，**降级方向
+永远是「和改造前一样」**。不复用 `travel_page`（那是 Phase 1 的 task 维度，塞会话来源要把两个外键
+都置空）；不上向量检索（一个会话几十页，关键词窗口够，同 Phase 4 对记忆检索的判断）。
+**明确不做**：**Context Epoch**（`core/system-context/index.ts` 把系统提示建模成一组可独立刷新的
+typed source，变更以 mid-conversation system message 追加而 baseline 永不改写，让前缀缓存永不失效）
+——设计漂亮，但要加 snapshot 列、给每类记忆写 baseline/update/removed 三个渲染器、还要处理
+`unavailable`（观测失败时保留旧值而非当成"被删了"，最易写错）；收益是优化、成本是新状态机+迁移，
+**单独立项**（理由同 Phase 102 对跨用户目的地缓存的判断）。
+坑见 `docs/pitfalls/两层重试嵌套会把次数变成乘积.md`（内层 5 次 × 外层 5 次 = 36 次请求，
+被「断言总请求数」的用例当场抓到；只断言「抛了异常」的话 36 和 6 表现完全一样）、
+`docs/pitfalls/中文按连续汉字块取关键词等于没切词.md`（`[一-鿿]{2,}` 把整句抓成一个 token，
+`str.find` 永远命中不了且**不报错**）。计划 `docs/task_plans/借鉴opencode的四处改造-2026-08-21.md`，
+用例 `docs/test_cases/借鉴opencode的四处改造-验收用例.md`（69 passed）。
+
 **Phase 102 — xhs 部分收成 + 抽取思考纪律**：两个实测驱动的小改动。① **部分收成**：
 `collect_xhs_sources` 总预算超时原本**全丢**（`return []`）——线上实测一轮 xhs 各段合计 149.9s、
 预算 150s，**差 0.1 秒就白等两分半一篇不剩**。现在内层往调用方传入的 `sink` 逐篇追加（每篇是

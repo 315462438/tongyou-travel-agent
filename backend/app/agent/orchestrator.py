@@ -861,8 +861,31 @@ HISTORY_SUMMARY_SYSTEM = (
     "## 已确认的决定\n已敲定的目的地、酒店、行程安排\n"
     "## 已排除的选项\n用户明确否掉的方案（连同原因，避免后续重复推荐）\n"
     "## 待跟进\n提过但还没落实的事项\n"
-    "只保留对后续规划有用的信息，丢弃寒暄与攻略正文细节。总长不超过 400 字。"
+    "只保留对后续规划有用的信息，丢弃寒暄与攻略正文细节。总长不超过 400 字。\n\n"
+    # Phase 103：两条纪律，抄自 opencode 的 SUMMARY_UPDATE_INSTRUCTIONS
+    # （core/session/compaction.ts:38）。我们的压缩是「增量范围 + 全量重写」——范围上只
+    # 折叠掉出近窗的早期消息，产物上却每次整篇重写去顶替旧摘要。第一条正因为是全量重写
+    # 才字面成立：20 轮会话里最早那条约束已被逐轮重写过好几遍，每遍都是一次有损传递，
+    # 模型不知道自己是「最后一次经手」，就容易觉得某个细节不重要而省掉。
+    "输入里可能有两块：\n"
+    "- `<prior-summary>` 是这段对话之前的摘要，**本次之后即被丢弃**——没有被你写进新摘要的"
+    "信息就永久丢失了，务必把仍然成立的约束、决定、排除项原样带过来，只丢弃已经办完、"
+    "后续用不上的。\n"
+    "- `<conversation>` 是新增的原始对话，**比 `<prior-summary>` 更新**。两者冲突时以"
+    "`<conversation>` 为准：写出更正后的事实，并删掉旧说法。\n"
+    "只有 `<conversation>` 时直接据它总结即可。"
 )
+
+def _strip_tag(text: str, tag: str) -> str:
+    """剥掉正文里的同名标签，防止内容穿透标签边界（同 Phase 69 ④ 对 wrap_external 的加固）。
+
+    旧摘要是上一次模型的输出，正文里出现 `</prior-summary>` 并非不可能（尤其是我们刚把
+    标签名写进了 system 提示词）。穿透的后果是模型把后面的原始对话当成摘要的一部分。
+    """
+    import re as _re
+
+    return _re.sub(rf"</?{_re.escape(tag)}\s*>", "", text or "")
+
 
 _HISTORY_SUMMARY_MAX_MSGS = 60  # 极长会话只折叠最早 60 条，再早的信息价值递减
 
@@ -896,13 +919,20 @@ def update_history_summary(cid: str) -> None:
         old = live[:-keep][:_HISTORY_SUMMARY_MAX_MSGS]
         if not old:
             return
-        listing = "\n".join(
+        convo = "\n".join(
             f"{'用户' if m.role == 'user' else '助手'}：{(m.content or '')[:300]}" for m in old
         )
-        # 已有的摘要一并交给模型，让新摘要覆盖「旧摘要 + 新折叠的这批」的全部信息
+        listing = f"<conversation>\n{convo}\n</conversation>"
+        # 已有的摘要一并交给模型，让新摘要覆盖「旧摘要 + 新折叠的这批」的全部信息。
+        # Phase 103：改用标签分区。此前是裸的「（此前的摘要）」前缀混在同一坨文本里，
+        # 而 system 从头到尾没提过它的存在——模型既不知道它即将被丢弃，也不知道它比下面的
+        # 对话更老。没有旧摘要时**不出现空标签**（免得模型对着空标签脑补）。
         prior = [m for m in surface if m.role == "summary"]
         if prior:
-            listing = f"（此前的摘要）{prior[-1].content}\n\n{listing}"
+            listing = (
+                f"<prior-summary>\n{_strip_tag(prior[-1].content, 'prior-summary')}\n"
+                f"</prior-summary>\n\n{listing}"
+            )
 
         from pydantic import BaseModel
 
@@ -1226,8 +1256,16 @@ async def collect_sources(
                 _progress(cid, f"已补充 {_source_image_count(merged)} 张图片，正在重新排版…")
                 return merged, True
             _progress(cid, "暂时没有抓到可用图片，先按已有资料优化排版")
+        # Phase 103：复用不再等于「复用第一轮那 1500 字摘录」。本轮问的可能是上轮没摘到的
+        # 细节（「第 3 家酒店的取消政策」），从落库的全文里按本轮关键词重取窗口。
+        # 一个关键词都没命中 / 没有 page_id（存量来源）→ 原样保留旧 summary，不会更差。
+        from app.agent.source_pages import refresh_reused_summaries
+
+        refreshed_sources, focus_hits = refresh_reused_summaries(existing_sources, user_text)
+        if focus_hits:
+            _progress(cid, f"从已抓页面里重新定位了 {focus_hits} 处相关内容…")
         _progress(cid, "基于已有资料重新规划（无需重新搜索）…")
-        return existing_sources, True
+        return refreshed_sources, True
 
     site_sources: list[dict] = await _collect_amap(cid, pref)  # 多城逐城，可能多条
     # Phase 59：攻略/路线/美食来源优先小红书（纯 HTTP MCP，无需浏览器）。
@@ -1381,7 +1419,7 @@ def generate_guide_streaming(
         hit_limit = False
         for kind, delta in llm.stream_generate_with_reasoning(
             messages=msgs, model=settings.model_planner,
-            max_tokens=settings.guide_max_tokens,
+            max_tokens=settings.guide_max_tokens, cid=cid,  # cid：重试退避期间也响应停止
         ):
             if kind == "finish":  # P0：末块信号，别当正文追加
                 hit_limit = delta == "length"
@@ -1466,8 +1504,7 @@ def finalize_guide(
     guide: str, reasoning: str, msg_id: str, mem_ctx: dict, user_id: str,
 ) -> None:
     """终稿：记忆提炼 + 写入最终 meta + 落跨会话检索索引。"""
-    saved = extract_and_save(cid, user_text, guide, user_id)
-    update_history_summary(cid)  # Phase 30：轮末折叠早期轮次
+    saved = extract_and_save(cid, user_text, guide, user_id)  # 有依赖：saved 要进 meta
     _index_conversation(cid, pref.destination, msg_id)
     from app.agent.context_manifest import attach
 
@@ -1480,6 +1517,10 @@ def finalize_guide(
     # Phase 89：把这轮的上下文装配清单一并落盘——事后能回答「那轮喂了什么进模型」
     attach(meta, _LAST_MANIFEST.pop(cid, None))
     _finalize_streaming_message(msg_id, guide, reasoning, meta=meta)
+    # Phase 103：压缩挪到终稿**之后**（与 deep_research 链路对齐）。它无返回值也不进 meta，
+    # 与终稿没有数据依赖，却是一次同步 v4-flash 调用（2-5s）——排在前面时，这几秒里流式
+    # 消息还挂着 streaming=true、前端还在转圈，而用户早就把攻略读完了。
+    update_history_summary(cid)  # Phase 30：轮末折叠早期轮次
     clear_plain_progress(cid)  # 清掉「搜索/读取/补搜/重排」等临时叙述，只留干净攻略
 
 
@@ -1923,10 +1964,19 @@ async def _search_and_collect_queries(
         if not _is_relevant(pref.destination, page.title, page.text):
             _progress(cid, f"跳过无关来源：{(page.title or r['title'])[:24]}")
             continue
-        sources.append({
+        # Phase 103：全文落库，sources 只带摘录 + page_id。多轮复用时可按本轮关键词从
+        # 全文重新取窗口，而不是永远复用第一轮那 1500 字（此前 page.text 抓完即弃）。
+        # 存库失败返回 None，此时行为与改造前完全一致。
+        from app.agent.source_pages import save_page
+
+        page_id = save_page(cid, page.url, page.title or r["title"], page.text)
+        src = {
             "title": page.title or r["title"], "url": page.url,
             "summary": _excerpt(page.text),
-        })
+        }
+        if page_id:
+            src["page_id"] = page_id
+        sources.append(src)
         _progress(cid, f"已读取：{(page.title or r['title'])[:28]}")
     return sources
 
@@ -2092,6 +2142,7 @@ def run_direct_answer(cid: str, user_text: str, user_id: str) -> None:
         # Phase 44 快思考：用快模型（无长推理链，真正秒回）；MODEL_DIRECT 可在 .env 覆盖
         # P0：max_tokens 2000→4000（2000≈1500字，长攻略写到酒店就被截断）
         messages=messages, model=settings.model_direct or settings.model_classifier, max_tokens=4000,
+        cid=cid,  # cid：重试退避期间也响应停止
     ):
         if kind == "finish":
             truncated = delta == "length"  # 触到 max_tokens = 被截断
@@ -2111,12 +2162,12 @@ def run_direct_answer(cid: str, user_text: str, user_id: str) -> None:
     if truncated and answer:  # P0：不静默截断——明确告知并给完整版路径
         answer += ("\n\n---\n> ⚠️ 这是快速回答，内容较长已截断。要**完整攻略**（含全程路线、"
                    "每天酒店、分项预算、注意事项），请打开输入框旁的「深度推理」开关重新提问。")
-    saved = extract_and_save(cid, user_text, answer, user_id)
-    update_history_summary(cid)  # Phase 30：轮末折叠早期轮次
+    saved = extract_and_save(cid, user_text, answer, user_id)  # 有依赖：saved 要进 meta
     _finalize_streaming_message(
         msg_id, answer or "抱歉，这次没有生成内容，请重试。", "".join(reasoning_parts),
         meta={"memories_used": mem_ctx.get("used", []), "memories_saved": saved},
     )
+    update_history_summary(cid)  # Phase 103：同 finalize_guide，压缩不挡终稿
 
 
 def run_conversation_turn(

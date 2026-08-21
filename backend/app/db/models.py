@@ -682,3 +682,33 @@ class TravelGuideObject(Base):
         DateTime(timezone=True), default=_now, index=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class TravelSourcePage(Base):
+    """采集来源的**全文**（Phase 103）。
+
+    改造前 `_search_and_collect_queries` 是 `"summary": _excerpt(page.text)` —— 1500 字
+    摘录进 sources，`page.text` 随即丢弃。而多轮修改的复用分支复用的**就是这 1500 字**：
+    用户追问「第 3 家酒店的取消政策」，原页面其实有，但已经不在了，只能重爬或让模型编。
+
+    深度研究链路早就解决了这个问题（`research_tools._stash_source` 存全文 +
+    `read_source(source_id, offset)` 按需取），guide 链路缺的就是这一半。
+
+    **不复用 `travel_page`**：那是 Phase 1 的 task 维度（plan_id/task_id 外键），塞会话
+    来源要把两个外键都置空，语义混乱。
+
+    `(conversation_id, url)` 唯一：同一会话重复抓同一页覆盖，不堆历史版本。
+    """
+
+    __tablename__ = "travel_source_page"
+    __table_args__ = (
+        UniqueConstraint("conversation_id", "url", name="ux_source_page_conv_url"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    conversation_id: Mapped[str] = mapped_column(String(32), index=True)
+    url: Mapped[str] = mapped_column(String(512))
+    title: Mapped[str] = mapped_column(Text, default="")
+    full_text: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, index=True)
