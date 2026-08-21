@@ -59,7 +59,9 @@ def _anchors(frag: str) -> list[str]:
     """
     if len(frag) <= 4:
         return []
-    return [frag[-3:], frag[-4:], frag[:2], frag[:3]]
+    # 只产 3-4 字锚点：2 字中文词几乎必然是泛词（「酒店」「早餐」），拿它定位只会命中
+    # 标题和导航。线上实测——见 focus_excerpt 里的词频筛选。
+    return [frag[-3:], frag[-4:], frag[:3]]
 
 
 def keywords_of(text: str, limit: int = 8) -> list[str]:
@@ -94,17 +96,19 @@ def focus_excerpt(full_text: str, keywords: list[str], limit: int = 2400) -> str
     text = full_text or ""
     if not text or not keywords:
         return ""
-    spans: list[tuple[int, int]] = []
     lowered = text.lower()
+    spans: list[tuple[int, int]] = []
     for kw in keywords:
-        start = 0
-        k = kw.lower()
-        while True:
-            i = lowered.find(k, start)
-            if i < 0:
-                break
+        hits = _find_all(lowered, kw.lower())
+        # ⚠️ 词频反向筛选（线上实测后加的，防的是一次真实的质量回归）。
+        # 「酒店」在一个酒店页里出现 18 次、最早那次在标题里 —— 用它定位，窗口全是标题和
+        # 导航菜单，比原来的 `_excerpt` 摘录还差。这是 Phase 96 那个「按位置下刀=窗口里
+        # 全是导航」的另一个实例。
+        # 单页内的词频就是天然的 IDF，不需要语料库：出现得越密，定位价值越低。
+        if not hits or _is_generic(hits, len(text)):
+            continue
+        for i in hits:
             spans.append((max(0, i - _WINDOW_BEFORE), min(len(text), i + len(kw) + _WINDOW_AFTER)))
-            start = i + len(kw)
             if len(spans) >= _MAX_SPANS:
                 break
         if len(spans) >= _MAX_SPANS:
@@ -135,16 +139,56 @@ def focus_excerpt(full_text: str, keywords: list[str], limit: int = 2400) -> str
     return "\n…\n".join(parts)
 
 
+def _find_all(haystack: str, needle: str) -> list[int]:
+    out: list[int] = []
+    start = 0
+    while True:
+        i = haystack.find(needle, start)
+        if i < 0:
+            return out
+        out.append(i)
+        start = i + len(needle)
+        if len(out) > _GENERIC_MAX_HITS:  # 多到这个份上已经判定为泛词，不必数完
+            return out
+
+
+def _is_generic(hits: list[int], text_len: int) -> bool:
+    """这个词在**这一页里**是不是泛词（出现太密 ⇒ 没有定位价值）。
+
+    用密度而非绝对次数：一篇 3 万字的百科里「西湖」出现 50 次仍有定位价值（1.7 次/千字），
+    而 1670 字的酒店页里「酒店」出现 18 次就是纯噪声（10.8 次/千字）。
+    `hits <= _GENERIC_MIN_HITS` 一律放行——出现两三次的词，无论页面多短都是信号。
+    """
+    if len(hits) <= _GENERIC_MIN_HITS:
+        return False
+    return len(hits) * 1000.0 / max(text_len, 1) > _GENERIC_DENSITY_PER_KCHAR
+
+
 _WINDOW_BEFORE = 200
 _WINDOW_AFTER = 600
 _MAX_SPANS = 12
+_GENERIC_MIN_HITS = 2          # 出现 ≤2 次的词一律当信号
+_GENERIC_DENSITY_PER_KCHAR = 4.0  # 每千字超过这个次数 ⇒ 判为该页泛词
+_GENERIC_MAX_HITS = 64         # 数到这里就够判定了
+
+
+_SNAPSHOT_HEADER = re.compile(r"\A(?:#{1,2} [^\n]*\n)+")
+
+
+def _strip_snapshot_header(text: str) -> str:
+    """剥掉 a11y 快照的 MCP 响应头（`# take_snapshot response` / `## Page content`）。
+
+    每一页开头都有，纯噪声，而且它把真正的正文往后推 40 字——泛词命中窗口里第一眼看到的
+    就是它。存进去之前剥掉，比在检索侧绕开它便宜。
+    """
+    return _SNAPSHOT_HEADER.sub("", text or "", count=1)
 
 
 def save_page(cid: str, url: str, title: str, full_text: str) -> str | None:
     """存一页全文，返回 page_id。失败只记日志——全文是增强，不能拖垮采集。"""
     if not cid or not url or not (full_text or "").strip():
         return None
-    text = (full_text or "")[: settings.source_full_text_max_chars]
+    text = _strip_snapshot_header(full_text)[: settings.source_full_text_max_chars]
     try:
         with get_session() as db:
             row = db.execute(

@@ -210,3 +210,72 @@ def test_refresh_partial_hit_reports_accurate_count(db):
     )
     assert hits == 1
     assert out[1]["summary"] == "s2"
+
+
+# ------------------------------------------------- 泛词筛选（线上实测后补的回归防线）
+
+# 线上真实形态：a11y 快照带 MCP 响应头，标题里就含查询词，之后是一长串导航菜单项。
+REAL_HOTEL_PAGE = (
+    "# take_snapshot response\n## Page content\n"
+    "杭州中山西子湖酒店 杭州 早餐-旅游知识问答【携程攻略】\n"
+    + "".join(f"{x} 按回车键打开菜单\n" for x in
+             ["酒店", "机票", "火车票", "旅游", "门票·活动", "汽车·船票", "用车", "攻略·景点"])
+    + "".join(f"#杭州中山西子湖酒店#早餐是五星标准嘛？{i}\n" for i in range(10))
+)
+
+
+def test_generic_keyword_does_not_hijack_window():
+    """线上实测的**质量回归**：「酒店」在一个酒店页里出现 18 次、最早那次在标题里，
+    用它定位出来的窗口全是标题和导航菜单——比原来的 `_excerpt` 摘录还差，而
+    `refresh_reused_summaries` 还会当成「命中」把它替换进去。
+
+    这是 Phase 96「按位置下刀 = 窗口里全是导航」的另一个实例。
+    """
+    got = focus_excerpt(REAL_HOTEL_PAGE, ["酒店"], limit=600)
+    assert got == ""  # 泛词不参与定位
+
+
+def test_specific_keyword_still_works_on_same_page():
+    """筛掉泛词不能把特异词一起筛掉。"""
+    page = REAL_HOTEL_PAGE + "\n取消政策：入住前 3 天可免费取消。\n"
+    got = focus_excerpt(page, ["取消政策"], limit=600)
+    assert "免费取消" in got
+
+
+def test_rare_word_in_short_page_is_not_generic():
+    """出现两三次的词，无论页面多短都算信号（绝对次数下限保护）。"""
+    page = "短页面。取消政策：可退。中间内容。取消政策适用全部房型。"
+    assert focus_excerpt(page, ["取消政策"], limit=400) != ""
+
+
+def test_density_not_absolute_count():
+    """用密度而非绝对次数：3 万字百科里出现 50 次的「西湖」仍有定位价值，
+    1670 字酒店页里出现 18 次的「酒店」没有。"""
+    long_page = ("杭州风光。" * 200 + "西湖景色宜人。") * 50   # 西湖 50 次 / 约 5 万字
+    assert focus_excerpt(long_page, ["西湖"], limit=400) != ""
+    short_page = "酒店简介。" * 5 + "本酒店" * 15               # 酒店 20 次 / 约 70 字
+    assert focus_excerpt(short_page, ["酒店"], limit=400) == ""
+
+
+def test_snapshot_header_is_stripped_before_storing(db):
+    """`# take_snapshot response` / `## Page content` 每页都有、纯噪声，
+    还把正文往后推 40 字——泛词命中窗口第一眼看到的就是它。"""
+    pid = save_page("c1", "https://x.com/a", "t", REAL_HOTEL_PAGE)
+    stored = load_texts([pid])[pid]
+    assert not stored.startswith("#")
+    assert stored.startswith("杭州中山西子湖酒店")
+
+
+def test_strip_header_leaves_body_markdown_alone():
+    """只剥开头连续的标题行，正文中间的 markdown 标题不能动。"""
+    from app.agent.source_pages import _strip_snapshot_header
+
+    assert _strip_snapshot_header("正文\n## 中间的小标题\n更多") == "正文\n## 中间的小标题\n更多"
+
+
+def test_anchors_never_produce_two_char_tokens():
+    """2 字中文锚点几乎必然是泛词，是上面那个回归的源头之一。"""
+    from app.agent.source_pages import _anchors
+
+    for frag in ["行程改到湖里区", "早餐几点开始", "取消政策说明书"]:
+        assert all(len(a) >= 3 for a in _anchors(frag))
