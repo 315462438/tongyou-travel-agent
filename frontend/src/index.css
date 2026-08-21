@@ -927,6 +927,22 @@ textarea { font-family: inherit; }
 }
 .composer-thumb-x:hover { background: rgba(0, 0, 0, .78); }
 
+/* 首页单入口的图片附件（Phase 105）：与 unified-constraints 同一栏宽 */
+.unified-attach {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 10px;
+  padding: 10px 14px; border-top: 1px solid #eee;
+}
+.unified-attach-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px; border-radius: 999px;
+  border: 1px solid #dcdcdc; background: #fafafa;
+  font-size: 13px; color: #444;
+}
+.unified-attach-btn:hover:not(:disabled) { background: #f0f0f2; border-color: #c9c9c9; }
+.unified-attach-btn:disabled { opacity: .45; cursor: not-allowed; }
+.unified-attach small { color: #8a8a8f; font-size: 12px; flex: 1 1 200px; }
+.unified-attach .composer-thumbs { padding: 0; flex-basis: 100%; }
+
 /* 已发送的图片（用户气泡内） */
 .msg-user-images { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
 .msg-user-images img {

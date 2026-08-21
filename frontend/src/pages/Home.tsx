@@ -1175,6 +1175,10 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
                   if (deepReasoning) enableDeep()
                   void send(prompt, { deepReasoning })
                 }}
+                images={pendingImages}
+                onAddImages={addImages}
+                onRemoveImage={(id) => setPendingImages((cur) => removePendingImage(cur, id))}
+                uploading={uploadingImage}
               />
             </div>
           </div>
@@ -1299,6 +1303,10 @@ function InspirationLaunchpad({
   covers,
   onSocial,
   onLaunch,
+  images = [],
+  onAddImages,
+  onRemoveImage,
+  uploading,
 }: {
   homeCity: string
   running: boolean
@@ -1306,7 +1314,13 @@ function InspirationLaunchpad({
   covers: Record<string, string>
   onSocial: () => void
   onLaunch: (launch: InspirationLaunch) => void
+  images?: PendingImage[]
+  onAddImages?: (files: File[]) => void
+  onRemoveImage?: (id: string) => void
+  uploading?: boolean
 }) {
+  const fileRef = useRef<HTMLInputElement>(null)
+  const remaining = MAX_COMPOSER_IMAGES - images.length
   const [error, setError] = useState('')
   const [idea, setIdea] = useState('')
   const [origin, setOrigin] = useState(homeCity)
@@ -1350,8 +1364,10 @@ function InspirationLaunchpad({
     const prompt = routeKind === 'question'
       ? idea.trim()
       : buildJourneyPreviewPrompt({ destination: idea, origin, days, pace, budget })
-    if (!prompt) {
-      setError('输入一个目的地或攻略链接；如果还没想好，就填写出发地和预算。')
+    // Phase 105：只传图、不打字也是有效输入（「这是我朋友发的行程，帮我安排」）。
+    // 图片在 send() 里从 pendingImages 取，这里只需要放行空 prompt。
+    if (!prompt && !images.length) {
+      setError('输入一个目的地或攻略链接、上传一张图；如果还没想好，就填写出发地和预算。')
       return
     }
     onLaunch({ prompt })
@@ -1376,8 +1392,62 @@ function InspirationLaunchpad({
             placeholder={'输入目的地、粘贴攻略链接\n或直接问“第一次去日本怎么准备？”'}
             rows={2}
             autoFocus
+            onPaste={(e) => {
+              if (!onAddImages) return
+              const files = pickImageFiles(Array.from(e.clipboardData?.files || []), remaining)
+              if (files.length) { e.preventDefault(); onAddImages(files) }
+            }}
           />
         </label>
+
+        {onAddImages && (
+          <div
+            className="unified-attach"
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault()
+              onAddImages(pickImageFiles(Array.from(e.dataTransfer.files || []), remaining))
+            }}
+          >
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/png,image/jpeg,image/gif,image/webp"
+              multiple
+              hidden
+              onChange={(e) => {
+                onAddImages(pickImageFiles(Array.from(e.target.files || []), remaining))
+                e.target.value = ''
+              }}
+            />
+            <button
+              type="button"
+              className="unified-attach-btn"
+              disabled={remaining <= 0 || running}
+              onClick={() => fileRef.current?.click()}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <circle cx="8.5" cy="8.5" r="1.6" />
+                <path d="M21 15l-5-5L5 21" />
+              </svg>
+              {images.length ? `已选 ${images.length} 张图` : '上传图片'}
+            </button>
+            <small>行程截图、机票订单、别人发的攻略图都行——也可以直接粘贴或拖进来</small>
+            {images.length > 0 && (
+              <div className="composer-thumbs">
+                {images.map((img) => (
+                  <div className="composer-thumb" key={img.id}>
+                    <img src={img.url} alt="待发送图片" />
+                    <button type="button" className="composer-thumb-x"
+                      onClick={() => onRemoveImage?.(img.id)} aria-label="移除这张图片">×</button>
+                  </div>
+                ))}
+                {uploading && <div className="composer-thumb loading"><span className="spinner" /></div>}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="unified-constraints">
           <label><span>出发地</span><input value={origin} onChange={(event) => setOrigin(event.target.value)} placeholder="可不填" /></label>
@@ -1393,12 +1463,14 @@ function InspirationLaunchpad({
                 ? `已识别 ${urls.length} 条链接，将自动整理`
                 : routeKind === 'budget'
                   ? '没选目的地，将根据预算推荐'
-                  : routeKind === 'question' && idea.trim()
-                    ? '会自动判断快速回答还是深度规划'
-                    : '会检查路线、节奏、预算和备选方案')}
+                  : images.length && !idea.trim()
+                    ? `会先看这 ${images.length} 张图，再据此规划`
+                    : routeKind === 'question' && idea.trim()
+                      ? '会自动判断快速回答还是深度规划'
+                      : '会检查路线、节奏、预算和备选方案')}
             </p>
           </div>
-          <button className="unified-submit" type="submit" disabled={running}>{actionLabel}<span aria-hidden>→</span></button>
+          <button className="unified-submit" type="submit" disabled={running || uploading}>{actionLabel}<span aria-hidden>→</span></button>
         </div>
         </form>
       </section>

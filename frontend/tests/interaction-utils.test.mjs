@@ -506,3 +506,9 @@ test('粘贴时只挑图片文件并按剩余额度截断', () => {
   assert.equal(pickImageFiles(files, 0).length, 0)
   assert.equal(pickImageFiles([{ type: 'application/pdf' }], 4).length, 0)
 })
+
+test('首页只传图不打字也算有效输入', () => {
+  // 首页的 unified-start 表单此前只认「文字或链接或(出发地+预算)」，
+  // 传了图但没打字会被拦下报「输入一个目的地或攻略链接」——而那正是最自然的用法。
+  assert.equal(canSendComposer('', 2), true)
+})
