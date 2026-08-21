@@ -289,3 +289,79 @@ def test_collect_breaker_is_consecutive_not_cumulative(monkeypatch):
     # f0 失败（连续1）→ f1 成功（重置）→ f2 失败（连续1）→ f3 失败（连续2 → 熔断 break）
     assert read == ["f0", "f1", "f2", "f3"]
     assert len(out) == 1 and out[0]["title"].startswith("小红书｜成都")  # f1 被保留
+
+
+# ---------- 部分收成（Phase 102） ----------
+
+def test_budget_timeout_keeps_partial_harvest(monkeypatch):
+    """核心：预算超时交回已抓到的，不再全丢。
+
+    线上实测一轮各段合计 149.9s，预算 150s——差 0.1 秒就白等两分半一篇不剩。
+    打桩：第一篇秒回、第二篇永久阻塞、预算 0.5s → 必须拿回那 1 篇。
+    """
+    monkeypatch.setattr(settings, "xhs_mcp_url", "http://fake:18060/mcp")
+    monkeypatch.setattr(settings, "xhs_notes_per_turn", 3)
+    monkeypatch.setattr(settings, "xhs_collect_timeout_s", 0.5)
+
+    async def fake_search(keyword):
+        return [{"feed_id": f"f{i}", "xsec_token": f"t{i}", "title": ""} for i in range(3)]
+
+    async def fake_detail(fid, token):
+        if fid == "f0":
+            return {"title": "先到的", "desc": "内容" * 60, "images": []}
+        await asyncio.sleep(30)  # 第二篇卡死，直到预算耗尽
+
+    monkeypatch.setattr(xhs_mcp, "search_notes", fake_search)
+    monkeypatch.setattr(xhs_mcp, "note_detail", fake_detail)
+    out = asyncio.run(collect_xhs_sources("成都 旅游攻略"))
+    assert len(out) == 1, "超时该交回已抓到的 1 篇，而不是全丢"
+    assert out[0]["title"].startswith("小红书｜先到的")
+
+
+def test_user_cancel_still_propagates(monkeypatch):
+    """部分收成只针对预算超时；用户停止（CancelledError）必须照旧向上冒，不得被吞。"""
+    monkeypatch.setattr(settings, "xhs_mcp_url", "http://fake:18060/mcp")
+    monkeypatch.setattr(settings, "xhs_collect_timeout_s", 30)
+
+    async def fake_search(keyword):
+        return [{"feed_id": "f0", "xsec_token": "t0", "title": ""}]
+
+    async def fake_detail(fid, token):
+        await asyncio.sleep(30)
+
+    monkeypatch.setattr(xhs_mcp, "search_notes", fake_search)
+    monkeypatch.setattr(xhs_mcp, "note_detail", fake_detail)
+
+    async def run_and_cancel():
+        task = asyncio.ensure_future(collect_xhs_sources("成都"))
+        await asyncio.sleep(0.1)
+        task.cancel()
+        await task
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(run_and_cancel())
+
+
+def test_budget_default_is_75():
+    """预算旋钮：xhs 并发提速已实测否掉（容器内部串行），只剩「等多久」。
+    搜索实测 16–27s，75s 够搜索 + 2–3 篇详情；晚到的不等，必应+高德补位。"""
+    from app.config import Settings
+
+    assert Settings.model_fields["xhs_collect_timeout_s"].default == 75
+
+
+def test_extraction_prompts_carry_thinking_discipline():
+    """五个抽取 system 必须带思考纪律（Phase 102）。
+
+    线上实测「从 Markdown 挑地点填 schema」烧 13124 思考 token / 118s（正文仅 971）。
+    这条防后人重构 prompt 时删掉纪律——删了不报错，只悄悄变慢。
+    """
+    from app.agent.budget import EXTRACT_SYSTEM as bud
+    from app.agent.poster import EXTRACT_SYSTEM as pos
+    from app.api.trip_api import IMPORT_DAYS_SYSTEM, IMPORT_SUMMARY_SYSTEM
+    from app.ontology.extract import EXTRACT_SYSTEM as ont
+
+    for name, sys_ in [("days", IMPORT_DAYS_SYSTEM), ("summary", IMPORT_SUMMARY_SYSTEM),
+                       ("ontology", ont), ("poster", pos), ("budget", bud)]:
+        assert "思考纪律" in sys_, f"{name} 丢了思考纪律"
+        assert "两三行" in sys_, f"{name} 纪律内容不完整"

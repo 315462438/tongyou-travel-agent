@@ -12,6 +12,7 @@ import json
 import logging
 
 from app.agent.context_security import EXTERNAL_POLICY, wrap_external
+from app.llm.client import EXTRACT_THINKING_DISCIPLINE
 from app.agent.trip_planner import normalize_budget_category
 from app.config import settings
 from app.db.models import TravelMessage
@@ -40,7 +41,7 @@ EXTRACT_SYSTEM = (
     "- reservations：需要提前预约或抢票的景点，依据正文里「需要预约」「提前预约」「抢票」"
     "「约满」「官方预约」等表述判断，正文没提就给空数组。\n"
     "- notes：预算口径说明 0-3 条，如「不含往返大交通」。"
-)
+) + EXTRACT_THINKING_DISCIPLINE
 
 # 明显是「合计」行的项目名——模型偶尔无视上面的约束，兜底剔除避免总额翻倍
 _TOTAL_WORDS = ("合计", "总计", "总预算", "小计", "共计", "总花费", "总费用", "人均合计")

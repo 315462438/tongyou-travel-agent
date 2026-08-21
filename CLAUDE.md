@@ -433,6 +433,25 @@ React Bits `Aurora`（低透明、pointer-events none、低动态偏好不挂载
 好友页，接力通知直达对应目的地；未读数每 30 秒及窗口聚焦时刷新。坑见
 `docs/pitfalls/事件通知必须与业务同事务且按事件去重.md`。
 
+**Phase 102 — xhs 部分收成 + 抽取思考纪律**：两个实测驱动的小改动。① **部分收成**：
+`collect_xhs_sources` 总预算超时原本**全丢**（`return []`）——线上实测一轮 xhs 各段合计 149.9s、
+预算 150s，**差 0.1 秒就白等两分半一篇不剩**。现在内层往调用方传入的 `sink` 逐篇追加（每篇是
+完整 dict，取消只在 await 点，不会留半截），超时交回已抓到的；预算 **150→75**（xhs 串行提速已
+实测否掉——容器内部串行，并发 38.2s≈串行 41.6s，只剩「等多久」一个旋钮；搜索实测 16–27s，75s
+够搜索+2–3 篇详情，晚到不等，必应+高德补位）。**用户取消（CancelledError）照旧向上冒**，部分
+收成只针对预算超时。collect 从「最坏 150s 可能得 0」变「封顶 ~75s 必有收成」。② **抽取思考
+纪律**：Langfuse 实测「导入行程板」分块抽取烧 **13124 思考 token / 118.6s**（正文仅 971）——
+一个「从 Markdown 挑地点填 schema」的任务在长考两分钟，7 天攻略×每天一块。这是 ITINERARY
+（Phase 11）、quick_take（Phase 101）之后**第三次**撞「DeepSeek 思考模式对结构化抽取过度推理」，
+治法同一味药：共享常量 `EXTRACT_THINKING_DISCIPLINE`（`app/llm/client.py`，不各写一份——手抄必
+漂移）append 到**五个**抽取 system（trip_api 的 IMPORT_DAYS/IMPORT_SUMMARY、ontology/extract、
+poster、budget）。`max_tokens` **不动**：16000 余量是有意设计（截断重试一次 ~140s 比多想几步贵），
+纪律省时间、预算兜安全，各管各的。**刻意不做**：跨用户目的地缓存（更大杠杆但要建共享表+迁移，
+单独立项——现复用是 per-user 的，用户 A 昨天抓过杭州、用户 B 今天仍全量重抓）；不减
+`xhs_notes_per_turn`（质量旋钮，部分收成落地后自然被预算封顶）。计划
+`docs/task_plans/xhs部分收成与抽取思考纪律-2026-08-21.md`，用例
+`docs/test_cases/xhs部分收成与抽取思考纪律-验收用例.md`（`tests/test_xhs_mcp.py` 20 passed）。
+
 **Phase 101 — 快答不再阻塞采集**：线上 Langfuse 实测 quick_take 三次里**两次 `out=0 /
 reason=1000`**——思考链吃满预算、正文为空，只能靠兜底把**模型的内部独白**前 200 字给用户看
 （不是空白，是质量降级）。同 Phase 11 在 ITINERARY 上解决过的那类问题，用同一条已验证的手段治：

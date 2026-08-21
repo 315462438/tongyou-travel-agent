@@ -21,6 +21,17 @@ class LLMOutputTruncatedError(ValueError):
     """结构化输出达到模型长度上限，JSON 必然不完整。"""
 
 
+# DeepSeek 思考模式对**结构化抽取**任务会过度推理：线上实测「从 Markdown 挑地点填 schema」
+# 烧掉 13124 思考 token / 118s，而正文只有 971。这是 ITINERARY（Phase 11）、quick_take
+# （Phase 101）之后第三次撞同一类问题，治法也还是同一味药——在 system 里写思考纪律。
+# 共享一份常量，不在各模块手抄（手抄必漂移）。max_tokens 不因此调小：纪律省时间，
+# 预算兜安全（截断重试一次 ~140s，比多想几步贵得多），各管各的。
+EXTRACT_THINKING_DISCIPLINE = (
+    "\n**思考纪律**：这是结构化抽取任务，答案都在给定文本里，不需要长推理。"
+    "思考最多两三行要点即可，把输出预算留给 JSON 正文。"
+)
+
+
 class LLMClient:
     def __init__(self, api_key: str | None = None, base_url: str | None = None):
         # Langfuse 埋点（Phase 24）：启用时换 drop-in 包装类，自动记录每次调用的

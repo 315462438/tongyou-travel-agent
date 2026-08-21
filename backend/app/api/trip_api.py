@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.config import settings
+from app.llm.client import EXTRACT_THINKING_DISCIPLINE
 from app.db.models import (
     TravelNotification, TravelTrip, TravelTripChatMessage, TravelTripComment, TravelTripEvent,
     TravelTripMember, TravelTripStop, TravelTripSuggestion, TravelUser,
@@ -814,7 +815,7 @@ IMPORT_SUMMARY_SYSTEM = (
     "- tips：若攻略有避坑提示/注意事项章节，提取每条提示为 {level,content}。"
     "level 根据重要性填 important（重要警告，如安全/诈骗/健康）或 notice（一般提醒）；"
     "content 是提示内容（最多80字）。**最多提取 12 条**；没有避坑章节就留空数组。"
-)
+) + EXTRACT_THINKING_DISCIPLINE
 
 IMPORT_DAYS_SYSTEM = (
     "从下面给定的少量 Day 攻略 Markdown 中只提取逐日行程：\n"
@@ -846,7 +847,7 @@ IMPORT_DAYS_SYSTEM = (
     "- stays：若攻略**明确写出**某天/某晚住哪（酒店或民宿名），逐项填 "
     "{day, city 过夜城市, hotel 酒店名, price 每晚价格数字(没写留空), source 来源如「携程」}；"
     "攻略没写已选住宿就留空数组，**不要把多个备选酒店都当成已预订住宿**。"
-)
+) + EXTRACT_THINKING_DISCIPLINE
 
 _IMPORT_DAY_RE = re.compile(
     r"(?im)^(?:#{1,6}\s*)?(?:\*{0,2})?Day\s*(\d{1,2})"

@@ -14,6 +14,7 @@ import httpx
 from sqlalchemy import select
 
 from app.agent.context_security import EXTERNAL_POLICY, wrap_external
+from app.llm.client import EXTRACT_THINKING_DISCIPLINE
 from app.config import settings
 from app.db.models import TravelMessage
 from app.db.session import get_session
@@ -41,7 +42,7 @@ EXTRACT_SYSTEM = (
     "- foods：当地美食推荐 3-6 个，含 name、note（14 字内描述）。\n"
     "- specialties：当地特产/伴手礼 2-4 个，含 name、note。\n"
     "- tips：旅行贴士 2-4 条（最佳季节/交通/注意事项），每条一句话。"
-)
+) + EXTRACT_THINKING_DISCIPLINE
 
 POSTER_CRITIQUE_SYSTEM = (
     "你是手账质检员，只挑明显硬伤，默认点位是够的（ok=true）。\n"

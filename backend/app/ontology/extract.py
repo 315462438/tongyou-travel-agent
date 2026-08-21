@@ -16,6 +16,7 @@ import re
 from collections.abc import Sequence
 
 from app.agent.context_security import EXTERNAL_POLICY, wrap_external
+from app.llm.client import EXTRACT_THINKING_DISCIPLINE
 from app.config import settings
 from app.ontology.objects import (
     DayObject,
@@ -59,7 +60,7 @@ EXTRACT_SYSTEM = (
     "- 地点用能在地图上搜到的规范名；同一个地点不要重复出现在多天。\n"
     "- 金额一律按**一个人**计；不要输出「合计」「总预算」这类总计项，总额由系统累加。\n"
     "- 住宿只填正文明确提到的酒店/民宿，正文只说了区域就给空数组。"
-) + EXTERNAL_POLICY
+) + EXTRACT_THINKING_DISCIPLINE + EXTERNAL_POLICY
 
 # 「合计」行兜底：模型偶尔无视上面的约束，放进明细会让总额翻倍
 _TOTAL_WORDS = ("合计", "总计", "总预算", "小计", "共计", "总花费", "总费用", "人均合计")

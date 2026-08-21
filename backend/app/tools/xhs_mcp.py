@@ -195,27 +195,31 @@ async def collect_xhs_sources(
         return []
 
     # 2026-08-14 整轮总预算：搜索+全部详情合起来不超过 xhs_collect_timeout_s。
-    # 单次 40s 超时 + 连续失败熔断都挡不住「半死」MCP（失败-成功交替/每篇卡在超时边缘），
-    # 最坏 2×40s 搜索 + 7×40s 详情 ≈ 5 分钟纯等待；超预算整轮放弃，必应兜底。
+    # 单次 40s 超时 + 连续失败熔断都挡不住「半死」MCP（失败-成功交替/每篇卡在超时边缘）。
+    # 2026-08-21 部分收成：超时从「全丢」改为**交回已抓到的**——线上实测一轮各段合计
+    # 149.9s，差 0.1s 就白等两分半一篇不剩；抓了 2 篇就该用 2 篇。sink 由内层逐篇追加
+    # （每篇是完整 dict，取消只发生在 await 点，不会留半截）。
+    sink: list[dict] = []
     try:
-        return await asyncio.wait_for(
-            _collect_within_budget(query, limit, on_note),
+        await asyncio.wait_for(
+            _collect_within_budget(query, limit, on_note, sink),
             timeout=settings.xhs_collect_timeout_s,
         )
     except asyncio.TimeoutError:
         logger.warning(
-            "xhs collect exceeded total budget %.0fs for %r, dropping xhs sources",
-            settings.xhs_collect_timeout_s, query,
+            "xhs collect hit budget %.0fs for %r, keeping %d partial notes",
+            settings.xhs_collect_timeout_s, query, len(sink),
         )
-        return []
     except asyncio.CancelledError:
-        raise  # 用户停止：不得被吞
+        raise  # 用户停止：不得被吞（部分收成只针对预算超时，不针对取消）
+    return sink
 
 
-async def _collect_within_budget(query: str, limit: int | None, on_note) -> list[dict]:
+async def _collect_within_budget(query: str, limit: int | None, on_note,
+                                 out: list[dict]) -> list[dict]:
+    """`out` 由调用方传入：预算超时时外层直接拿走已追加的部分（部分收成）。"""
     n = limit or settings.xhs_notes_per_turn
     feeds = await search_notes(query)
-    out: list[dict] = []
     attempts = 0
     consecutive_failures = 0  # 2026-08-13 熔断：MCP 垮了（500/超时）时连续失败要快速放弃，
     # 否则每篇详情都等 40s 超时，5-7 篇 ≈ 3-5 分钟纯等待，且期间停止按钮无检查点。
