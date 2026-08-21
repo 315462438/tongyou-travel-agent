@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 
 import {
   ATTENTION_BADGE_MAX,
+  pickNavUrl,
   badgedTitle,
   extractGuideHeadings,
   formatTripTimeRange,
@@ -420,4 +421,38 @@ test('脏输入不炸', () => {
   assert.equal(badgedTitle('标题', -1), '标题')
   assert.equal(badgedTitle('标题', 1.7), '(1) 标题')
   assert.equal(badgedTitle('标题', NaN), '标题')
+})
+
+// ---------- 地点导航链接选择（Phase 100） ----------
+
+const NAV_CN = { amap: 'https://uri.amap.com/cn', apple: 'https://maps.apple.com/cn', domestic: true }
+const NAV_JP = { amap: 'https://uri.amap.com/jp', apple: 'https://maps.apple.com/jp', domestic: false }
+
+const MAC = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1'
+const ANDROID = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36'
+const WINDOWS = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+
+test('境内地点一律走高德，哪怕在苹果设备上', () => {
+  // 这是第一版的 bug：按设备判 /Macintosh/，Mac 用户点国内地点被送进苹果地图。
+  // 国内用户装的是高德，POI 与导航体验都对。
+  for (const ua of [MAC, IPHONE, ANDROID, WINDOWS]) {
+    assert.equal(pickNavUrl(NAV_CN, ua), NAV_CN.amap)
+  }
+})
+
+test('境外地点在苹果设备上走苹果地图', () => {
+  assert.equal(pickNavUrl(NAV_JP, MAC), NAV_JP.apple)
+  assert.equal(pickNavUrl(NAV_JP, IPHONE), NAV_JP.apple)
+})
+
+test('境外地点在非苹果设备上仍走高德', () => {
+  // 给安卓/Windows 发 maps.apple.com 只会落到一个功能残缺的网页
+  assert.equal(pickNavUrl(NAV_JP, ANDROID), NAV_JP.amap)
+  assert.equal(pickNavUrl(NAV_JP, WINDOWS), NAV_JP.amap)
+})
+
+test('userAgent 缺失时不炸，退回高德', () => {
+  assert.equal(pickNavUrl(NAV_CN, ''), NAV_CN.amap)
+  assert.equal(pickNavUrl(NAV_JP, undefined), NAV_JP.amap)
 })

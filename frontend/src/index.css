@@ -5715,6 +5715,41 @@ body { color: var(--tx-ink); background: var(--tx-bg); }
   transform: translateY(-1px);
 }
 
+/* Phase 100：导航直达。**刻意与旁边的图标钮不同款**——第一版复用了 btn-edit 的样式，
+   结果和 ✏️ 长得一模一样、🧭 在 20px 下又糊成一个圆盘，用户根本找不到它。
+   实心品牌色 + 「导航」二字，让它在一排灰色图标里一眼可辨。 */
+.trips-overlay .trip-table-btn-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 9px;
+  border-radius: 10px;
+  color: #fff;
+  background: var(--trip-accent);
+  box-shadow: 0 2px 7px rgba(82, 104, 221, .26);
+  font-size: 11.5px;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background .16s ease, transform .16s ease, box-shadow .16s ease;
+}
+.trips-overlay .trip-table-btn-nav > i {
+  font-style: normal;
+  font-size: 11px;
+  transform: rotate(-45deg);   /* ➤ 转成"出发"的斜向指针 */
+}
+.trips-overlay .trip-table-btn-nav:hover {
+  background: var(--trip-accent-strong);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 11px rgba(82, 104, 221, .32);
+}
+/* 窄屏收回文字只留指针，省出操作列宽度 */
+@media (max-width: 1180px) {
+  .trips-overlay .trip-table-btn-nav { padding: 0 8px; }
+  .trips-overlay .trip-table-btn-nav > b { display: none; }
+}
+
 .trips-overlay .trip-edit-modal {
   width: min(760px, calc(100vw - 36px));
   max-height: min(88vh, 780px);
@@ -6823,6 +6858,12 @@ body { color: var(--tx-ink); background: var(--tx-bg); }
   .trips-overlay .trip-table-btn-delete {
     width: 38px;
     height: 36px;
+    border-radius: 12px;
+  }
+
+  .trips-overlay .trip-table-btn-nav {
+    height: 36px;
+    padding: 0 10px;
     border-radius: 12px;
   }
 

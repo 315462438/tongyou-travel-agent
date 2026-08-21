@@ -560,3 +560,25 @@ export function badgedTitle(baseTitle: string, unread: number): string {
   const shown = count > ATTENTION_BADGE_MAX ? `${ATTENTION_BADGE_MAX}+` : String(count)
   return `(${shown}) ${base}`
 }
+
+// ---------- 地点导航链接选择（Phase 100） ----------
+
+export interface NavLinks {
+  amap: string
+  apple: string
+  domestic: boolean
+}
+
+/**
+ * 选用哪个地图打开这个地点。
+ *
+ * **按「地点在哪」分流，不是按「用户拿什么设备」**——这是第一版写错的地方：
+ * 原本判 `/iPhone|iPad|iPod|Macintosh/`，结果 Mac 用户点国内地点被送进苹果地图。
+ * 境内地点无论什么设备都该开高德（国内用户装的是它，POI 与导航体验都对），
+ * 只有境外才轮到苹果地图（高德境外数据弱），且仅限苹果设备——
+ * 安卓/Windows 上给 maps.apple.com 只会落到一个功能残缺的网页。
+ */
+export function pickNavUrl(nav: NavLinks, userAgent: string): string {
+  const isApple = /iPhone|iPad|iPod|Macintosh/.test(userAgent || '')
+  return !nav.domestic && isApple ? nav.apple : nav.amap
+}

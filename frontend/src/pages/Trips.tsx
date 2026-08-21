@@ -10,7 +10,7 @@ import Iridescence from '../components/Iridescence'
 import TripMap from '../components/TripMap'
 import { useToast } from '../components/toast-context'
 import { API, authFetch } from '../api'
-import { formatTripTimeRange, prepareMarkdown } from '../interaction'
+import { formatTripTimeRange, pickNavUrl, prepareMarkdown } from '../interaction'
 
 interface TripSummary {
   id: string
@@ -34,7 +34,7 @@ interface TripStop {
   ticket_price: number | null
   tags: string[]
   /** Phase 100：后端算好的导航 deep link（坐标系分流在后端，前端不重算）。无坐标时为 null */
-  nav: { amap: string; apple: string } | null
+  nav: { amap: string; apple: string; domestic: boolean } | null
 }
 
 interface TripMember {
@@ -2893,15 +2893,14 @@ function TripBoard({
                               // 决定唤起 App 还是落网页版。iOS 优先苹果地图（多数没装高德），
                               // 其余一律高德。不消耗我们的 key——请求由用户设备发起。
                               <a
-                                className="trip-table-btn-edit"
-                                href={/iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent)
-                                  ? s.nav.apple : s.nav.amap}
+                                className="trip-table-btn-nav"
+                                href={pickNavUrl(s.nav, navigator.userAgent)}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 onClick={(e) => e.stopPropagation()}
                                 aria-label={`导航到 ${s.name}`}
-                                title="导航到这里"
-                              >🧭</a>
+                                title={s.nav.domestic ? '用高德地图导航' : '用地图导航'}
+                              ><i aria-hidden>➤</i><b>导航</b></a>
                             )}
                             <button
                               className="trip-table-btn-edit"

@@ -87,10 +87,15 @@ def parse_location(location: str | None) -> tuple[float, float] | None:
     return lng, lat
 
 
-def build_nav_links(location: str | None, name: str = "") -> dict[str, str] | None:
-    """地点 → {amap, apple} 导航 deep link。无坐标/坐标非法返回 None。
+def build_nav_links(location: str | None, name: str = "") -> dict | None:
+    """地点 → `{amap, apple, domestic}` 导航 deep link。无坐标/坐标非法返回 None。
 
     `name` 只用于地图上显示的标注，编码后拼入；含 `&`/`#` 等字符不会破坏链接结构。
+
+    **`domestic` 是给前端做选择用的，不是调试信息**：选哪个地图应当取决于
+    「这个地点在哪」而不是「用户拿的什么设备」——境内地点即使在 Mac/iPhone 上
+    也该开高德（国内用户装的是它，POI 与导航体验都对），只有境外才轮到苹果地图
+    （高德境外数据弱）。按设备分流是第一版的错误，Mac 用户点境内地点会被送进苹果地图。
     """
     parsed = parse_location(location)
     if parsed is None:
@@ -104,4 +109,4 @@ def build_nav_links(location: str | None, name: str = "") -> dict[str, str] | No
     # 苹果吃 WGS-84：境内必须转，否则偏 ~500m（境外 gcj_to_wgs84 内部原样返回）
     w_lng, w_lat = gcj_to_wgs84(lng, lat)
     apple = f"https://maps.apple.com/?daddr={w_lat:.6f},{w_lng:.6f}&q={label}"
-    return {"amap": amap, "apple": apple}
+    return {"amap": amap, "apple": apple, "domestic": not out_of_china(lng, lat)}

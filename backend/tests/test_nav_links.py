@@ -102,7 +102,8 @@ def test_apple_uses_lat_lng_order():
 def test_names_are_encoded_and_do_not_break_the_url(name):
     """名称里的 & / # / 空格必须编码，否则会截断或伪造出新的查询参数。"""
     links = build_nav_links("120.155,30.245", name)
-    for url in links.values():
+    for key in ("amap", "apple"):
+        url = links[key]
         assert " " not in url
         assert url.count("#") == 0
         # 高德的参数个数固定，出现多余的说明 & 没被编码
@@ -136,3 +137,12 @@ def test_stop_dict_exposes_nav():
 
     without = TravelTripStop(id="s2", trip_id="t1", day=1, order_no=1, name="待定", location="")
     assert _stop_dict(without)["nav"] is None
+
+
+def test_domestic_flag_drives_frontend_choice():
+    """`domestic` 让前端按「地点在哪」选地图，而不是按「用户什么设备」。
+
+    第一版按设备判 /Macintosh/，Mac 用户点国内地点被送进苹果地图——境内应当一律高德。
+    """
+    assert build_nav_links("120.155,30.245", "西湖")["domestic"] is True
+    assert build_nav_links("139.745,35.659", "東京タワー")["domestic"] is False
