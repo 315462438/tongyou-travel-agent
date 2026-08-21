@@ -97,9 +97,14 @@ def focus_excerpt(full_text: str, keywords: list[str], limit: int = 2400) -> str
     if not text or not keywords:
         return ""
     lowered = text.lower()
+    # 防线一：跳过页面头部。a11y 快照的前几百字**必然**是标题 + 导航菜单——Phase 96 已经
+    # 论证过 reduce_a11y 拿不掉导航（a11y 树没有 class/id 可判），所以这段噪声是确定存在的。
+    # ⚠️ 这跟 Phase 96 批评的「按位置下刀」方向相反：那是按位置**取内容**（取到什么全凭
+    # 运气），这是按位置**排除已知无价值区域**（我们确知那里是什么）。
+    head_skip = min(_HEAD_SKIP, len(text) // 4)
     spans: list[tuple[int, int]] = []
     for kw in keywords:
-        hits = _find_all(lowered, kw.lower())
+        hits = [i for i in _find_all(lowered, kw.lower()) if i >= head_skip]
         # ⚠️ 词频反向筛选（线上实测后加的，防的是一次真实的质量回归）。
         # 「酒店」在一个酒店页里出现 18 次、最早那次在标题里 —— 用它定位，窗口全是标题和
         # 导航菜单，比原来的 `_excerpt` 摘录还差。这是 Phase 96 那个「按位置下刀=窗口里
@@ -107,6 +112,7 @@ def focus_excerpt(full_text: str, keywords: list[str], limit: int = 2400) -> str
         # 单页内的词频就是天然的 IDF，不需要语料库：出现得越密，定位价值越低。
         if not hits or _is_generic(hits, len(text)):
             continue
+
         for i in hits:
             spans.append((max(0, i - _WINDOW_BEFORE), min(len(text), i + len(kw) + _WINDOW_AFTER)))
             if len(spans) >= _MAX_SPANS:
@@ -136,7 +142,21 @@ def focus_excerpt(full_text: str, keywords: list[str], limit: int = 2400) -> str
         total += len(chunk)
         if total >= limit:
             break
-    return "\n…\n".join(parts)
+    got = "\n…\n".join(parts)
+    # 防线二：导航块闸门。命中点即使躲开了头部，也可能落在页脚/侧边导航里——那里全是
+    # 「里程商城 / 在线客服 / 帮助中心」这种 3-5 字短行。同 Phase 96 的「过度裁剪检测」
+    # 手法：产出物**看起来不像正文**就整体弃用，让调用方退回原 summary。
+    # 宁可不换（降级到改造前），也不能把比原摘录更差的东西替换进去——那是净损失。
+    return "" if _looks_like_navigation(got) else got
+
+
+def _looks_like_navigation(text: str) -> bool:
+    """短行占比过半 ⇒ 这是导航/菜单块，不是正文。"""
+    lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip() and ln.strip() != "…"]
+    if len(lines) < _NAV_MIN_LINES:
+        return False  # 行数太少，判不出来，放行（长段落正文常常就是一两行）
+    short = sum(1 for ln in lines if len(ln) < _NAV_SHORT_LINE_CHARS)
+    return short / len(lines) > _NAV_SHORT_LINE_RATIO
 
 
 def _find_all(haystack: str, needle: str) -> list[int]:
@@ -170,6 +190,10 @@ _MAX_SPANS = 12
 _GENERIC_MIN_HITS = 2          # 出现 ≤2 次的词一律当信号
 _GENERIC_DENSITY_PER_KCHAR = 4.0  # 每千字超过这个次数 ⇒ 判为该页泛词
 _GENERIC_MAX_HITS = 64         # 数到这里就够判定了
+_HEAD_SKIP = 400               # 页面头部（标题+主导航）的典型长度，命中落在这里一律忽略
+_NAV_MIN_LINES = 4             # 少于这么多行就判不出是不是导航块
+_NAV_SHORT_LINE_CHARS = 8      # 短于此判为菜单项而非正文句
+_NAV_SHORT_LINE_RATIO = 0.6    # 短行超过这个比例 ⇒ 判为导航块
 
 
 _SNAPSHOT_HEADER = re.compile(r"\A(?:#{1,2} [^\n]*\n)+")

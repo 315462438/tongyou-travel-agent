@@ -96,8 +96,13 @@ def test_focus_excerpt_merges_overlapping_windows():
 
 
 def test_focus_excerpt_marks_discontinuity():
-    """相隔很远的两段之间要有断点标记，否则模型会当成连续正文读。"""
-    text = "开头 取消政策在这里。" + "填充。" * 500 + "结尾 早餐时间在这里。"
+    """相隔很远的两段之间要有断点标记，否则模型会当成连续正文读。
+
+    前缀那 200 个「导航项」不是凑数：`focus_excerpt` 会跳过页面头部（那里必然是
+    标题+菜单），关键词得落在头部之外才算数。
+    """
+    text = ("导航项。" * 200 + "开头 取消政策在这里。" + "填充。" * 500
+            + "结尾 早餐时间在这里。")
     got = focus_excerpt(text, ["取消政策", "早餐时间"], limit=4000)
     assert "…" in got
 
@@ -279,3 +284,53 @@ def test_anchors_never_produce_two_char_tokens():
 
     for frag in ["行程改到湖里区", "早餐几点开始", "取消政策说明书"]:
         assert all(len(a) >= 3 for a in _anchors(frag))
+
+
+def test_head_region_hits_are_ignored():
+    """a11y 快照的前几百字必然是标题 + 主导航（Phase 96 已论证 reduce_a11y 拿不掉导航，
+    因为 a11y 树没有 class/id 可判）。命中落在这里一律不算。
+
+    ⚠️ 这跟 Phase 96 批评的「按位置下刀」方向相反：那是按位置**取内容**（取到什么全凭
+    运气），这是按位置**排除已知无价值区域**（我们确知那里是什么）。
+    """
+    page = "取消政策 首页 登录 注册 帮助\n" + "正文内容都在后面这里展开叙述。" * 200
+    assert focus_excerpt(page, ["取消政策"], limit=600) == ""
+
+
+def test_head_skip_scales_down_for_short_pages():
+    """短页面按四分之一缩放，不能一律砍掉 400 字——那会把整页正文都跳掉。
+
+    真实入库的页面都 ≥400 字（采集侧 `len(page.text) < 400` 直接跳过），这里用 600 字
+    量级：head_skip = min(400, 600//4) = 150，关键词落在 150 之后就该命中。
+    """
+    page = "导航项。" * 50 + "取消政策：入住前 3 天可免费取消。" + "正文继续叙述内容。" * 40
+    assert 400 < len(page) < 1200
+    assert focus_excerpt(page, ["取消政策"], limit=400) != ""
+
+
+def test_navigation_block_is_rejected():
+    """命中点躲开头部后仍可能落在页脚/侧边导航里——那里全是「里程商城 / 在线客服 /
+    帮助中心」这种 3-5 字短行。产出物看起来不像正文就整体弃用。
+
+    宁可不换（降级到改造前），也不能把比原摘录更差的东西替换进去——那是净损失。
+    """
+    page = ("正文段落。" * 100 + "\n取消政策\n里程商城\n在线客服\n帮助中心\n"
+            "网站导航\n关于我们\n联系方式\n加入我们\n意见反馈\n")
+    assert focus_excerpt(page, ["取消政策"], limit=600) == ""
+
+
+def test_real_prose_passes_the_navigation_gate():
+    """闸门不能把正常正文一起拦掉。"""
+    page = ("正文铺垫内容需要足够长。" * 60
+            + "\n取消政策：入住前 3 天可以免费取消，之后将收取首晚房费。\n"
+              "早餐时间为每日 07:00 至 10:00，位于二楼西餐厅，无需预约。\n"
+              "停车场对住店客人免费开放，车位有限建议提前致电确认。\n"
+              "退房时间为中午 12:00，如需延迟退房请提前与前台沟通。\n")
+    got = focus_excerpt(page, ["取消政策"], limit=800)
+    assert "免费取消" in got
+
+
+def test_gate_ignores_too_few_lines():
+    """行数太少判不出是不是导航，放行——长段落正文常常就是一两行。"""
+    page = "铺垫内容。" * 100 + "取消政策：入住前 3 天可免费取消，之后收取首晚房费。"
+    assert focus_excerpt(page, ["取消政策"], limit=600) != ""
