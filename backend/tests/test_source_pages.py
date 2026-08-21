@@ -168,7 +168,12 @@ def test_save_failure_returns_none_not_raises(db, monkeypatch):
 
 # --------------------------------------------------------------------------- 复用重取
 
-def test_refresh_focuses_on_current_question(db):
+@pytest.fixture()
+def focus_on(monkeypatch):
+    """重取默认关（线上实测不产出价值），测它的行为时显式打开。"""
+    monkeypatch.setattr(settings, "source_focus_enabled", True)
+
+def test_refresh_focuses_on_current_question(db, focus_on):
     pid = save_page("c1", "https://x.com/a", "西湖国宾馆", HOTEL_PAGE)
     sources = [{"title": "西湖国宾馆", "url": "https://x.com/a",
                 "summary": "位置优越环境优美。" * 10, "page_id": pid}]
@@ -178,7 +183,7 @@ def test_refresh_focuses_on_current_question(db):
     assert out[0]["url"] == sources[0]["url"]  # 其余字段原样
 
 
-def test_refresh_keeps_old_summary_on_miss(db):
+def test_refresh_keeps_old_summary_on_miss(db, focus_on):
     """关键词没命中 → 退回旧 summary。降级方向永远是「和改造前一样」。"""
     pid = save_page("c1", "https://x.com/a", "t", HOTEL_PAGE)
     old = "旧的摘录内容"
@@ -189,7 +194,7 @@ def test_refresh_keeps_old_summary_on_miss(db):
     assert out[0]["summary"] == old
 
 
-def test_refresh_tolerates_legacy_sources_without_page_id(db):
+def test_refresh_tolerates_legacy_sources_without_page_id(db, focus_on):
     """存量消息里的来源没有 page_id，不能炸。"""
     out, hits = refresh_reused_summaries(
         [{"url": "https://x.com/a", "summary": "旧摘录"}], "取消政策"
@@ -198,13 +203,13 @@ def test_refresh_tolerates_legacy_sources_without_page_id(db):
     assert out[0]["summary"] == "旧摘录"
 
 
-def test_refresh_handles_empty_and_no_keywords(db):
+def test_refresh_handles_empty_and_no_keywords(db, focus_on):
     assert refresh_reused_summaries([], "取消政策") == ([], 0)
     src = [{"url": "u", "summary": "s", "page_id": "p"}]
     assert refresh_reused_summaries(src, "。。。")[1] == 0
 
 
-def test_refresh_partial_hit_reports_accurate_count(db):
+def test_refresh_partial_hit_reports_accurate_count(db, focus_on):
     """进度气泡会播「重新定位了 N 处」，N 必须是真命中数，不能虚报。"""
     p1 = save_page("c1", "https://x.com/a", "t", HOTEL_PAGE)
     p2 = save_page("c1", "https://x.com/b", "t", "完全无关的内容。" * 50)
@@ -334,3 +339,14 @@ def test_gate_ignores_too_few_lines():
     """行数太少判不出是不是导航，放行——长段落正文常常就是一两行。"""
     page = "铺垫内容。" * 100 + "取消政策：入住前 3 天可免费取消，之后收取首晚房费。"
     assert focus_excerpt(page, ["取消政策"], limit=600) != ""
+
+
+def test_refresh_is_off_by_default(db):
+    """默认关闭：线上实测三道防线把误替换压到 0，但也几乎不触发（22 未命中 / 2 命中，
+    而那 2 条还与提问语义无关）。不把未经验证的行为默认开在生产上。
+    **全文落库照常**——数据是将来任何检索方案的地基。"""
+    pid = save_page("c1", "https://x.com/a", "t", HOTEL_PAGE)
+    out, hits = refresh_reused_summaries(
+        [{"url": "https://x.com/a", "summary": "旧摘录", "page_id": pid}], "取消政策"
+    )
+    assert hits == 0 and out[0]["summary"] == "旧摘录"

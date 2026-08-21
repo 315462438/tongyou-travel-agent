@@ -211,6 +211,14 @@ class Settings(BaseSettings):
     source_full_text_max_chars: int = 40000  # 单页全文入库上限（Phase 103，防 DB 膨胀）
     source_page_keep: int = 24               # 每会话保留的来源页数
     source_focus_max_chars: int = 2400       # 复用时按关键词重取的摘录上限
+    # ⚠️ 默认**关闭**。线上真实数据实测（6 页杭州来源 × 4 类追问）：三道防线（泛词筛除/
+    # 跳过头部/导航块闸门）把「误替换成导航文本」压到了 0，但也几乎不触发——22 未命中、
+    # 2 命中，而那 2 条命中的还是新闻列表和一条评论回复，**与提问语义无关**。
+    # 根因不是阈值，是方法的天花板：关键词命中 ≠ 语义相关，而 a11y 快照里正文与导航交织、
+    # 没有结构信号可用（Phase 96 已论证 reduce_a11y 拿不掉导航）。要真解决得上语义检索，
+    # 而 DeepSeek 没有 embedding 接口（Phase 4 记过）。
+    # **全文落库照常进行**——数据在手上，是将来任何检索方案的地基，且零风险。
+    source_focus_enabled: bool = False
     llm_timeout_s: float = 180.0  # 单次 DeepSeek 请求超时（Phase 103；默认 600s 等于没有）
     guide_max_tokens: int = 16000
     guide_max_continuations: int = 2  # 最多续写几轮（16000×3 远超任何真实攻略长度）

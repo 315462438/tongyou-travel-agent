@@ -272,7 +272,7 @@ def refresh_reused_summaries(sources: list[dict], user_text: str) -> tuple[list[
     没有 page_id（存量消息抓的来源）、全文取不到、或关键词一个都没命中的，原样保留它的
     旧 summary——**降级方向永远是「和改造前一样」**，不会更差。
     """
-    if not sources:
+    if not sources or not settings.source_focus_enabled:
         return sources, 0
     kws = keywords_of(user_text)
     if not kws:
