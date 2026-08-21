@@ -146,3 +146,84 @@ def test_domestic_flag_drives_frontend_choice():
     """
     assert build_nav_links("120.155,30.245", "西湖")["domestic"] is True
     assert build_nav_links("139.745,35.659", "東京タワー")["domestic"] is False
+
+
+# ---------------------------------------------------------------- 境内外判定（线上 bug 修复）
+
+# 每条陆地边界两侧各取真实城市。重点是**矩形做不到**的中越/中老/中缅/中泰边境带：
+# 河内(21.03N,105.85E) 与南宁(22.82N,108.37E) 靠得太近，任何轴对齐矩形都分不开。
+OVERSEAS_CITIES = [
+    ("仙本那", 118.61, 4.48),    # ← 线上报的这个：点导航开高德，地图停在北京+服务超时
+    ("亚庇", 116.07, 5.98),      # 同一个行程里，与吉隆坡分属旧矩形的两侧
+    ("吉隆坡", 101.69, 3.14),
+    ("曼谷", 100.50, 13.75), ("清迈", 98.98, 18.79),
+    ("河内", 105.85, 21.03), ("万象", 102.60, 17.97),
+    ("仰光", 96.16, 16.87), ("金边", 104.92, 11.55),
+    ("马尼拉", 120.98, 14.60), ("新加坡", 103.82, 1.35),
+    ("巴厘岛", 115.19, -8.41),
+    ("加德满都", 85.32, 27.71), ("新德里", 77.21, 28.61),
+    ("乌兰巴托", 106.92, 47.92), ("海参崴", 131.89, 43.12),
+    ("平壤", 125.76, 39.04), ("首尔", 126.98, 37.57), ("东京", 139.69, 35.68),
+    ("阿拉木图", 76.89, 43.24), ("比什凯克", 74.60, 42.87),
+]
+
+DOMESTIC_CITIES = [
+    ("北京", 116.40, 39.90), ("上海", 121.47, 31.23), ("广州", 113.26, 23.13),
+    ("杭州", 120.15, 30.27), ("哈尔滨", 126.53, 45.80),
+    ("三亚", 109.51, 18.25), ("海口", 110.20, 20.04),          # 海南岛（主多边形切海湾，靠补框）
+    ("台北", 121.56, 25.03),                                    # 台湾（同上）
+    ("香港", 114.17, 22.32), ("澳门", 113.55, 22.20),
+    ("昆明", 102.83, 24.88), ("西双版纳", 100.80, 22.01),        # 与万象/清迈同纬度带
+    ("南宁", 108.37, 22.82),                                    # 与河内只差 1.8 度
+    ("腾冲", 98.50, 25.02), ("丹东", 124.38, 40.12),
+    ("延吉", 129.51, 42.91), ("满洲里", 117.43, 49.60),
+    ("漠河", 122.54, 53.47), ("喀什", 75.99, 39.47),
+    ("拉萨", 91.14, 29.65), ("日喀则", 88.88, 29.27),
+    ("乌鲁木齐", 87.62, 43.83), ("喀纳斯", 87.02, 48.70),        # 阿勒泰，多边形第一版切掉过
+    ("敦煌", 94.66, 40.14),
+]
+
+
+@pytest.mark.parametrize("name, lng, lat", OVERSEAS_CITIES)
+def test_overseas_cities_classified_as_overseas(name, lng, lat):
+    """旧实现是单个经纬度矩形（lat 下界 3.86N），把整片东南亚圈成了「境内」。"""
+    assert out_of_china(lng, lat) is True, f"{name} 被判成境内"
+
+
+@pytest.mark.parametrize("name, lng, lat", DOMESTIC_CITIES)
+def test_domestic_cities_classified_as_domestic(name, lng, lat):
+    assert out_of_china(lng, lat) is False, f"{name} 被判成境外"
+
+
+def test_semporna_hotel_end_to_end():
+    """线上原始 case：马来西亚仙本那的酒店。两个后果都要消失。"""
+    nav = build_nav_links("118.61,4.48", "DBC Hotel Semporna")
+    assert nav["domestic"] is False              # ① 不再选高德
+    assert "4.480000,118.610000" in nav["apple"]  # ② 坐标不再被凭空偏移 ~380m
+
+
+def test_overseas_coordinates_are_never_shifted():
+    """海外坐标本就是 WGS-84（Phase 62：海外走 Open-Meteo/GeoNames/Photon），
+    再做一次 GCJ→WGS 反解就是凭空偏移。"""
+    for _name, lng, lat in OVERSEAS_CITIES:
+        assert gcj_to_wgs84(lng, lat) == (lng, lat)
+
+
+def test_domestic_coordinates_are_still_shifted():
+    """修边界不能把境内该做的转换一起弄丢。"""
+    for _name, lng, lat in DOMESTIC_CITIES:
+        w_lng, w_lat = gcj_to_wgs84(lng, lat)
+        assert (w_lng, w_lat) != (lng, lat)
+
+
+def test_google_link_uses_wgs84():
+    """谷歌吃 WGS-84，和苹果同一份坐标。"""
+    nav = build_nav_links("120.15,30.27", "西湖")
+    assert "30.272320,120.145291" in nav["google"]
+    assert "30.272320,120.145291" in nav["apple"]
+
+
+def test_amap_link_never_shifts():
+    """高德吃 GCJ：境内库里本就是 GCJ、境外两者相等 → 两种情况都原样传。"""
+    for loc in ["120.150000,30.270000", "118.610000,4.480000"]:
+        assert loc in build_nav_links(loc, "x")["amap"]

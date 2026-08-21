@@ -426,7 +426,10 @@ test('脏输入不炸', () => {
 // ---------- 地点导航链接选择（Phase 100） ----------
 
 const NAV_CN = { amap: 'https://uri.amap.com/cn', apple: 'https://maps.apple.com/cn', domestic: true }
-const NAV_JP = { amap: 'https://uri.amap.com/jp', apple: 'https://maps.apple.com/jp', domestic: false }
+const NAV_JP = {
+  amap: 'https://uri.amap.com/jp', apple: 'https://maps.apple.com/jp',
+  google: 'https://www.google.com/maps/jp', domestic: false,
+}
 
 const MAC = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
 const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1'
@@ -446,13 +449,20 @@ test('境外地点在苹果设备上走苹果地图', () => {
   assert.equal(pickNavUrl(NAV_JP, IPHONE), NAV_JP.apple)
 })
 
-test('境外地点在非苹果设备上仍走高德', () => {
-  // 给安卓/Windows 发 maps.apple.com 只会落到一个功能残缺的网页
-  assert.equal(pickNavUrl(NAV_JP, ANDROID), NAV_JP.amap)
-  assert.equal(pickNavUrl(NAV_JP, WINDOWS), NAV_JP.amap)
+test('境外地点在非苹果设备上走谷歌，不能退回高德', () => {
+  // 这一格此前落回高德，而高德没有境外数据（线上实测：马来西亚仙本那的酒店点导航，
+  // 地图停在北京 + 服务超时）。只修「境内外判定」的话，安卓/Windows 上 bug 依旧。
+  assert.equal(pickNavUrl(NAV_JP, ANDROID), NAV_JP.google)
+  assert.equal(pickNavUrl(NAV_JP, WINDOWS), NAV_JP.google)
 })
 
-test('userAgent 缺失时不炸，退回高德', () => {
+test('老数据没有 google 字段时退回苹果，仍不回高德', () => {
+  const legacy = { amap: NAV_JP.amap, apple: NAV_JP.apple, domestic: false }
+  assert.equal(pickNavUrl(legacy, ANDROID), legacy.apple)
+})
+
+test('userAgent 缺失时不炸', () => {
   assert.equal(pickNavUrl(NAV_CN, ''), NAV_CN.amap)
-  assert.equal(pickNavUrl(NAV_JP, undefined), NAV_JP.amap)
+  // 境外 + 认不出设备 → 谷歌（宁可给个通用地图，也不给没数据的高德）
+  assert.equal(pickNavUrl(NAV_JP, undefined), NAV_JP.google)
 })

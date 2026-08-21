@@ -34,7 +34,7 @@ interface TripStop {
   ticket_price: number | null
   tags: string[]
   /** Phase 100：后端算好的导航 deep link（坐标系分流在后端，前端不重算）。无坐标时为 null */
-  nav: { amap: string; apple: string; domestic: boolean } | null
+  nav: { amap: string; apple: string; google?: string; domestic: boolean } | null
 }
 
 interface TripMember {
@@ -2899,7 +2899,7 @@ function TripBoard({
                                 rel="noopener noreferrer"
                                 onClick={(e) => e.stopPropagation()}
                                 aria-label={`导航到 ${s.name}`}
-                                title={s.nav.domestic ? '用高德地图导航' : '用地图导航'}
+                                title={s.nav.domestic ? '用高德地图导航' : '用苹果/谷歌地图导航（高德无当地数据）'}
                               ><i aria-hidden>➤</i><b>导航</b></a>
                             )}
                             <button

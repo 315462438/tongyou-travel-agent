@@ -566,6 +566,8 @@ export function badgedTitle(baseTitle: string, unread: number): string {
 export interface NavLinks {
   amap: string
   apple: string
+  /** 境外 + 非苹果设备用它。老数据可能没有这个字段，取用时要兜底 */
+  google?: string
   domestic: boolean
 }
 
@@ -575,10 +577,15 @@ export interface NavLinks {
  * **按「地点在哪」分流，不是按「用户拿什么设备」**——这是第一版写错的地方：
  * 原本判 `/iPhone|iPad|iPod|Macintosh/`，结果 Mac 用户点国内地点被送进苹果地图。
  * 境内地点无论什么设备都该开高德（国内用户装的是它，POI 与导航体验都对），
- * 只有境外才轮到苹果地图（高德境外数据弱），且仅限苹果设备——
- * 安卓/Windows 上给 maps.apple.com 只会落到一个功能残缺的网页。
+ * 只有境外才轮到苹果/谷歌（高德境外数据弱）。
  */
 export function pickNavUrl(nav: NavLinks, userAgent: string): string {
+  // 选哪个地图取决于「地点在哪」，其次才是「设备是什么」：
+  // 境内一律高德（国内用户装的就是它，POI 与导航体验都对，苹果设备也一样）；
+  // 境外分设备——苹果设备开苹果地图，其余开谷歌。
+  // ⚠️ 境外 + 非苹果这一格此前落回高德，而高德没有境外数据（线上实测：马来西亚仙本那
+  // 的酒店点导航，地图停在北京 + 服务超时）。判对境内外只修好了苹果设备那一半。
+  if (nav.domestic) return nav.amap
   const isApple = /iPhone|iPad|iPod|Macintosh/.test(userAgent || '')
-  return !nav.domestic && isApple ? nav.apple : nav.amap
+  return isApple ? nav.apple : (nav.google || nav.apple)
 }
