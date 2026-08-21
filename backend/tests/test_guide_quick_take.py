@@ -1,6 +1,7 @@
 """guide 快答先行 + 停止收尾（2026-08-13 感知提速）。全部离线打桩。"""
 
 import json
+import threading
 
 import pytest
 
@@ -54,7 +55,9 @@ def test_quick_take_writes_preliminary_message(monkeypatch):
     assert content.startswith("初步思路")
     assert meta == {"preliminary": True}  # 前端据此渲染橙色徽章；_is_running 排除终稿判定
     assert "成都" in calls["prompt"] and "3" in calls["prompt"] and "2000" in calls["prompt"]
-    assert calls["max_tokens"] == 1000  # 2026-08-13：400 会被思考链吃光导致 content 空
+    # 2026-08-13：400 会被思考链吃光导致 content 空。2026-08-21 再提到 1600——线上实测
+    # 1000 仍被吃满（三次里两次 out=0 / reason=1000），只能靠兜底把内部独白给用户看。
+    assert calls["max_tokens"] >= 1600
     assert calls["progress"]  # 播一条「已给出初步思路」
 
 
@@ -189,3 +192,93 @@ def test_stop_no_last_with_custom_text(monkeypatch):
     orch._ensure_stopped_message("c", "抱歉，处理过程中出错了，请重试。")
     assert calls["finalized"] == []
     assert calls["added"] == ["抱歉，处理过程中出错了，请重试。"]
+
+
+# ---------- 思考纪律与预算（2026-08-21） ----------
+
+def test_quick_take_prompt_carries_thinking_discipline():
+    """线上三次里两次 out=0 / reason=1000——思考链吃满预算，正文为空。
+
+    治法是 Phase 11 在 ITINERARY 上验证过的那条：在 system 里写思考纪律。
+    这条断言防的是后人重构 prompt 时把它删掉——删了不会报错，只会悄悄退化成内部独白。
+    """
+    assert "思考" in orch.GUIDE_QUICK_TAKE_SYSTEM
+    assert "两三行" in orch.GUIDE_QUICK_TAKE_SYSTEM
+
+
+# ---------- 不阻塞采集（2026-08-21） ----------
+
+def test_quick_take_node_does_not_wait_for_the_llm(monkeypatch):
+    """核心：快答与采集没有数据依赖，不该串起来白等 10 秒。
+
+    让假 LLM 阻塞 2 秒，节点必须立刻返回——否则 collect 就被挡住了。
+    """
+    import time
+
+    from app.agent import nodes
+
+    started = threading.Event()
+
+    def _slow(cid, user_text, pref, user_id):
+        started.set()
+        time.sleep(2)
+
+    monkeypatch.setattr(settings, "guide_quick_take", True)
+    monkeypatch.setattr(orch, "_add_streaming_message", lambda cid: "msg-1")
+    monkeypatch.setattr(orch, "emit_guide_quick_take", _slow)
+
+    t0 = time.monotonic()
+    out = nodes.quick_take_node({"cid": "c", "user_text": "规划成都", "pref": _FakePref(), "user_id": "u"})
+    elapsed = time.monotonic() - t0
+
+    assert elapsed < 0.5, f"节点等了 {elapsed:.1f}s，快答又把采集挡住了"
+    assert out == {"msg_id": "msg-1"}
+    assert started.wait(timeout=3), "后台快答根本没起来"
+
+
+def test_placeholder_is_still_created_synchronously(monkeypatch):
+    """顺序不变式没有松动：占位必须在节点返回前就落库。
+
+    占位晚于快答消息的话，_is_running 会判本轮完成、前端停止轮询、完整版永远收不到
+    （Phase 71 那个坑）。所以并行化只能挪走 LLM 调用，不能挪走占位。
+    """
+    from app.agent import nodes
+
+    order = []
+    monkeypatch.setattr(settings, "guide_quick_take", True)
+    monkeypatch.setattr(orch, "_add_streaming_message",
+                        lambda cid: (order.append("placeholder"), "msg-1")[1])
+    monkeypatch.setattr(orch, "emit_guide_quick_take",
+                        lambda *a, **k: order.append("quick_take"))
+
+    nodes.quick_take_node({"cid": "c", "user_text": "x", "pref": _FakePref(), "user_id": "u"})
+    assert order[0] == "placeholder", "占位必须先于快答"
+
+
+def test_quick_take_thread_failure_does_not_break_the_node(monkeypatch):
+    """后台快答炸了，节点照常返回 msg_id——占位已在，整轮不受影响。"""
+    from app.agent import nodes
+
+    monkeypatch.setattr(settings, "guide_quick_take", True)
+    monkeypatch.setattr(orch, "_add_streaming_message", lambda cid: "msg-1")
+
+    def _boom(*a, **k):
+        raise RuntimeError("快答挂了")
+
+    monkeypatch.setattr(orch, "emit_guide_quick_take", _boom)
+    out = nodes.quick_take_node({"cid": "c", "user_text": "x", "pref": _FakePref(), "user_id": "u"})
+    assert out == {"msg_id": "msg-1"}
+
+
+def test_quick_take_node_skips_thread_when_disabled(monkeypatch):
+    """关掉开关时连线程都不起。"""
+    from app.agent import nodes
+
+    monkeypatch.setattr(settings, "guide_quick_take", False)
+    monkeypatch.setattr(orch, "_add_streaming_message", lambda cid: "msg-1")
+    monkeypatch.setattr(orch, "emit_guide_quick_take",
+                        lambda *a, **k: pytest.fail("关闭时不该跑快答"))
+
+    assert nodes.quick_take_node(
+        {"cid": "c", "user_text": "x", "pref": _FakePref(), "user_id": "u"}
+    ) == {"msg_id": "msg-1"}

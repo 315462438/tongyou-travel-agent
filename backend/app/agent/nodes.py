@@ -71,20 +71,45 @@ def parse_node(state: AgentState) -> dict:
     return orch.parse_request(state["cid"], state["user_text"], state.get("user_id", ""))
 
 
+# 后台快答线程的引用。不持有会被 GC 掉——线程对象没有其他引用者。
+_QUICK_TAKE_THREADS: set = set()
+
+
 def quick_take_node(state: AgentState) -> dict:
-    """parse 后、collect 前：建流式占位 + 快答先行（2026-08-13，Phase 71 机制 guide 版）。
+    """parse 后、collect 前：建流式占位 + **异步**快答（2026-08-13 起；2026-08-21 改为不阻塞）。
 
     ⚠️ 顺序不变式：占位必须先于快答——快答是非流式 assistant（meta.preliminary），
     没有占位时 `_is_running` 会判本轮完成、前端停止轮询、完整版永远收不到。
+    所以**占位仍然同步创建**，改的只是快答那次 LLM 调用不再挡路。
     占位消息存进 state，generate 节点复用同一条，终稿落它。
+
+    2026-08-21：线上实测快答要 9.7–11.2s，而它与采集**没有数据依赖**——串起来纯属浪费，
+    这 10 秒里浏览器和小红书一动不动。现在丢进后台线程，采集立刻开始。
+    用线程而非 asyncio task：`emit_guide_quick_take` 是同步函数（内部 LLM 调用阻塞），
+    且本节点本身是同步的；仓库里记忆整理、崩溃续跑也都是这么起的。
     """
     cid = state["cid"]
-    msg_id = orch._add_streaming_message(cid)
-    try:
-        orch.emit_guide_quick_take(cid, state["user_text"], state["pref"], state.get("user_id", ""))
-    except Exception:  # noqa: BLE001 — 纯增强：占位已在，快答的任何 bug 都不能毁掉整轮
-        logger.warning("quick_take_node failed cid=%s", cid, exc_info=True)
+    msg_id = orch._add_streaming_message(cid)   # 同步：顺序不变式的那一半，不能挪
+    if settings.guide_quick_take:
+        _spawn_quick_take(cid, state["user_text"], state["pref"], state.get("user_id", ""))
     return {"msg_id": msg_id}
+
+
+def _spawn_quick_take(cid: str, user_text: str, pref, user_id: str) -> None:
+    """后台跑快答。**不 join**——迟到就迟到，它是垫场的，绝不能拖住终稿。"""
+    import threading
+
+    def _run() -> None:
+        try:
+            orch.emit_guide_quick_take(cid, user_text, pref, user_id)
+        except Exception:  # noqa: BLE001 — 纯增强：占位已在，快答的任何 bug 都不能毁掉整轮
+            logger.warning("quick_take failed cid=%s", cid, exc_info=True)
+        finally:
+            _QUICK_TAKE_THREADS.discard(threading.current_thread())
+
+    t = threading.Thread(target=_run, name=f"quick-take-{cid[:8]}", daemon=True)
+    _QUICK_TAKE_THREADS.add(t)
+    t.start()
 
 
 async def collect_node(state: AgentState) -> dict:

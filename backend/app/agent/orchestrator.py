@@ -431,7 +431,12 @@ GUIDE_QUICK_TAKE_SYSTEM = (
     "- 用一两条理由支撑（季节/交通/预算常识）；**不要编造**具体价格、班次、营业时间这类"
     "需要实时核实的数字；\n"
     "- 不要列长清单，不要说「我将要去搜索」之类的过程话；\n"
-    "- 结尾不用加免责声明，系统会自动标注这是初步回答。"
+    "- 结尾不用加免责声明，系统会自动标注这是初步回答。\n"
+    # 2026-08-21：线上实测三次里两次 out=0 / reason=1000——思考链吃满预算，正文为空，
+    # 只能靠兜底把模型的内部独白前 200 字给用户看。同 Phase 11 在 ITINERARY 上解决过的
+    # 那一类问题，用同一条已验证的手段治。
+    "\n**思考纪律**：这是一份 150 字的垫场回答，不值得长推理。"
+    "思考最多两三行要点即可，把输出预算留给正文。"
 ) + HEALTH_POLICY
 
 
@@ -460,7 +465,9 @@ def emit_guide_quick_take(cid: str, user_text: str, pref, user_id: str) -> None:
             f"{prefix}用户的需求：{user_text}\n\n已解析的需求：{summary}",
             model=settings.model_classifier,
             system=GUIDE_QUICK_TAKE_SYSTEM,
-            max_tokens=1000,
+            # 纪律负责让它别想太多，预算负责纪律漂移时仍留得下正文——两条都要。
+            # 只留纪律不加预算，是把正确性押在 prompt 遵循上（Phase 89 的教训）。
+            max_tokens=1600,
         )
         if is_cancelled(cid):  # 生成期间用户点了停止 → 不要再往会话里塞消息
             return
