@@ -51,17 +51,28 @@ def test_assemble_history_full_verbatim(seeded):
     assert summary == ""
 
 
-def test_assemble_history_fallback_when_over_limit(seeded, monkeypatch):
-    """超限：近 history_rounds 轮**逐字**保留（不是截 500）+ 结构化摘要。"""
+def test_assemble_history_folds_inline_when_over_limit(seeded, monkeypatch):
+    """超限：就地折叠一次（写 replace 事件）而不是静默按 history_rounds 切窗。
+
+    2026-08-22 改造前这里断言的是滑动窗口 `msgs[-history_rounds*2:]`——那个窗口砍掉的
+    消息没有摘要覆盖、无记录、且边界每轮都会移动。现在唯一能改变边界的是折叠，
+    而折叠一定在日志里留下一条 replace。见 docs/task_plans/移除历史滑动窗口-2026-08-22.md。
+    """
     from app.agent.orchestrator import _assemble_history
 
+    class _FakeLLM:  # 装配期折叠会真的调 LLM，单测必须挡住（离线 + 可断言）
+        def classify(self, listing, model, system=""):
+            return model(summary="## 用户约束\n预算3000")
+
+    monkeypatch.setattr("app.llm.client.get_llm", lambda: _FakeLLM())
     monkeypatch.setattr(settings, "history_full_max_chars", 100)
     monkeypatch.setattr(settings, "history_rounds", 1)
 
     msgs, summary = _assemble_history("c1", current_user_text="解释一下上一轮的推荐")
-    assert len(msgs) <= 2  # 近 1 轮（user+assistant 各一条以内）
-    assert msgs[-1]["content"] == LONG_GUIDE  # 近窗仍是全文，不截 500
+    assert msgs and msgs[-1]["content"] == LONG_GUIDE  # 近窗仍是全文，不截 500
     assert "预算3000" in summary
+    folded = [m for m in seeded.query(TravelMessage).all() if m.surface_op == "replace"]
+    assert len(folded) == 1, "折叠必须在日志里留痕，可回放"
 
 
 def test_guide_messages_carry_full_history(seeded):

@@ -717,19 +717,11 @@ def _full_history_messages(cid: str) -> list[dict]:
     ]
 
 
-def _assemble_history(cid: str, current_user_text: str = "") -> tuple[list[dict], str]:
-    """全文历史装配（Phase 34，direct/guide 与研究链路对齐）：
+def _project_history(cid: str, current_user_text: str = "") -> tuple[list[dict], str]:
+    """surface 投影 → (历史消息, 摘要文本)。纯读，不改变任何边界。
 
-    - 未超 `history_full_max_chars`：全量历史**逐字**注入（追问「解释上一轮推荐」
-      能看到长攻略全文），摘要为空；
-    - 超限：近 `history_rounds` 轮逐字保留 + 更早轮次用 Phase 30 结构化摘要——
-      即 Claude Code 分段压缩的「recent verbatim + 旧前缀摘要」形态（autocompact
-      的装配期对应物；microcompact 无对应项：跨轮历史只有终稿，来源原文轮末已蒸馏）。
-
-    返回 (历史消息, 摘要文本)；与本轮重复的落库用户消息去重。
+    与本轮重复的落库用户消息去重（它会作为「用户最新要求」出现在末条 user）。
     """
-    # Phase 91：从 surface 投影取。摘要是日志里的一条 role='summary' 消息
-    # （不再读 conversation.history_summary 那个会被逐轮覆盖的字段）。
     rows = derive_surface(cid)
     summary = next((m.content or "" for m in reversed(rows) if m.role == "summary"), "")
     msgs = [
@@ -739,18 +731,68 @@ def _assemble_history(cid: str, current_user_text: str = "") -> tuple[list[dict]
     if current_user_text and msgs and msgs[-1]["role"] == "user" \
             and msgs[-1]["content"].strip() == current_user_text.strip():
         msgs = msgs[:-1]
-    if sum(len(m["content"]) for m in msgs) <= settings.history_full_max_chars:
+    return msgs, summary
+
+
+def _history_chars(msgs: list[dict]) -> int:
+    return sum(len(m["content"]) for m in msgs)
+
+
+def _assemble_history(cid: str, current_user_text: str = "") -> tuple[list[dict], str]:
+    """全文历史装配（Phase 34 起；2026-08-22 移除滑动窗口）。
+
+    **不变式：模型可见的历史边界只由日志里的 replace 事件决定。**
+    本函数是 surface 投影的纯读取，自己不再截取近 N 轮——那个滑动窗口与 Phase 91 的
+    投影是两套互不知情的压缩，且它砍掉的消息**没有任何摘要覆盖、无记录、每轮边界还会
+    移动**（毁前缀缓存）。详见 docs/task_plans/移除历史滑动窗口-2026-08-22.md。
+
+    超 `history_full_max_chars` 时不再静默砍，而是就地补一次折叠（写 replace 消息）
+    再重投影——把折叠**记录下来**。稳态下永不进入：轮末旁路已经折过了。
+
+    返回 (历史消息, 摘要文本)；与本轮重复的落库用户消息去重。
+    """
+    msgs, summary = _project_history(cid, current_user_text)
+    if _history_chars(msgs) <= settings.history_full_max_chars:
         # 装得下：日志里有摘要说明确实遮蔽过早期消息，要注入；没有就不注入。
         # 这里**不读**存量字段——不超限时没有遮蔽，注入摘要只会与全文重复。
         return msgs, summary
+
+    # 超限说明轮末旁路没跟上（LLM 故障 / 老会话首次进来）。就地折叠一次，
+    # ⚠️ 与 Phase 103「压缩挪出关键路径」不冲突：那反对的是**无条件**每轮花 2-5s，
+    # 这里只在「否则就要丢消息」时才触发。
+    logger.warning(
+        "history over limit cid=%s chars=%d limit=%d — folding inline",
+        cid, _history_chars(msgs), settings.history_full_max_chars,
+    )
+    try:
+        update_history_summary(cid)
+    except Exception:  # noqa: BLE001 — 折叠失败也不能让本轮挂掉
+        logger.warning("inline history fold failed cid=%s", cid, exc_info=True)
+    msgs, summary = _project_history(cid, current_user_text)
+
     if not summary:
         # 存量兼容：Phase 91 之前的摘要写在 conversation.history_summary 上，日志里
-        # 还没有 summary 消息。只在超限分支回退，与改造前的行为完全一致；
-        # 不回退的话，上线会把所有老会话的摘要丢掉。
+        # 还没有 summary 消息。不回退的话，上线会把所有老会话的摘要丢掉。
         with get_session() as db:
             conv = db.get(TravelConversation, cid)
             summary = (conv.history_summary or "").strip() if conv else ""
-    return msgs[-settings.history_rounds * 2:], summary
+
+    over = _history_chars(msgs) - settings.history_full_max_chars
+    if over > 0:
+        # 折叠也没能压下来（连续 LLM 故障，或近窗本身就超长）。这时才丢最早的消息——
+        # 与改造前唯一的、也是关键的区别：**有记录**，不是静默蒸发。
+        kept: list[dict] = []
+        for m in reversed(msgs):
+            if _history_chars(kept) + len(m["content"]) > settings.history_full_max_chars and kept:
+                break
+            kept.insert(0, m)
+        logger.error(
+            "history still over limit after fold cid=%s — dropping %d oldest message(s), %d chars",
+            cid, len(msgs) - len(kept), _history_chars(msgs) - _history_chars(kept),
+        )
+        msgs = kept
+
+    return msgs, summary
 
 
 def _history_context(cid: str, rounds: int | None = None) -> tuple[list[dict], str]:
@@ -916,6 +958,11 @@ def update_history_summary(cid: str) -> None:
         # 就会把本来装得下的对话白白降级成摘要（保真度回归）。
         if sum(len(m.content or "") for m in live) <= settings.history_full_max_chars:
             return
+        # 2026-08-22：近窗**自己**就超字数时得收窄 keep，否则这里永远早退、
+        # 装配端只能靠紧急降级丢消息——那正是被删掉的滑动窗口（边界每轮移动、无记录）。
+        # 折叠是唯一能改变边界的动作，它就必须有能力把预算压下来。
+        while keep > 2 and sum(len(m.content or "") for m in live[-keep:]) > settings.history_full_max_chars:
+            keep //= 2
         old = live[:-keep][:_HISTORY_SUMMARY_MAX_MSGS]
         if not old:
             return

@@ -458,6 +458,15 @@ def gather_context(cid: str, destination: str, user_id: str, user_text: str = ""
 
     if not settings.memory_enabled or not user_id:
         return {"block": "", "used": []}
+    # 先取三态快照：它读的是消息表，与下面的记忆读取无依赖。放在 with 外面，
+    # 免得在整个记忆块期间多占一条连接（pool_size=5）。
+    try:
+        previous = previous_injected_memories(cid)
+    except Exception:  # noqa: BLE001
+        # 读失败是基础设施问题，不是「拿不准说过什么」——这时保持静默而不是发
+        # Unknown 那句重申，免得一次 DB 抖动就给每轮都加一段噪声。
+        logger.warning("read previous injected memories failed cid=%s", cid, exc_info=True)
+        previous = None
     with get_session() as db:
         memories = load_memories(db, user_id, limit=settings.memory_max_inject)
         # 一份新的完整规划明确覆盖旧「当前行程」；兴趣若本轮没说也不应暗中改变主题。
@@ -466,6 +475,9 @@ def gather_context(cid: str, destination: str, user_id: str, user_text: str = ""
         # trip_state 已退役（2026-07-31）：存量行与模型偶发新造的都在这里硬挡掉，
         # 具体某次行程不再进记忆，指代消解走 recent_plan_hint。
         memories = [m for m in memories if m.type != "trip_state"]
+        # 本轮库里**全部**记忆的 key（在相关性筛选之前捕获）——用于区分「真删了」与
+        # 「这轮没选中」。少了这一步，一次 select_relevant_memories 就会被报成用户撤回偏好。
+        all_keys = {m.key for m in memories if m.key}
         if is_explicit_itinerary_request(user_text):
             # 一份新的完整规划不应被旧的兴趣主题暗中带偏
             memories = [m for m in memories if m.key != "兴趣偏好"]
@@ -475,13 +487,23 @@ def gather_context(cid: str, destination: str, user_id: str, user_text: str = ""
             memories = select_relevant_memories(get_llm(), memories, user_text)
         _bump_hit_count(db, memories)  # Phase 45：实际注入的记忆访问频率 +1
         chats = recall_past_chats(db, user_id, destination, exclude_cid=cid)
-        block = "\n\n".join(b for b in (format_memories_block(memories), format_past_chats_block(chats)) if b)
+        # 三态变更通知（2026-08-22）：对话历史承载着旧偏好，删除/更新必须显式说，
+        # 否则模型只会看到自己早前基于旧偏好写下的推荐。all_keys 用**全量**记忆的 key，
+        # 好把「真删了」和「本轮没被相关性筛中」区分开。
+        changes = ""
+        try:
+            changes = format_memory_changes(previous, memories, all_keys)
+        except Exception:  # noqa: BLE001 — 变更通知是增强，绝不能拖垮上下文收集
+            logger.warning("memory change notice failed cid=%s", cid, exc_info=True)
+        block = "\n\n".join(
+            b for b in (format_memories_block(memories), changes, format_past_chats_block(chats)) if b
+        )
         used = [
-            {"kind": "memory", "type": m.type, "content": m.content} for m in memories
+            {"kind": "memory", "type": m.type, "key": m.key, "content": m.content} for m in memories
         ] + [
             {"kind": "past_chat", "title": c["title"], "content": c["snippet"]} for c in chats
         ]
-    return {"block": block, "used": used}
+    return {"block": block, "used": used, "changes": changes}
 
 
 def _bump_hit_count(db: Session, memories: list[TravelMemory]) -> None:
@@ -641,3 +663,99 @@ def _run_sleep_consolidate(user_id: str) -> None:
     finally:
         with _consolidate_lock:
             _consolidating.discard(user_id)
+
+
+# ---------------------------------------------------------------------------
+# 记忆变更通知（三态，移植自 Codex 的 PreviousSectionState）
+# ---------------------------------------------------------------------------
+#
+# 我们的上下文是**投影**：记忆每轮从库里现算，模型只看得到当前值，历史里不存在陈旧
+# 副本——所以 Codex 那套「重复注入 + REPLACEMENT_NOTICE 消歧」我们大半不需要。
+#
+# 但有一格是需要的：**对话历史本身承载了旧状态**。用户第 3 轮被推荐了一堆素食馆
+# （因为当时记忆里有「忌口=素食」），第 8 轮说「我现在不忌口了」→ 记忆被删。第 8 轮的
+# prompt 里，历史逐字带着那些素食推荐，而记忆块里那条已经消失——模型没有任何信号
+# 知道约束解除了，只看到自己过去言之凿凿的输出。这正是 Codex `agents_md.rs` 里
+# `(None, previous_may_contain_instructions=true)` 那一格：**删除必须显式通知**。
+#
+# 三态取自「上一轮实际注入了什么」，而这件事我们此前完全没记录。
+
+_UNKNOWN = object()  # 三态哨兵：知道说过，但不知道说的是什么
+
+
+def previous_injected_memories(cid: str):
+    """上一轮实际注入给模型的记忆快照（三态，对应 PreviousSectionState）。
+
+    - `None`     → **Absent**：本会话还没有过终稿回复，历史里不存在与记忆冲突的表述，
+      无需任何通知。
+    - `_UNKNOWN` → **Unknown**：有过回复，但没记下当时注入了什么（改造前的老消息）。
+      **拿不准时要通知**——见 `format_memory_changes` 的代价不对称说明。
+    - `dict`     → **Known**：`{key: content}`，可精确比对。
+    """
+    from app.db.session import get_session
+
+    with get_session() as db:
+        rows = db.execute(
+            select(TravelMessage)
+            .where(TravelMessage.conversation_id == cid, TravelMessage.role == "assistant")
+            .order_by(TravelMessage.created_at.desc())
+            .limit(10)
+        ).scalars().all()
+    for m in rows:
+        meta = {}
+        if m.meta_json:
+            try:
+                meta = json.loads(m.meta_json)
+            except Exception:  # noqa: BLE001
+                meta = {}
+        # 流式占位/海报/预算面板不是一次「模型读过记忆并作答」的回合，跳过
+        if meta.get("streaming") or meta.get("poster") or meta.get("budget"):
+            continue
+        used = meta.get("memories_used")
+        if not isinstance(used, list):
+            return _UNKNOWN
+        mem_entries = [u for u in used if isinstance(u, dict) and u.get("kind") == "memory"]
+        snap = {u["key"]: u.get("content", "") for u in mem_entries if u.get("key")}
+        # 有记忆被注入却一个 key 都没有 → 老格式（改造前 used 不带 key），认作 Unknown。
+        # 注意与「上一轮确实一条记忆都没注入」区分：那种情况 mem_entries 为空，是 Known({})。
+        if mem_entries and not snap:
+            return _UNKNOWN
+        return snap
+    return None  # Absent：本会话没有过终稿回复
+
+
+def format_memory_changes(previous, injected: list[TravelMemory], all_keys: set[str]) -> str:
+    """把「相对上一轮，记忆发生了什么变化」渲染成一段通知；无变化返回空串。
+
+    只通知**更新**与**删除**，不通知新增——新增不与历史里的任何表述矛盾，说了是噪声。
+    （同 Codex：`(Some, previous_absent)` 那一格原样发，不加 REPLACEMENT_NOTICE。）
+
+    `all_keys` 是本轮库里**全部**记忆的 key，用来把「真删了」和「本轮没被
+    `select_relevant_memories` 选中」区分开——后者绝不能报成删除，否则一次相关性筛选
+    就会让模型以为用户撤回了偏好。
+
+    ⚠️ **误判方向的代价不对称**（同 Phase 104 的境内外判定）：多发一句「这条已更新」
+    只是几十个 token；漏发则模型继续按历史里那条已被推翻的约束作答，且用户看不出
+    它为什么固执。所以 Unknown 一律往「通知」这边倒。
+    """
+    if previous is None:  # Absent
+        return ""
+    if previous is _UNKNOWN:
+        # 比不出差异，就整体重申权威性——对应 Codex 在 Unknown 下发 REPLACEMENT_NOTICE。
+        return (
+            "以上记忆是**当前有效**的版本。若本对话早前的回复与它冲突，一律以上面这份为准"
+            "（用户可能中途更新过偏好）。"
+        )
+
+    current = {m.key: (m.content or "") for m in injected if m.key}
+    updated = [k for k, v in current.items() if k in previous and previous[k] != v]
+    removed = [k for k in previous if k not in all_keys]
+    if not updated and not removed:
+        return ""
+
+    lines = [f"- 「{k}」已更新为：{current[k]}" for k in updated]
+    lines += [f"- 「{k}」已被移除，不再适用" for k in removed]
+    return (
+        "⚠️ 相对本对话早前的回复，以下偏好发生了变化，请以此为准（早前基于旧偏好给出的"
+        "建议若与之冲突，需要主动修正）：\n" + "\n".join(lines)
+    )
