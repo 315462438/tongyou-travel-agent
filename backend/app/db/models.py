@@ -179,7 +179,14 @@ class TravelMemory(Base):
     hit_count: Mapped[int] = mapped_column(Integer, default=0)  # Phase 45 访问频率（注入即 +1，参与排序/剪枝）
     source_conversation_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=_now)
+    # ⚠️ `updated_at` 只表示**内容最后一次变化**（upsert / 整理），不表示"最后被用过"。
+    # `onupdate` 对本行的任何 UPDATE 都生效，所以纯记账写（bump hit_count）必须显式把
+    # updated_at 列进 SET 子句自赋值来压住它 —— 见 memory._bump_hit_count。
+    # 2026-08-24 之前这一条没做到，updated_at 实际记的是"最后注入时间"，
+    # 详见 docs/task_plans/记忆时间戳语义修复-2026-08-24.md（那天是语义断点）。
     updated_at: Mapped[datetime] = mapped_column(default=_now, onupdate=_now)
+    # 最后一次被注入进 prompt（2026-08-24）。NULL = 从未被注入过。
+    last_used_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
 
 class TravelUserSkill(Base):

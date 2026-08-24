@@ -108,6 +108,24 @@ def migrate_and_bootstrap(engine: Engine) -> None:
         _add_column_if_missing(conn, "travel_memory", "hit_count", "INTEGER DEFAULT 0")
         # Phase 57：睡眠整合门控时间
         _add_column_if_missing(conn, "travel_user", "memory_consolidated_at", "TIMESTAMP")
+        # 2026-08-24：把「最后注入」从「最后更改」里拆出来。
+        # 改造前 `_bump_hit_count` 只写 hit_count，却被 `onupdate=_now` 连带刷新了
+        # updated_at —— 于是 updated_at 记的是"最后注入"，而 prompt 里的年龄标签
+        # （Phase 30，专为触发过期意识而建）按"内容最后一次变化"在读它，活跃用户的记忆
+        # 因此永远显示「今天」。见 docs/task_plans/记忆时间戳语义修复-2026-08-24.md。
+        _add_column_if_missing(conn, "travel_memory", "last_used_at", "TIMESTAMP")
+        # 一次性回填。**幂等靠谓词，不靠"只跑一次"**：这整块 DDL 在将来任何一次新增列时
+        # 都会重新执行，`last_used_at IS NULL` 才是那道跑过就永不再命中的闸门。
+        # 单条语句：SQL 的 SET 右侧读的是**更新前**的行值，所以 last_used_at 拿到的是旧
+        # updated_at（它此刻的真实语义正是"最后注入"），顺序无歧义。
+        # updated_at 的历史真值**不可恢复**（内容变更时间从未被任何地方记录），
+        # 回落到 created_at 是保守下界：偏老会让模型多问一句「这个偏好还作数吗」，
+        # 偏新则会拿一年前的口味当今天的 —— 误判代价不对称，取偏老那侧
+        # （同 Phase 104「拿不准时判境外」）。失真在下一次真实内容更新时自愈。
+        conn.execute(text(
+            "UPDATE travel_memory SET last_used_at = updated_at, updated_at = created_at "
+            "WHERE last_used_at IS NULL"
+        ))
         # 每天的自定义标题（2026-08-14）
         _add_column_if_missing(conn, "travel_trip", "day_titles_json", "TEXT")
         # 2026-07-31：退役「当前行程」(trip_state) 记忆槽——时点事实伪装成长期偏好，

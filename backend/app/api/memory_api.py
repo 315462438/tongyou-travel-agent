@@ -23,7 +23,13 @@ def list_memories(db: Session = Depends(get_db), user: TravelUser = Depends(get_
             "key": m.key,
             "explicit": bool(m.explicit),
             "content": m.content,
+            # 三个时间各有各的语义，前端分开显示（2026-08-24）：
+            # created_at  = 这条记忆什么时候建立的
+            # updated_at  = 内容最后一次变化（**不含**注入这种记账写）
+            # last_used_at= 最后一次被注入进 prompt；null = 从未被注入过
+            "created_at": m.created_at.isoformat() if m.created_at else None,
             "updated_at": m.updated_at.isoformat() if m.updated_at else None,
+            "last_used_at": m.last_used_at.isoformat() if m.last_used_at else None,
         }
         for m in rows
     ]

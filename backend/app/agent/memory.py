@@ -509,13 +509,39 @@ def gather_context(cid: str, destination: str, user_id: str, user_text: str = ""
 
 
 def _bump_hit_count(db: Session, memories: list[TravelMemory]) -> None:
-    """被注入的记忆访问频率 +1（Phase 45）。写失败只 warn——命中计数是排序增强，
-    绝不能因它挂掉整轮上下文收集。"""
+    """被注入的记忆记一笔账：hit_count +1、last_used_at = 现在（Phase 45 / 2026-08-24）。
+    写失败只 warn——记账是排序增强，绝不能因它挂掉整轮上下文收集。
+
+    ⚠️ **这是纯记账写，绝不能碰 `updated_at`**。`updated_at` 的语义是「内容最后一次变化」，
+    而 `onupdate=_now` 对本行的**任何** UPDATE 都生效（与改哪一列无关）——2026-08-24 之前
+    这里用 ORM 属性赋值，于是每轮注入都把 updated_at 推到当下，`format_memories_block`
+    贴进 prompt 的年龄标签（Phase 30，专为触发模型的过期意识而建）因此**永远显示「今天」**，
+    越活跃的用户偏得越狠。线上 47 行里 25 行受影响。
+
+    压住 onupdate 的唯一办法是把该列**显式列进 SET 子句**自赋值：SQLAlchemy 只在列不在
+    SET 里时才套用 onupdate。有两个方向的回归测试钉住（只测「记账时不动」的话，
+    把整列 onupdate 删掉也能过）。
+
+    顺带把 Python 侧读改写换成 SQL 自增：同一用户的 direct 链路不过浏览器池，
+    并发轮次会丢计数。
+    """
     if not memories:
         return
+    from sqlalchemy import func, update
+
+    from app.db.models import _now
+
     try:
-        for m in memories:
-            m.hit_count = (m.hit_count or 0) + 1
+        db.execute(
+            update(TravelMemory)
+            .where(TravelMemory.id.in_([m.id for m in memories]))
+            .values(
+                hit_count=func.coalesce(TravelMemory.hit_count, 0) + 1,
+                last_used_at=_now(),
+                updated_at=TravelMemory.updated_at,  # ← 自赋值，压住 onupdate
+            )
+            .execution_options(synchronize_session=False)
+        )
         db.commit()
     except Exception:  # noqa: BLE001
         logger.warning("bump hit_count failed", exc_info=True)
@@ -537,6 +563,16 @@ def consolidate_memories(db: Session, user_id: str, llm) -> dict:
     """一次性把某用户现有记忆重写成规范三元组并整体替换（清理存量脏数据）。
 
     返回 {"before": n, "after": m}。LLM 失败则原样不动。
+
+    ⚠️ **实现是"删旧建新"，所以每条记忆的历史（建立时间/命中数/最后使用/亲述标记）默认会被
+    清零**——用户点一次「整理记忆」，半年前形成的偏好就变成「建立 刚刚 · 最后使用 从未」，
+    亲述标记也会被 LLM 重新臆断（CONSOLIDATE_SYSTEM 让它"拿不准填 false"，而它只看得到内容，
+    本来就判不出用户当初是不是亲口说的）。
+
+    2026-08-24 起**按 key 继承**：新行的 key 在旧行里存在就继承那一行的历史。
+    key 是 Phase 17 归槽的主键，这是唯一不含猜测的映射——N 条合并成 M 条时，
+    "这条新记忆的祖先是谁"没有别的可靠依据（旧行没有 key 的、或 LLM 新合成的 key，
+    只能算新记忆）。`explicit` 取**或**（粘性，只升不降），对齐 `_upsert_by_key` 的语义。
     """
     rows = load_memories(db, user_id)
     before = len(rows)
@@ -546,6 +582,32 @@ def consolidate_memories(db: Session, user_id: str, llm) -> dict:
     result: MemoryConsolidation = llm.classify(
         f"用户现有记忆（{before} 条）：\n{listing}", MemoryConsolidation, system=CONSOLIDATE_SYSTEM
     )
+    # key → 该 key 下旧行的历史。归槽保证一个 key 一行，但真撞上重复也要有确定归宿：
+    # 建立时间取**最早**（祖先只会更老）、命中数与最后使用取**最大**（别把用量算没了）。
+    ancestry: dict[str, dict] = {}
+    for m in rows:
+        k = (m.key or "").strip()
+        if not k:
+            continue                      # 无 key 的旧行没有可靠映射，其历史只能丢
+        prev = ancestry.get(k)
+        if prev is None:
+            ancestry[k] = {
+                "created_at": m.created_at, "hit_count": m.hit_count or 0,
+                "last_used_at": m.last_used_at, "explicit": bool(m.explicit),
+                "source_conversation_id": m.source_conversation_id,
+                # 内容 → 该内容的 updated_at。整理常常只是原样带过某个 key，
+                # 那种情况下内容并没有变，updated_at 不该被推到当下（否则刚修好的
+                # 「年龄标签永远显示今天」会从整理这扇门重新进来）。
+                "by_content": {(m.content or "").strip(): m.updated_at},
+            }
+            continue
+        prev["created_at"] = min(filter(None, (prev["created_at"], m.created_at)), default=None)
+        prev["hit_count"] = max(prev["hit_count"], m.hit_count or 0)
+        stamps = [t for t in (prev["last_used_at"], m.last_used_at) if t]
+        prev["last_used_at"] = max(stamps) if stamps else None
+        prev["explicit"] = prev["explicit"] or bool(m.explicit)
+        prev["by_content"].setdefault((m.content or "").strip(), m.updated_at)
+
     seen: set[str] = set()
     kept: list[TravelMemory] = []
     for t in result.memories:
@@ -555,10 +617,24 @@ def consolidate_memories(db: Session, user_id: str, llm) -> dict:
             continue
         seen.add(key)
         mtype = CANONICAL_KEYS.get(key) or (t.type if t.type in MEMORY_TYPES else "preference")
-        kept.append(TravelMemory(
+        past = ancestry.get(key, {})
+        # explicit 只升不降：LLM 只看得到内容，判不出用户当初是不是亲口说的，
+        # 而 Phase 17 的「明确表达优先」是粘性的（`_upsert_by_key` 用的也是 or）。
+        explicit = bool(t.explicit) or bool(past.get("explicit"))
+        row = TravelMemory(
             user_id=user_id, type=mtype, key=key or None, content=content,
-            explicit=bool(t.explicit), weight=2.0 if t.explicit else 1.0,
-        ))
+            explicit=explicit, weight=2.0 if explicit else 1.0,
+            hit_count=past.get("hit_count", 0),
+            source_conversation_id=past.get("source_conversation_id"),
+        )
+        if past.get("created_at"):        # 有祖先就继承建立时间，没有就是真的新记忆
+            row.created_at = past["created_at"]
+        row.last_used_at = past.get("last_used_at")
+        # 内容一字未改 → 这不是一次内容变更，updated_at 保持原值；改了才推到当下
+        unchanged_at = past.get("by_content", {}).get(content)
+        if unchanged_at:
+            row.updated_at = unchanged_at
+        kept.append(row)
     if not kept:  # 兜底：LLM 空结果就别把人家记忆清空
         return {"before": before, "after": before}
     for old in rows:
