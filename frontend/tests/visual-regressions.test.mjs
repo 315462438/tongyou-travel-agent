@@ -150,7 +150,7 @@ test('guide reading view has semantic title, day cards, responsive tables, and l
   assert.match(home, /className="guide-title"/)
   assert.match(home, /guide-day-heading/)
   assert.match(home, /className="guide-table-wrap"/)
-  assert.match(css, /\.guide-markdown \.guide-title\s*\{[\s\S]*border-radius:\s*20px/)
+  assert.match(css, /\.guide-markdown \.guide-title\s*\{[\s\S]*border-radius:\s*var\(--x-r-lg\)/)
   assert.match(css, /\.guide-markdown \.guide-day-heading\s*\{[\s\S]*background:\s*linear-gradient/)
   assert.match(css, /\.guide-table-wrap\s*\{[\s\S]*overflow-x:\s*auto/)
   assert.match(css, /\.guide-markdown img\s*\{[\s\S]*object-fit:\s*contain/)
@@ -225,12 +225,12 @@ test('mobile bottom navigation closes the previous full-screen surface', () => {
 
 test('17tongyou brand replaces the legacy lightning favicon and travelX wordmark', () => {
   assert.match(indexHtml, /<title>17同游 · 一起规划，一起出发<\/title>/)
-  assert.match(indexHtml, /favicon\.svg\?v=2/)
+  assert.match(indexHtml, /favicon\.svg\?v=3/)
   assert.match(indexHtml, /property="og:site_name" content="17同游"/)
   assert.match(brand, /className="brand-number">17</)
   assert.match(brand, /className="brand-cn">同游</)
-  assert.match(favicon, /linearGradient id="brand-bg"/)
-  assert.match(favicon, /stroke="#fff"/)
+  assert.match(favicon, /rect[^>]*fill="#B23A2F"/)  // 朱印底（2026-08-24 由蓝紫渐变改）
+  assert.match(favicon, /stroke="#FFFEFB"/)
   assert.match(home, /<small>17tongyou<\/small>/)
   assert.match(home, /17同游 · 为你手绘/)
   assert.match(auth, /17tongyou · 一起规划，一起出发/)
@@ -430,7 +430,7 @@ test('接力站先展示真实热门目的地，再提供无原生黑框的任�
   assert.match(css, /\.station-search-panel \.station-search input\s*\{[^}]*border:\s*0[^}]*appearance:\s*none/s)
   assert.match(css, /\.relay-kind-picker\s*\{[^}]*repeat\(3,/s)
   assert.match(css, /Phase 83b：社交页可读字号基线/)
-  assert.match(css, /\.relay-card > p\s*\{[^}]*font-size:\s*15px/s)
+  assert.match(css, /\.relay-card > p\s*\{[^}]*font-size:\s*14px/s)
   assert.match(css, /\.relay-author small\s*\{[^}]*font-size:\s*12px/s)
   assert.match(css, /\.relay-phase, \.relay-kind\s*\{[^}]*font-size:\s*11px/s)
   assert.match(css, /\.relay-reactions button\s*\{[^}]*font-size:\s*11px/s)
@@ -461,4 +461,62 @@ test('攻略后主动给「接下来」，不再把入口埋在小按钮堆里',
   // 三张卡必须是卡片形态而不是又一排小按钮
   assert.match(css, /\.next-step-card \{[\s\S]*?flex-direction: column/)
   assert.match(css, /\.next-steps-grid \{[\s\S]*?grid-template-columns/)
+})
+
+// ---------------------------------------------------------------------------
+// 「行记」设计系统防漂移闸门（2026-08-24）
+//
+// token 层早在 Phase 66 就存在（--tx-*），但从没人强制用，最后漂成 780 种硬编码色。
+// 光有 token 不够，**得有测试挡着**。以下三条钉住的是"别再漂回去"，不是具体色值。
+// ---------------------------------------------------------------------------
+
+/** 海报是调色板来源、特效靠渐变、天空是表意色——这些区块本就不该进 token 映射。 */
+const DESIGN_EXEMPT = /\.rmap-|\.poster-|\.rec-|aurora|iridescence|side-ray|\.auth-sky|marker|legend/i
+
+/** 粗切成 (选择器, 规则体)，够用来判断某段是否豁免。 */
+function cssBlocks(text) {
+  const out = []
+  let depth = 0, selStart = 0, bodyStart = 0
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '{') { if (depth === 0) bodyStart = i; depth++ }
+    else if (text[i] === '}') {
+      depth--
+      if (depth === 0) { out.push([text.slice(selStart, bodyStart), text.slice(bodyStart, i + 1)]); selStart = i + 1 }
+    }
+  }
+  return out
+}
+
+test('设计系统：正文字号不得低于 11px（Phase 83 立的可读下限）', () => {
+  const bad = []
+  for (const [sel, body] of cssBlocks(css)) {
+    if (DESIGN_EXEMPT.test(sel)) continue
+    for (const m of body.matchAll(/font-size:\s*([0-9.]+)px/g)) {
+      if (parseFloat(m[1]) < 11) bad.push(`${sel.trim().slice(0, 40)} → ${m[1]}px`)
+    }
+  }
+  assert.deepEqual(bad, [], '高分屏下 10px 以下的中文会直接变成不可读，见 docs/pitfalls')
+})
+
+test('设计系统：颜色走 token，不再散落硬编码', () => {
+  // token 定义块自己当然是字面值；从它之后开始查。
+  const afterTokens = css.slice(css.indexOf('--x-shadow-lg'))
+  const literals = []
+  for (const [sel, body] of cssBlocks(afterTokens)) {
+    if (DESIGN_EXEMPT.test(sel)) continue
+    for (const m of body.matchAll(/#[0-9a-fA-F]{3,8}\b/g)) literals.push(`${sel.trim().slice(0, 34)} → ${m[0]}`)
+  }
+  // 留一点余量给手写渐变与插画；改造完成时是 0，超过 20 说明又开始漂了。
+  assert.ok(literals.length <= 20,
+    `硬编码颜色 ${literals.length} 处，超过阈值：\n` + literals.slice(0, 12).join('\n'))
+})
+
+test('设计系统：底栏图标是线性 SVG，不混彩色 emoji', () => {
+  // 原来是 ✦ / 🗺 / ☰ / ⌁ —— 彩色 emoji 与单色字符混用，且 ⌁ 无法辨认。
+  const navStart = home.indexOf('mobile-bottom-nav')
+  // 必须切到 </nav> 为止：多切 1200 字会把后面别处的 emoji 也算进来（第一版就误报了）
+  const nav = home.slice(navStart, home.indexOf('</nav>', navStart))
+  assert.doesNotMatch(nav, /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u)
+  assert.match(nav, /<NavIcon name="chat" \/>/)
+  assert.match(nav, /<NavIcon name="social" \/>/)
 })

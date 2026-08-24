@@ -1271,23 +1271,47 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
       )}
       <nav className="mobile-bottom-nav" aria-label="移动端主导航">
         <button className={empty && !showTrips && !showMemories && !showSocial ? 'active' : ''} onClick={openMobileChat}>
-          <span aria-hidden>✦</span>
+          <NavIcon name="chat" />
           <small>新对话</small>
         </button>
         <button className={showTrips ? 'active' : ''} onClick={openMobileTrips}>
-          <span aria-hidden>🗺</span>
+          <NavIcon name="trip" />
           <small>行程</small>
         </button>
         <button className={!collapsed && !showTrips && !showSocial ? 'active' : ''} onClick={openMobileHistory}>
-          <span aria-hidden>☰</span>
+          <NavIcon name="history" />
           <small>历史</small>
         </button>
         <button className={showSocial ? 'active' : ''} onClick={openMobileSocial}>
-          <span aria-hidden>⌁</span>
+          <NavIcon name="social" />
           <small>同游圈</small>
         </button>
       </nav>
     </div>
+  )
+}
+
+
+/** 底栏图标：统一 24 网格、1.7 描边、currentColor。
+ *  原来是 ✦ / 🗺 / ☰ / ⌁ —— 彩色 emoji 与单色字符混用，且 ⌁ 无法辨认。 */
+function NavIcon({ name }: { name: 'chat' | 'trip' | 'history' | 'social' }) {
+  const path = {
+    chat: <><path d="M12 3v18M3 12h18" /><circle cx="12" cy="12" r="9" /></>,
+    trip: <><path d="M9 4 3 6.5v13L9 17l6 2.5 6-2.5v-13L15 7 9 4z" /><path d="M9 4v13M15 7v12.5" /></>,
+    history: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3.5 2" /></>,
+    social: (
+      <>
+        <circle cx="9" cy="9" r="3.2" />
+        <path d="M3.5 19c.6-3.1 2.8-4.8 5.5-4.8s4.9 1.7 5.5 4.8" />
+        <path d="M16.5 6.6a3 3 0 0 1 0 5.4M18.6 14.6c1.6.8 2.7 2.3 3 4.4" />
+      </>
+    ),
+  }[name]
+  return (
+    <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      {path}
+    </svg>
   )
 }
 
