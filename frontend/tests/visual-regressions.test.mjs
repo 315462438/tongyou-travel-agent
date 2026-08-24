@@ -261,7 +261,7 @@ test('mobile bottom navigation closes the previous full-screen surface', () => {
 
 test('17tongyou brand replaces the legacy lightning favicon and travelX wordmark', () => {
   assert.match(indexHtml, /<title>17同游 · 一起规划，一起出发<\/title>/)
-  assert.match(indexHtml, /favicon\.svg\?v=3/)
+  assert.match(indexHtml, /favicon\.svg\?v=4/)
   assert.match(indexHtml, /property="og:site_name" content="17同游"/)
   assert.match(brand, /className="brand-number">17</)
   assert.match(brand, /className="brand-cn">同游</)
@@ -269,7 +269,8 @@ test('17tongyou brand replaces the legacy lightning favicon and travelX wordmark
   assert.match(css, /\.brand-name \.brand-cn\s*\{\s*color:\s*var\(--x-sky-30\)/)
   assert.match(css, /\.brand-mark\s*\{[^}]*background:\s*linear-gradient\(145deg, var\(--x-sky-58\), var\(--x-sky-44\)/s)
   assert.match(css, /\.theme-ink \.topbar-mark, \.theme-ink \.brand-mark\s*\{[^}]*background:\s*var\(--x-cinnabar\)/s)
-  assert.match(favicon, /rect[^>]*fill="#B23A2F"/)  // 朱印底（2026-08-24 由蓝紫渐变改）
+  assert.match(favicon, /rect[^>]*fill="#2563EB"/)  // 皇家蓝底，与 --x-sky/.brand-mark 同色
+  assert.match(indexHtml, /name="theme-color" content="#2563EB"/)  // 地址栏色不能落在旧品牌色上
   assert.match(favicon, /stroke="#FFFEFB"/)
   assert.match(home, /<small>17tongyou<\/small>/)
   assert.match(home, /17同游 · 为你手绘/)

@@ -1,6 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <!-- 朱印底 + 纸色路线。图形沿用 Phase 66 的路线箭头，2026-08-24 换「行记」配色。 -->
-  <rect width="64" height="64" rx="14" fill="#B23A2F"/>
+  <!-- 皇家蓝底 + 纸色路线。图形沿用 Phase 66 的路线箭头；底色 2026-08-24 随 Phase 107
+       主色收敛，由朱印红换成 --x-sky(#2563EB)，与站内 .brand-mark 保持同色。
+       16px 下用平涂而非站内那道渐变：小尺寸看不出渐变，平涂反而更清楚。 -->
+  <rect width="64" height="64" rx="14" fill="#2563EB"/>
   <circle cx="16" cy="43" r="4.5" fill="#FFFEFB"/>
   <path d="M20.5 41.8c5.7-10.5 12.3 2.4 19-9.2 3.5-6.1 7.2-8.7 11.8-9.5" fill="none" stroke="#FFFEFB" stroke-width="4.2" stroke-linecap="round"/>
   <path d="m43.5 17.1 10.2 4.7-7.1 8.8" fill="none" stroke="#FFFEFB" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/>
