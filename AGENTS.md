@@ -306,6 +306,15 @@ React Bits `Aurora`（低透明、pointer-events none、低动态偏好不挂载
 可能的边缘留白。规则限定在 `.social-me-mini`，不影响主页、好友列表和接力卡头像。坑见
 `docs/pitfalls/复用头像组件也要区分展示密度.md`。
 
+**Phase 108 — 协议层思考控制（reasoning_effort）**：DeepSeek 支持用请求字段直接定思考档位
+（`off` → `thinking:disabled`，`low/high/max` → `thinking:enabled` + `reasoning_effort`），
+取代此前四次靠 prompt 纪律劝模型「少想点」的间接做法。分档判据是**输出里有没有模型要推导出来
+的数字**：机械档（逐日分块/海报/导入分天，只有照抄的名字）用 `off`；判断档（含人数与金额的
+profile/cost/budget/导入摘要）保持不动——实测全 `off` 会整天丢内容（马来西亚 Day 6 丢失 2/4 轮、
+武汉主地标黄鹤楼未抽到）。人数另起一路小调用永远走保守档兜底。连带修复既有缺口：抽空的路
+不再登记进 lanes，避免故障性空结果被缓存固化、永不重试。计划见
+`docs/task_plans/抽取链路改用协议层思考控制-2026-08-24.md`。
+
 **Phase 107 — 现代/水墨双主题切换**：顶栏视图切换旁新增主题按钮，支持皇家蓝现代主题与
 “水墨山行”主题切换，并通过 `localStorage.travel_theme_mode` 跨刷新保留。水墨主题在空状态首屏
 使用项目内 `ink-landscape.webp` 低对比度山水背景，同时覆盖宣纸中性色、实心墨色楷体标题、浓墨

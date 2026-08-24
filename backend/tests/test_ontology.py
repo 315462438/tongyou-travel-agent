@@ -243,7 +243,7 @@ class _FakeLLM:
         self.calls: list[str] = []
         self.max_tokens: dict[str, int] = {}  # schema 名 → 这一路要的输出预算
 
-    def parse(self, prompt, schema, *, model=None, system=None, max_tokens=None):
+    def parse(self, prompt, schema, *, model=None, system=None, max_tokens=None, **_kw):
         self.calls.append(schema.__name__)
         self.max_tokens[schema.__name__] = max_tokens
         if self.fail_on is not None and schema is self.fail_on:
@@ -286,10 +286,16 @@ class _FakeLLM:
 
 
 def test_extraction_runs_one_lane_per_consumer():
-    """按消费者拆路：itinerary（海报）+ cost（预算）。按概念细拆过，反而更慢（线上教训）。"""
+    """按消费者拆路：itinerary（海报）+ cost（预算）。按概念细拆过，反而更慢（线上教训）。
+
+    Phase 108 起 cost 路旁边多一路 `HeadcountExtraction`（200 max_tokens 的小调用，
+    与主路并发）——人数是唯一实测会被 off 弄错的字段，单独走保守档兜底。
+    """
     llm = _FakeLLM()
     trip = asyncio.run(build_trip_object(llm, _GUIDE))
-    assert set(llm.calls) == {"TripItineraryExtraction", "TripCostExtraction"}
+    assert set(llm.calls) == {
+        "TripItineraryExtraction", "TripCostExtraction", "HeadcountExtraction",
+    }
     assert trip.destination == "杭州"
     assert {s.name for s in trip.stops} == {"西湖", "宋城"}
     assert {h.name for h in trip.lodgings} == {"湖畔酒店"}
@@ -382,7 +388,7 @@ def test_empty_guide_returns_empty_trip():
 
 def test_destination_hint_fills_blank():
     class _NoDest(_FakeLLM):
-        def parse(self, prompt, schema, *, model=None, system=None, max_tokens=None):
+        def parse(self, prompt, schema, *, model=None, system=None, max_tokens=None, **_kw):
             if schema is TripProfileExtraction:
                 self.calls.append(schema.__name__)
                 return TripProfileExtraction(title="行程", destination="", days_count=1)
@@ -551,24 +557,47 @@ def test_cache_invalidated_on_schema_version_bump(store_db, monkeypatch):
     assert llm.calls.count("TripItineraryExtraction") == 2
 
 
+class _Blank(_FakeLLM):
+    def parse(self, prompt, schema, *, model=None, system=None, max_tokens=None, **_kw):
+        self.calls.append(schema.__name__)
+        if schema is TripItineraryExtraction:
+            return TripItineraryExtraction(title="", destination="", days_count=0)
+        if schema is TripCostExtraction:
+            return TripCostExtraction()
+        return TripDaysExtraction()
+
+
 def test_empty_result_is_cached_to_avoid_rework(store_db):
-    """抽不出东西的攻略也要记下来，否则每点一次按钮就白抽一遍。"""
+    """抽不出东西的攻略也要记下来，否则每点一次按钮就白抽一遍。
+
+    Phase 108 **细化**（不是推翻）了这条：判据从「抽出来是空的」改成「攻略正文里本来
+    就没东西可抽」。这里用一段没有 Day 标题的正文——它抽不出地点是正常结果，照旧缓存。
+    有 Day 标题却抽出 0 点的那种见下一条：那是故障，不能固化。
+    """
     from app.ontology.store import ensure_trip_object
 
-    class _Blank(_FakeLLM):
-        def parse(self, prompt, schema, *, model=None, system=None, max_tokens=None):
-            self.calls.append(schema.__name__)
-            if schema is TripItineraryExtraction:
-                return TripItineraryExtraction(title="", destination="", days_count=0)
-            if schema is TripCostExtraction:
-                return TripCostExtraction()
-            return TripDaysExtraction()
-
-    msg_id, cid = _seed_guide(store_db, _GUIDE)
+    msg_id, cid = _seed_guide(store_db, "一段没有任何 Day 标题的随笔，没有具体地点。")
     llm = _Blank()
     assert asyncio.run(ensure_trip_object(cid, msg_id, llm=llm)) is None
     assert asyncio.run(ensure_trip_object(cid, msg_id, llm=llm)) is None
     assert llm.calls.count("TripItineraryExtraction") == 1
+
+
+def test_transient_empty_on_a_real_itinerary_is_retried(store_db):
+    """有 Day 标题却抽出 0 点 = 故障，**不能**缓存固化。
+
+    与上一条的差别只在输入：正文里明明有 Day 段落。这种空结果一旦被登记，
+    `source_hash` 不变就永不重试，用户看到一个永远空白的行程板，重开也没用
+    （线上评估抓到过一次：5 天攻略抽出 0 天 0 点）。
+    代价不对称：多抽一次是几秒钱几分，固化一次是这份攻略永久废掉。
+    """
+    from app.ontology.store import ensure_trip_object
+
+    msg_id, cid = _seed_guide(store_db, _GUIDE)  # _GUIDE 有 Day 1 / Day 2
+    llm = _Blank()
+    assert asyncio.run(ensure_trip_object(cid, msg_id, llm=llm)) is None
+    assert asyncio.run(ensure_trip_object(cid, msg_id, llm=llm)) is None
+    assert llm.calls.count("TripItineraryExtraction") == 2, "故障性空结果应当重试"
 
 
 def test_missing_message_returns_none(store_db):
@@ -614,7 +643,10 @@ def test_ensure_only_runs_missing_lanes(store_db):
 
     second = asyncio.run(ensure_trip_object(cid, msg_id, llm=llm, need=BUDGET_LANES))
     new_calls = llm.calls[len(calls_after_first):]
-    assert new_calls == ["TripCostExtraction"]  # 只补了缺的那一路
+    # 只补了缺的那一路（cost）；人数兜底路跟着 cost 一起跑（Phase 108，与主路并发）
+    assert set(new_calls) == {"TripCostExtraction", "HeadcountExtraction"}
+    # 第一次只点海报时**不该**跑人数兜底——没有金额要配人数，那次调用是纯浪费
+    assert "HeadcountExtraction" not in calls_after_first
     # 合并后两路数据并存：预算拿到金额，海报的地点也还在
     assert second.expenses and second.stops
     assert set(second.lanes) == {"itinerary", "cost"}
@@ -663,7 +695,7 @@ def test_consumers_fall_back_when_ontology_disabled(store_db, monkeypatch):
     msg_id, cid = _seed_guide(store_db, _GUIDE)
 
     class _OldPath(_FakeLLM):
-        def parse(self, prompt, schema, *, model=None, system=None, max_tokens=None):
+        def parse(self, prompt, schema, *, model=None, system=None, max_tokens=None, **_kw):
             self.calls.append(schema.__name__)
             assert schema is PosterData  # 走的是旧 schema，不是本体抽取
             return PosterData(title="杭州", destination="杭州")
@@ -740,3 +772,42 @@ def test_apply_ops_routes_through_action_layer(db):
     )
     assert len(applied) == 1
     assert [m.key for m in load_memories(db, "u1")] == ["口味偏好"]
+
+
+def test_empty_itinerary_lane_is_not_registered():
+    """抽空的路不许登记（Phase 108）。
+
+    「调用成功、返回空数组」和「抛异常」后果一样，但原来只防了后者：空结果会被
+    `save_trip_object` 缓存住，`source_hash` 不变就**永不重试**——用户看到一个永远
+    空白的行程板，重开也没用。线上评估抓到过一次（5 天攻略抽出 0 天 0 点，
+    lanes 仍写着 itinerary）。
+    """
+    class _EmptyItinerary(_FakeLLM):
+        def parse(self, prompt, schema, *, model=None, system=None, max_tokens=None, **_kw):
+            self.calls.append(schema.__name__)
+            if schema is TripItineraryExtraction:
+                return TripItineraryExtraction(title="", destination="杭州")  # 成功但没有地点
+            return super().parse(prompt, schema, model=model, system=system,
+                                 max_tokens=max_tokens)
+
+    trip = asyncio.run(build_trip_object(_EmptyItinerary(), _GUIDE))
+    assert not trip.stops
+    assert "itinerary" not in trip.lanes, "抽空的 itinerary 路被登记了，会被缓存固化"
+    assert "cost" in trip.lanes, "另一路正常就该照常登记，不能一起作废"
+
+
+def test_guide_without_day_headings_still_registers_the_lane():
+    """判据要保守：真的没有 Day 标题的攻略抽不出地点是正常的。
+
+    否则每次调用都会认定「这一路失败」而重试，把一个正常场景变成永久重试。
+    """
+    class _NoStops(_FakeLLM):
+        def parse(self, prompt, schema, *, model=None, system=None, max_tokens=None, **_kw):
+            self.calls.append(schema.__name__)
+            if schema is TripItineraryExtraction:
+                return TripItineraryExtraction(title="", destination="杭州")
+            return super().parse(prompt, schema, model=model, system=system,
+                                 max_tokens=max_tokens)
+
+    trip = asyncio.run(build_trip_object(_NoStops(), "一段没有任何 Day 标题的攻略正文"))
+    assert "itinerary" in trip.lanes

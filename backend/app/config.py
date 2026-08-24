@@ -228,6 +228,68 @@ class Settings(BaseSettings):
     vision_max_images_per_note: int = 2  # 每篇笔记最多看几张
     vision_max_user_images: int = 4      # 用户单条消息最多带几张图
     vision_desc_thin_chars: int = 120    # desc 短于此视为「信息薄」，才值得看图
+    # ---- 协议层思考控制（Phase 108）----
+    # DeepSeek 支持用请求字段直接定思考档位，而不是在 prompt 里劝模型「少想点」。
+    # 这是撞了四次过度推理（Phase 11/101/102/105）之后找到的对症手段——前四次分别靠写
+    # 纪律和借 response_format 刹车，都是间接的。取值 none/off/low/high/max，
+    # 映射见 llm/client.py::_thinking_kwargs（none = 完全不发字段 = 改造前行为，回退用）。
+    #
+    # 服务器实测（v4-pro，同一段抽取 prompt，max_tokens=3000，各 3 次取中位）：
+    #
+    #     基线(不带字段)  55.2s   思考 3000(吃满)   合法 JSON 0/3
+    #     off             4.4s   思考    0        合法 JSON 3/3
+    #     low            30.4s   思考 1455        合法 JSON 3/3
+    #     high           54.0s   思考 3000        合法 JSON 0/3   ← 与基线一致，high 就是默认档
+    #
+    # 注意基线那行**不只是慢**：思考链吃满预算把正文挤掉，JSON 三次全不合法。
+    # off 在这里是「从错到对」，不是单纯提速。
+    #
+    # ⚠️ **分档的判据不是「抽取 vs 生成」，是「输出里有没有模型要*推导*出来的数字」。**
+    # 第一版按「抽取就关思考」一刀切，实测被抓到：马来西亚样本的 headcount 三轮里错一轮
+    # （认成 1 人，正文是 2 人）——人数错会让整个预算面板的人均口径翻倍（Phase 67 不变式）。
+    # 「两大一小=3」「2人3天合计→人均」「区间价取中间值」这些都不是照抄，是推导。
+    #
+    #   extract_reasoning_effort         机械：输出只有照抄的名字/日期
+    #     → ontology 逐日分块(TripDaysExtraction)、poster(PosterData)、
+    #       trip_api 逐日分块(TripImportDays)
+    #   extract_judgment_reasoning_effort 判断：输出含要推导的数字，默认 none（不动）
+    #     → ontology profile/itinerary/cost、budget(BudgetData)、
+    #       trip_api 摘要(TripImportSummary，带 budget_items)
+    #
+    # 需求解析/自检 critique/记忆增删同样走 parse()，但它们**两个旋钮都不吃**
+    # （parse() 刻意不读全局配置，只认调用点显式传入）。
+    # ⚠️ **判断档不许降到 off，这条是数据打出来的，不是保守起见。**
+    # `evals/extract_eval` 5 篇固定攻略，按配置统计失败轮次：
+    #
+    #     基线 none              1 轮   0 失败
+    #     low                    1 轮   0 失败
+    #     分档(机械off/判断none)  3 轮   0 失败      ← 当前配置
+    #     全 off                10 轮   5 失败
+    #
+    # 全 off 的失败**不是小瑕疵，是整块内容消失**，且可复现：
+    #   · 马来西亚 Day 6 整天丢失 2/4 轮——那天正文里有「路线A/路线B」二选一分支；
+    #   · 武汉一轮 Day 2/3 无任何停留点，且**黄鹤楼**（主地标）完全没抽到。
+    # 也就是说，关掉思考链后，模型对「要读懂结构才能抽对」的段落会直接跳过。
+    #
+    # ⚠️ 中途一版探针曾得出「off 召回反而更高（64.4% vs 51.1%）」并差点据此全开——
+    # 那是**只测了玉树一篇**的单样本外推，而失败恰恰出在另外两篇。
+    # 教训见 docs/pitfalls/量召回率时测错了层也数错了筐.md。
+    #
+    # 代价：分档只比基线快约 7%（557.9/550.8/555.6s vs 596.5s，落在噪声里）。
+    # 这是有意接受的——提速的前提是不丢内容，不是反过来。
+    extract_reasoning_effort: str = "off"
+    extract_judgment_reasoning_effort: str = "none"
+    # 人数**永远走保守档**，且是独立一路（见 ontology/extract.py::_headcount）。
+    # 唯一观测到 off 会失手的字段就是它：11 次里错 1 次，认成 1 人。而人数错会顺着
+    # 「金额一律人均口径」把整个预算面板的数字一起弄错，且不报错。
+    # 代价不对称——多一次 200 token 的小调用 vs 一整版错误金额，所以这一格不省。
+    headcount_reasoning_effort: str = "none"
+    headcount_lane_enabled: bool = True
+    # 视觉抽取单独一个旋钮，默认不动：exp 模型的字段支持与文本模型未必一致，且 Phase 105
+    # 已经用 json_object 给它验证过一条刹车。探测显示 off 在视觉模型上同样生效
+    # （27.2s→3.1s、思考 2999→0），但「看图」比「挑字段」更依赖推理，改之前要有视觉侧的
+    # 对照数据，不跟着文本链路一起翻。
+    vision_reasoning_effort: str = "none"
     llm_timeout_s: float = 180.0  # 单次 DeepSeek 请求超时（Phase 103；默认 600s 等于没有）
     guide_max_tokens: int = 16000
     guide_max_continuations: int = 2  # 最多续写几轮（16000×3 远超任何真实攻略长度）

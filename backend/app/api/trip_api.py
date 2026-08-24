@@ -963,6 +963,8 @@ async def _extract_import_draft(
         system=IMPORT_SUMMARY_SYSTEM,
         # summary 现在还带美食/避坑清单，4000 会被截断（实测），提到 8000
         max_tokens=8000,
+        # 判断档：TripImportSummary 带 budget_items（金额），不是纯照抄
+        effort=settings.extract_judgment_reasoning_effort,
     )
     total_days = _clamp_trip_days(max(detected_days, summary.days))
     chunks = [
@@ -984,6 +986,8 @@ async def _extract_import_draft(
                     model=settings.model_classifier,
                     system=IMPORT_DAYS_SYSTEM,
                     max_tokens=settings.trip_import_chunk_max_tokens,
+                    # 机械档：TripImportDays 只有地点/住宿/日计划，没有要推导的数字
+                    effort=settings.extract_reasoning_effort,
                 )
             except Exception as exc:  # noqa: BLE001
                 raise ValueError(f"Day {lo}–{hi} 分段抽取失败：{exc}") from exc

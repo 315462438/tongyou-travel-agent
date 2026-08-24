@@ -77,6 +77,23 @@ class NamedItemExtraction(BaseModel):
     note: str = Field(default="", description="一句话描述（14 字内）")
 
 
+class HeadcountExtraction(BaseModel):
+    """只抽一个数：出行人数（Phase 108）。
+
+    单独成一路的理由是**代价不对称**：人数是唯一一个「错了会让下游所有金额一起错」的字段
+    （Phase 67 不变式：金额一律人均口径），而它同时又是整份抽取里最便宜的一个数。
+    所以让它走保守档、单独一次小调用，其余大批量抽取才敢降档提速。
+    """
+
+    headcount: int = Field(
+        default=1,
+        description=(
+            "攻略面向的出行人数。「两大一小」填 3，「情侣/两人」填 2，没写就填 1。"
+            "注意区分：「2人3天总花费6800」说的是 2 人，不是 3 人也不是 6800 人。"
+        ),
+    )
+
+
 class TripProfileExtraction(BaseModel):
     """行程画像：标题、主题、住宿与推荐。**不含逐日地点、不含金额。**"""
 

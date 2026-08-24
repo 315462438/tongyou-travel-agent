@@ -481,6 +481,57 @@ Phase 11 的「正文>1500 字直接判 content」，文本侧是 **0 秒**，�
 图里内容；与基线（苏州 360s）同量级。计划 `docs/task_plans/视觉模型接入-2026-08-21.md`，
 用例 `docs/test_cases/视觉模型接入-验收用例.md`（后端 25 + 前端 6）。
 
+**Phase 108 — 协议层思考控制（`reasoning_effort`）**（读 `deepseek-ai/deepseek-harness` 上游
+854 commits 后的改造；**本条最值钱的不是结论，是三次错误结论的成因**）：
+DeepSeek 思考模式对结构化抽取过度推理，我们撞过四次（Phase 11 ITINERARY / 101 quick_take /
+102 五处抽取 / 105 视觉），治法一路是 prompt 纪律 + 借 `response_format` 刹车——**都是间接的**。
+上游 `226600147e feat(llm-deepseek): support low reasoning effort` 暴露了对症手段：DeepSeek 有
+直接定思考档位的协议字段，而我们全仓 `grep reasoning_effort` 是 **0 处**。
+① **协议映射**（抄自 `llm-deepseek/src/serialize.ts::resolveThinking`，`_thinking_kwargs`）：
+`off` → `{"thinking":{"type":"disabled"}}` **不带** `reasoning_effort`；`low/high/max` →
+`{"thinking":{"type":"enabled"}, "reasoning_effort":<档位>}`。⚠️ **`off` 不是 wire 档位**，
+发 `reasoning_effort:"off"` 是错的（单测钉死）；`thinking` 不是 openai SDK 已知参数，必须走
+`extra_body`（SDK 把它并到请求体**顶层**，正好满足协议）。三个模型实测均生效。
+② **分档判据不是「抽取 vs 生成」，是「输出里有没有模型要*推导*出来的数字」。**
+机械档（`off`）= 输出只有照抄的名字/天号：ontology 逐日分块(`TripDaysExtraction`)、
+poster(`PosterData`)、trip_api 逐日分块(`TripImportDays`)。判断档（`none`）= 含推导数字：
+profile/itinerary/cost、budget、trip_api 摘要(带 `budget_items`)——「两大一小=3」「2人合计→人均」
+「区间价取中间值」都是推导。`parse()` **刻意不读全局配置**：需求解析/自检 critique/记忆增删
+同样走它但质量依赖推理，全局默认会让将来新增的调用**静默**继承一个它不该有的档位。
+③ **判断档不许降到 off——数据打出来的，不是保守起见。** `extract_eval` 5 篇固定攻略：
+分档 3 轮 0 失败 / 全 `off` **10 轮 5 失败**，且失败**不是小瑕疵是整块内容消失**且可复现：
+马来西亚 **Day 6 整天丢失 2/4 轮**（那天正文里正好有「路线A/路线B」二选一分支）、武汉一轮
+Day 2/3 无停留点且**黄鹤楼**完全没抽到。**关掉思考链，模型对「要读懂结构才能抽对」的段落
+会直接跳过。** 代价是分档只比基线快约 7%（555.6s vs 596.5s，噪声内）——**有意接受：
+提速的前提是不丢内容，不是反过来。**（全 `off` 是 62.5s，9.5×，但那 9.5× 买不起。）
+④ **三次错误结论全部出在判据设计上，被测系统一次都没骗人**——这才是本 Phase 该留下的东西：
+**(a)** 探测脚本用「与基线相同 → 字段被静默忽略」判生效，把 `high` 误报成失效——**`high` 就是
+默认档**，两个假设在这一档上观测不可分（坑：`用与基线相同来判定字段未生效会误报默认档.md`）；
+**(b)** 量召回率时测了 `poster._extract_poster_data`，那是注释写明的**回退路径**——本体架构下
+海报/预算/导入命中 `ensure_trip_object` 缓存时**零 LLM 调用**，真正受影响的只有**第一次抽取**；
+同一探针**只数 `stops`**，而「漏掉」的全是餐馆茶馆，它们只是被归进了 `foods`——**分类差异
+被读成数据丢失，结论正好相反**（坑：`量召回率时测错了层也数错了筐.md`）；
+**(c)** 修正后的探针得出「`off` 召回更高（64.4% vs 51.1%）」并差点据此全开——那是**只测玉树
+一篇**的单样本外推，而失败恰恰出在另外两篇。**实验设计的错误不会报错，只会给你一个像模像样
+的数字。**
+⑤ **人数单独一路兜底**（`HeadcountExtraction` + `_headcount()`）：人数是唯一实测会被 `off`
+弄错的字段（11 次里错 1 次，认成 1 人），同时是整份抽取里**最便宜**的一个数，而错了会顺着
+「金额一律人均口径」（Phase 67）把整个预算面板一起弄错**且不报错**。`max_tokens=200`、只喂正文
+头尾、**永远走 `headcount_reasoning_effort`(none) 不跟提速旋钮**、与主路并发不在关键路径、
+只在跑 cost 路时启用；合并用 `max()`——**观测到的失手方向是偏小**，max 天然防小。
+⑥ **抽空的路不许登记**（与档位无关的**既有**缺口，本次最有价值的连带发现）：评估抓到一次
+5 天攻略抽出 **0 天 0 点**而 `lanes` 仍写 `cost+itinerary` → 被 `save_trip_object` 缓存、
+`source_hash` 不变就**永不重试**，用户看到一个永远空白的行程板重开也没用。针对性重跑 8 次
+未复现，**不能归因给 `off`**：原来的 `done` 只排除**抛异常**的路，「调用成功、返回空数组」照样登记。
+修法是对旧决策（「抽不出东西的攻略也要缓存，否则每点一次白抽一遍」）的**细化而非推翻**——
+判据从「抽出来是空的」改成「**正文里本来就没东西可抽**」：没有 Day 标题的正文抽不出地点是
+正常结果照旧缓存；**有 Day 段落却抽出 0 点是故障，不登记、下次重试**。代价不对称：多抽一次是
+几秒几分钱，固化一次是这份攻略永久废掉。
+**回退**：`.env` 设 `EXTRACT_REASONING_EFFORT=none` → 请求体与改造前逐字节相同。
+计划 `docs/task_plans/抽取链路改用协议层思考控制-2026-08-24.md`，用例
+`docs/test_cases/抽取链路协议层思考控制-验收用例.md`
+（`test_reasoning_effort.py` 24 + `test_ontology.py` 52，全量 1361 passed）。
+
 **Phase 107 — 首页配色收敛 + 现代/水墨双主题**（纯前端，两件事一条线）：
 ① **换主色花了五轮，教训在第一轮**：首轮把蓝紫描边换成松绿、暖黄中性色降饱和，token 和色值
 确实全变了，上线截图给用户看——**「还是这个颜色」**。根因是**整体色彩印象由大面积背景 + 主行动色
@@ -511,6 +562,48 @@ Phase 11 的「正文>1500 字直接判 content」，文本侧是 **0 秒**，�
 计划 `docs/task_plans/首页配色视觉收敛-2026-08-24.md`、`docs/task_plans/双主题切换与水墨主题-2026-08-24.md`，
 用例 `docs/test_cases/首页配色视觉收敛-验收用例.md`、`docs/test_cases/双主题切换与水墨主题-验收用例.md`
 （`frontend/tests/` 87 passed，新增 3 条：主题存储回落 / 皇家蓝配色契约 / 双主题入口与资源）。
+
+**Phase 108 — 记忆时间戳语义修复：把「最后注入」从「最后更改」里拆出来**（线上 bug）：
+`travel_memory.updated_at` 声明了 `onupdate=_now`，而 **SQLAlchemy 的 `onupdate` 对该行的任何
+UPDATE 都生效、与改哪一列无关**——于是 `_bump_hit_count` 这处**纯记账写**（每轮给被注入的记忆
+`hit_count += 1`）把 `updated_at` 一路推到当下。结果：**该列的实际语义是「最后一次被注入」，
+而全系统按「内容最后一次变化」在读它**。最贵的一处是 `format_memories_block` 贴进 prompt 的年龄
+标签——Phase 30 专门为**触发模型的过期意识**而建（docstring：「『47 天前』比裸时间戳更能触发
+过期意识」），修复前一条记忆只要上轮被注入过这轮就标「今天」，**越活跃的用户偏得越狠**：
+一年前说的「爱吃辣」和今天刚说的，模型看到的一模一样。线上 **25/47 行**受影响
+（某用户 7 条全是「建于 25 天前、prompt 写 2 天前」）。第二处：`_should_sleep_consolidate` 数
+「距上次整理后**变更**数」用的也是它，注入即计数 → 门控退化成「聊过天就整理」，而
+`consolidate_memories` 是 LLM 整篇重写后**整体替换**，**每次都是一次有损传递**（同 Phase 103 对
+history summary 的判断）。修法：`last_used_at` 新列承接记账时间，`_bump_hit_count` 改 Core
+`update()` 并把 `updated_at` **显式列进 SET 子句自赋值**（onupdate 只在列不在 SET 里时套用），
+顺带 Python 侧读改写换成 SQL 自增（direct 链路不过浏览器池，并发轮次会丢计数）。
+⚠️ **2026-08-24 是 `travel_memory.updated_at` 的语义断点**，此日之前的值不可用于任何分析——
+内容变更时间从来没被任何地方记录过，**不可恢复**；回填取保守下界 `created_at`（偏老只是让模型
+多问一句，偏新会拿一年前的口味当今天的，同 Phase 104 的不对称代价判断），回填**靠
+`last_used_at IS NULL` 谓词幂等而非靠"只跑一次"**——那整块 DDL 将来每加一列都会重跑。
+**同批修掉第二扇门**：`consolidate_memories` 是**删旧建新**，用户点一次「✨ 整理记忆」，
+半年前的偏好就变成「建立 刚刚 · 最后使用 从未」——刚修好的问题原样回来（线上已有 2 个用户
+整理过）。改为**按 key 继承**（key 是 Phase 17 归槽的主键，也是 N→M 合并时唯一不含猜测的
+祖先映射）：`created_at`/`hit_count`/`last_used_at` 继承祖先；**内容一字未改则 `updated_at`
+保持原值**（整理常常只是原样带过某个 key，那不是内容变更）；`explicit` **只升不降**（`or`，
+对齐 `_upsert_by_key` 的粘性）——LLM 只看得到内容、**判不出用户当初是不是亲口说的**，而
+`CONSOLIDATE_SYSTEM` 还让它「拿不准填 false」，不继承等于每次整理都在悄悄剥夺 Phase 17 的
+「明确表达优先」（weight 2.0→1.0 且丢掉「explicit 始终注入」的保底）；无 key 的旧行历史只能丢
+（硬猜比丢更糟）。前端记忆面板把**建立 / 更新 / 最后使用**三个时间分开显示（`formatMemoryAge` 新纯函数，
+不复用 `formatLastSeen`——它 30 天以上一律「很久以前」，而记忆的价值恰恰在于分辨 25 天和 300 天）。
+⚠️ **两个方向的测试缺一不可**：只钉「记账时不动」的话，把整列 `onupdate` 删掉也能过
+（变异检验：删自赋值→红 2 条，删 onupdate→另红 2 条）。**预期行为变化不是回归**：活跃用户的
+记忆在 prompt 里从「今天」变成真实年龄，模型开始对陈旧偏好起疑**正是 Phase 30 的设计意图**。
+**刻意不做**：不移植 mneme 的记忆热度衰减——线上单用户最多 8 条，`memory_max_rows=40` 与
+`memory_select_threshold=12` **都从没触发过**，Phase 17 的归槽（一个 key 一行）已经把「无限累积」
+解决在更前面；重新有价值的触发条件是模型大量自造 canonical 集合外的 key、单用户越过 12 条。
+不改 `load_memories` 排序（`hit_count` 在全量注入下同一用户恒等——线上 6 条全是 84，它记的是
+轮数不是相关性；改排序会牵动注入内容，单独评估）。坑见
+`docs/pitfalls/记账写会连带刷新updated_at.md`（**`onupdate` 是行级不是列级**：凡表上有与内容
+无关的记账列 hit_count/last_seen/view_count/retry_count，都会污染同表 `updated_at`），计划
+`docs/task_plans/记忆时间戳语义修复-2026-08-24.md`，用例
+`docs/test_cases/记忆时间戳语义修复-验收用例.md`（`tests/test_memory_timestamps.py` 19 +
+`frontend/tests/interaction-utils.test.mjs` 90 passed）。
 
 **Phase 106 — 删掉滑动窗口 + 记忆变更三态**（读 `openai/codex` 上游后的两处改造，
 一处删、一处加，都对着具体缺口）：

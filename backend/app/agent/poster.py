@@ -346,6 +346,7 @@ async def _poster_data(cid: str, message_id: str, guide: str, llm) -> PosterData
         return await cancel.wait_cancellable(cid, asyncio.to_thread(
             llm.parse, wrap_external(guide[:6000], source="guide"), PosterData,
             model=settings.model_classifier, system=EXTRACT_SYSTEM + EXTERNAL_POLICY,
+            effort=settings.extract_reasoning_effort,
         ))
     except cancel.TurnCancelled:
         raise
@@ -376,7 +377,8 @@ def _extract_more_stops(llm, guide: str, data: PosterData, enriched: list[dict],
     )
     try:
         # 补点用快模型（v4-flash）：只是加几个点，不必占用大模型时间
-        more = llm.parse(prompt, PosterData, model=settings.model_classifier, system=EXTRACT_SYSTEM)
+        more = llm.parse(prompt, PosterData, model=settings.model_classifier,
+                         system=EXTRACT_SYSTEM, effort=settings.extract_reasoning_effort)
         return more.stops
     except Exception:  # noqa: BLE001
         logger.warning("poster extract_more failed", exc_info=True)

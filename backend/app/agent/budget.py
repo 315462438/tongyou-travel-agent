@@ -186,6 +186,8 @@ async def _budget_data(cid: str, message_id: str, guide: str, llm) -> BudgetData
             BudgetData,
             model=settings.model_classifier,
             system=EXTRACT_SYSTEM + EXTERNAL_POLICY,
+            # 判断档：金额一律人均口径，「区间价取中间值」「两人合计→人均」都是推导不是照抄
+            effort=settings.extract_judgment_reasoning_effort,
         ))
     except cancel.TurnCancelled:
         raise

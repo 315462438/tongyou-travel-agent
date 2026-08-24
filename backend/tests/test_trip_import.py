@@ -27,7 +27,7 @@ class _FakeLLM:
         self.day_calls = []
         self.max_tokens_seen = []
 
-    def parse(self, prompt, schema, system="", model=None, max_tokens=None):
+    def parse(self, prompt, schema, system="", model=None, max_tokens=None, **_kw):
         if schema is TripImportSummary:
             return TripImportSummary(title="大理丽江6日", destination="大理、丽江", days=6,
                                      hotel_options=[], budget_items=[])

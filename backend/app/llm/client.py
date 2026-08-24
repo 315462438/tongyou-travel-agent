@@ -35,6 +35,39 @@ EXTRACT_THINKING_DISCIPLINE = (
 )
 
 
+# 语义档位 → DeepSeek 请求字段（Phase 108）。映射抄自上游 deepseek-harness
+# `packages/llm/llm-deepseek/src/serialize.ts::resolveThinking`：
+#
+#     off            → thinking=disabled，**不带** reasoning_effort
+#     low/high/max   → thinking=enabled + reasoning_effort=<档位>
+#
+# ⚠️ **`off` 不是一个 wire 档位**，发 `reasoning_effort="off"` 是错的——这是这张表里
+# 最容易写错的一格，有单测钉死。
+# ⚠️ `thinking` 不是 openai SDK 的已知参数，必须走 extra_body；SDK 会把 extra_body 的键
+# 合并到请求体**顶层**，正好满足协议要求（不是嵌套在 extra_body 里发出去）。
+_WIRE_EFFORTS = ("low", "high", "max")
+
+
+def _thinking_kwargs(effort: str | None) -> dict:
+    """把语义档位翻成 `chat.completions.create` 的关键字参数。
+
+    `None` / `"none"` / 空串一律返回 `{}`——**请求体与改造前逐字节相同**，这是回退路径，
+    必须保证「配置成 none」等于「这个功能不存在」。未知档位同样降级为 `{}` 并记一条
+    warning：配置写错时宁可退回旧行为，不能让整条链路 400。
+    """
+    if not effort or effort == "none":
+        return {}
+    if effort == "off":
+        return {"extra_body": {"thinking": {"type": "disabled"}}}
+    if effort in _WIRE_EFFORTS:
+        return {
+            "reasoning_effort": effort,
+            "extra_body": {"thinking": {"type": "enabled"}},
+        }
+    _logger.warning("未知的 reasoning effort %r，本次不发思考控制字段", effort)
+    return {}
+
+
 def _abort_of(cid: str | None):
     """把 cid 变成一个「是否该中止」的回调。不传 cid 则退避期间不响应停止（行为同改造前）。"""
     if not cid:
@@ -69,8 +102,17 @@ class LLMClient:
         system: str | None = None,
         max_tokens: int = 8000,
         cid: str | None = None,
+        effort: str | None = None,
     ) -> T:
         """结构化输出：返回通过 Pydantic 校验的对象。校验失败带错误信息重试一次。
+
+        `effort`（Phase 108）：思考档位，**默认 None = 不发思考控制字段**（行为同改造前）。
+
+        ⚠️ 刻意**不**在这里读全局配置。parse() 确实是结构化抽取的边界，但「结构化」不等于
+        「机械」：需求解析、自检 critique、记忆增删这些同样走 parse()，它们的质量**依赖**推理。
+        真正机械的抽取（从给定文本挑字段填 schema）由调用点显式传档位——范围与 Phase 102
+        给五个抽取 system 挂 EXTRACT_THINKING_DISCIPLINE 时圈定的完全一致。
+        全局默认会让将来任何新增的 parse() 调用**静默**继承一个它未必该有的档位。
 
         Phase 103：**两层重试各管各的**——这里的 for 循环治「模型输出不合法」（校验失败/
         截断），`call_with_retry` 治「请求没打通」（429/5xx/连接断）。前者要改 prompt 再问，
@@ -79,6 +121,7 @@ class LLMClient:
         from app.llm.retry import call_with_retry
 
         model = model or settings.model_extractor
+        thinking = _thinking_kwargs(effort)
         schema_json = json.dumps(schema.model_json_schema(), ensure_ascii=False)
         sys_prompt = (
             (system + "\n\n" if system else "")
@@ -98,6 +141,7 @@ class LLMClient:
                     messages=messages,
                     max_tokens=max_tokens,
                     response_format={"type": "json_object"},
+                    **thinking,
                 ),
                 what=f"llm.parse[{model}]",
                 should_abort=_abort_of(cid),
@@ -158,15 +202,19 @@ class LLMClient:
         return self.parse(
             parts, schema, model=model or settings.model_vision,
             system=system, max_tokens=max_tokens, cid=cid,
+            # 视觉走自己的旋钮：exp 模型对思考控制字段的支持与文本模型未必一致，
+            # 且它已有一条实测验证过的刹车（上面那张 json_object 对照表）。
+            effort=settings.vision_reasoning_effort,
         )
 
     def classify(
-        self, prompt: str, schema: type[T], *, system: str | None = None, cid: str | None = None
+        self, prompt: str, schema: type[T], *, system: str | None = None,
+        cid: str | None = None, effort: str | None = None,
     ) -> T:
         """轻量分类：用便宜的模型（v4-flash），如页面类型判定。"""
         return self.parse(
             prompt, schema, model=settings.model_classifier, system=system,
-            max_tokens=1024, cid=cid,
+            max_tokens=1024, cid=cid, effort=effort,
         )
 
     def generate(

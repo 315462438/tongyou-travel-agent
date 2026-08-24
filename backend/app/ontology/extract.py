@@ -29,6 +29,7 @@ from app.ontology.objects import (
     TripObject,
 )
 from app.schemas.ontology_schema import (
+    HeadcountExtraction,
     TripCostExtraction,
     TripDaysExtraction,
     TripItineraryExtraction,
@@ -183,7 +184,11 @@ async def build_trip_object(
     cap = settings.ontology_extract_max_chars
     rest, sections = split_day_sections(text)
 
-    async def _parse(prompt: str, schema, *, model: str = "", max_tokens: int = 0):
+    async def _parse(prompt: str, schema, *, model: str = "", max_tokens: int = 0,
+                     effort: str = ""):
+        """`effort` 默认判断档：这里只有**逐日分块**是纯机械的，profile/itinerary/cost
+        都带 headcount 或金额，要模型推导（「两大一小=3」「合计→人均」）。默认取保守的
+        那一档，机械路径显式降档——写错方向的代价是人均预算翻倍，所以默认必须偏保守。"""
         cancel.check(cid)
         # wait_cancellable 让结构化重试期间也能响应停止
         return await cancel.wait_cancellable(
@@ -192,8 +197,40 @@ async def build_trip_object(
                 llm.parse, prompt, schema,
                 model=model or settings.model_classifier, system=EXTRACT_SYSTEM,
                 max_tokens=max_tokens or settings.ontology_lane_max_tokens,
+                effort=effort or settings.extract_judgment_reasoning_effort,
             ),
         )
+
+    async def _headcount():
+        """只抽人数，**永远走保守档**（Phase 108）。
+
+        为什么单独一路：人数是**最便宜**的一个数（一个整数，200 max_tokens 就够），
+        却是**唯一一个错了会让下游所有金额一起错**的字段——顺着「金额一律人均口径」
+        （Phase 67）把整个预算面板弄错，且**不报错**。实测 `off` 下 11 次里错过 1 次
+        （认成 1 人）。代价不对称：多一次几秒的小调用 vs 一整版错误金额。
+
+        ⚠️ 它**不随判断档一起变**。判断档现在是 `none`，这一路看着像是多余的——
+        留着是因为它守的是不变式而不是某个配置：谁要是哪天把判断档调低（很可能，
+        毕竟全 `off` 快 9.5 倍），这一格得还在。
+
+        输入只给正文头尾（人数信息基本都在开头的行程概览或结尾的预算表里），
+        max_tokens 很小——这一路的成本必须低到「不值得为省它而冒险」。
+        """
+        head, tail = text[:1500], text[-2500:] if len(text) > 4000 else ""
+        try:
+            got = await _parse(
+                "只回答一个问题：这份攻略是几个人的行程？\n\n"
+                + wrap_external(head + ("\n…\n" + tail if tail else ""), source="guide"),
+                HeadcountExtraction,
+                max_tokens=200,
+                effort=settings.headcount_reasoning_effort,
+            )
+            return max(1, int(got.headcount or 1))
+        except cancel.TurnCancelled:
+            raise
+        except Exception:  # noqa: BLE001 — 兜底路失败就退回两条主路的结果，不能让整次抽取失败
+            logger.warning("headcount lane failed, falling back (cid=%s)", cid, exc_info=True)
+            return 1
 
     async def _cost():
         # 2026-08-13 实测：这一路在 v4-pro@8000 最快（64.3s），
@@ -234,6 +271,9 @@ async def build_trip_object(
                     f"{hint}以下是第 {chunk[0]}-{chunk[-1]} 天的攻略正文，只抽这几天的地点：\n\n"
                     + wrap_external(body, source="guide"),
                     TripDaysExtraction,
+                    # 唯一的纯机械路径：TripDaysExtraction 里没有任何要推导的数字，
+                    # 只有地点名和天号。长行程的绝大部分调用量也在这里。
+                    effort=settings.extract_reasoning_effort,
                 )
 
         profile_res, *chunk_res = await asyncio.gather(
@@ -262,7 +302,16 @@ async def build_trip_object(
 
     want = [ln for ln in ALL_LANES if ln in set(lanes)] or list(ALL_LANES)
     runners = {LANE_ITINERARY: _itinerary, LANE_COST: _cost}
-    results = await asyncio.gather(*(runners[ln]() for ln in want), return_exceptions=True)
+    # 人数兜底与两条主路**并发**跑，不加在关键路径上：它只有 200 max_tokens，
+    # 永远比主路先回来。只在跑 cost 路时才需要——不点预算面板就没有金额要配人数。
+    need_hc = LANE_COST in want and settings.headcount_lane_enabled
+    results = await asyncio.gather(
+        *(runners[ln]() for ln in want),
+        *([_headcount()] if need_hc else []),
+        return_exceptions=True,
+    )
+    hc_extra = results[len(want):]
+    results = results[: len(want)]
     by_lane = dict(zip(want, results))
 
     for r in results:
@@ -286,9 +335,33 @@ async def build_trip_object(
             logger.warning("ontology cost failed (cid=%s): %s", cid, cost_r)
         cost_r = TripCostExtraction()
 
+    # ⚠️ **抽空的路不许登记**（Phase 108）。原来 `done` 只排除抛异常的路，而「调用成功、
+    # 返回空数组」同样是失败——它会被 `save_trip_object` 缓存住，且 `source_hash` 不变就
+    # **永不重试**，用户看到的是一个永远空白的行程板/海报，重开也没用。
+    # 线上评估抓到过一次：5 天攻略抽出 0 天 0 点，lanes 仍写着 itinerary。
+    # 判据要保守：只有「正文里明明有 Day 段落，却一个停留点都没抽到」才算空——
+    # 真的没有 Day 标题的攻略抽不出地点是正常的，不能因此让它每次都重试。
+    itinerary_is_empty = bool(sections) and not stops
+    if itinerary_is_empty:
+        logger.warning(
+            "ontology itinerary lane returned empty for a guide with %d day sections "
+            "(cid=%s) — 不登记该路，下次调用会重试", len(sections), cid,
+        )
+
     trip = _to_trip(profile_r, cost_r, stops, day_meta, failed)
+    # 并入人数：仍用 max()，因为**观测到的失手方向是偏小**（该是 2 认成 1），
+    # 而 max 天然防小。兜底路自己失败时返回 1，对 max 是中性的。
+    if hc_extra and not isinstance(hc_extra[0], BaseException):
+        merged = max(trip.headcount, int(hc_extra[0] or 1))
+        if merged != trip.headcount:
+            logger.info("headcount lane corrected %s → %s (cid=%s)", trip.headcount, merged, cid)
+            trip = trip.model_copy(update={"headcount": merged})
     # 只登记**真正跑过且没抛异常**的路：抛异常的路留空，下次调用会重试它
-    done = [ln for ln in want if not isinstance(by_lane.get(ln), BaseException)]
+    done = [
+        ln for ln in want
+        if not isinstance(by_lane.get(ln), BaseException)
+        and not (ln == LANE_ITINERARY and itinerary_is_empty)
+    ]
     trip = trip.model_copy(update={"lanes": done})
     if not trip.destination and destination_hint:
         trip = trip.model_copy(update={"destination": destination_hint})
