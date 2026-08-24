@@ -16,6 +16,7 @@ import {
   inferThinkingProgress,
   inferThinkingStage,
   initialLayoutMode,
+  initialThemeMode,
   MAX_PROMPT_LENGTH,
   normalizePrompt,
   shouldSubmitComposer,
@@ -36,6 +37,13 @@ test('layout mode defaults to mobile on phones and preserves desktop preview cho
   assert.equal(initialLayoutMode(1440, null), 'desktop')
   assert.equal(initialLayoutMode(1440, 'mobile'), 'mobile')
   assert.equal(initialLayoutMode(844, 'desktop', true), 'mobile')
+})
+
+test('theme mode persists only supported values and otherwise falls back to modern', () => {
+  assert.equal(initialThemeMode(null), 'modern')
+  assert.equal(initialThemeMode('modern'), 'modern')
+  assert.equal(initialThemeMode('ink'), 'ink')
+  assert.equal(initialThemeMode('green'), 'modern')
 })
 
 test('composer submits with plain Enter', () => {

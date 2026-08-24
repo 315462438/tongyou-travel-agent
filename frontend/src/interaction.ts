@@ -1,6 +1,11 @@
 export const MAX_PROMPT_LENGTH = 4000
 
 export type LayoutMode = 'desktop' | 'mobile'
+export type ThemeMode = 'modern' | 'ink'
+
+export function initialThemeMode(storedMode?: string | null): ThemeMode {
+  return storedMode === 'ink' ? 'ink' : 'modern'
+}
 
 export function initialLayoutMode(
   width: number,

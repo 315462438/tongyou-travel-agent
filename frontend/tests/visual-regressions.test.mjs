@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readFileSync, statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 const cssPath = fileURLToPath(new URL('../src/index.css', import.meta.url))
@@ -23,16 +23,51 @@ const indexPath = fileURLToPath(new URL('../index.html', import.meta.url))
 const indexHtml = readFileSync(indexPath, 'utf8')
 const faviconPath = fileURLToPath(new URL('../public/favicon.svg', import.meta.url))
 const favicon = readFileSync(faviconPath, 'utf8')
+const inkBackgroundPath = fileURLToPath(new URL('../public/ink-landscape.webp', import.meta.url))
 
 test('single-entry hero returns to quiet travel content instead of a full-screen color wash', () => {
   assert.doesNotMatch(home, /<Aurora/)
   assert.match(home, /className="hero-soft-glow"/)
   assert.match(css, /\.hero-soft-glow\s*\{[^}]*radial-gradient[^}]*animation:\s*hero-glow-breathe/s)
-  assert.match(css, /\.hero \.hero-title\s*\{[^}]*linear-gradient\(102deg, var\(--x-n12\)[^}]*background-size:\s*180%[^}]*font-family:\s*"PingFang SC"[^}]*font-weight:\s*800[^}]*animation:\s*hero-sheen 9s/s)
-  assert.match(css, /\.inspiration-launchpad\.simple\s*\{[^}]*rgba\(117, 136, 230, \.52\)[^}]*0 0 0 4px rgba\(101, 119, 224, \.055\)/s)
+  assert.match(css, /\.hero \.hero-title\s*\{[^}]*linear-gradient\(180deg,[^}]*var\(--x-n20\)[^}]*var\(--x-sky-30\)[^}]*var\(--x-sky-44\)[^}]*-webkit-text-fill-color:\s*transparent[^}]*font-family:\s*"PingFang SC"[^}]*font-weight:\s*800; animation:\s*none/s)
+  const heroTitle = css.slice(css.indexOf('.hero .hero-title {'), css.indexOf('.hero .hero-eyebrow'))
+  assert.doesNotMatch(heroTitle, /text-stroke|drop-shadow|var\(--x-n100\)/)
+  assert.doesNotMatch(css, /\.hero-eyebrow\s*\{[^}]*color:\s*transparent/s)
+  assert.match(css, /\.inspiration-launchpad\.simple\s*\{[^}]*rgba\(59, 130, 246, \.5\)[^}]*0 0 0 4px rgba\(59, 130, 246, \.06\)/s)
+  assert.match(css, /\.inspiration-launchpad\.simple:focus-within\s*\{[^}]*rgba\(37, 99, 235, \.78\)/s)
   assert.match(css, /\.destination-card\s*\{[^}]*animation:\s*destination-card-rise/s)
-  assert.match(css, /prefers-reduced-motion: reduce\)[\s\S]*\.hero \.hero-title \{ animation: none; background-position: 45% center; \}/)
+  assert.match(css, /\.hero-soft-glow\s*\{[^}]*rgba\(219, 234, 254, \.48\)/s)
+  assert.doesNotMatch(css, /\.hero-soft-glow\s*\{[^}]*rgba\(238, 121, 101/s)
   assert.match(css, /prefers-reduced-motion: reduce\)[\s\S]*\.hero-soft-glow, \.destination-card \{ animation: none/)
+})
+
+test('home palette uses royal sky blue and keeps the relay banner free of green-teal-purple', () => {
+  const homePalette = css.slice(css.indexOf('/* ---------- Phase 47'), css.indexOf('/* Phase 79'))
+  const socialEntry = css.slice(css.indexOf('.social-entry {'), css.indexOf('.social-overlay'))
+  assert.match(css, /--x-sky:\s*#2563EB/)
+  assert.match(css, /--x-ocean:\s*var\(--x-sky\)/)
+  assert.match(css, /--x-pine:\s*var\(--x-sky\)/)
+  assert.doesNotMatch(homePalette, /rgba\((?:79, 124, 255|82,\s*104,\s*221|117, 136, 230|92, 113, 226)/)
+  assert.match(homePalette, /rgba\(59, 130, 246, \.5\)/)
+  assert.match(socialEntry, /background:\s*linear-gradient\(115deg, var\(--x-pine-30\), var\(--x-n20\)/)
+  assert.match(socialEntry, /\.social-entry-people i:nth-child\(2\) \{ background:\s*var\(--x-day-5\)/)
+  assert.doesNotMatch(socialEntry, /140, 126, 231|131, 154, 230|91, 112, 194|92, 129, 107|168, 196, 177|51, 141, 168|79, 167, 192|145, 201, 218/)
+})
+
+test('topbar switches between persisted modern and ink-wash themes', () => {
+  assert.ok(statSync(inkBackgroundPath).size > 100_000)
+  assert.match(home, /initialThemeMode\(localStorage\.getItem\('travel_theme_mode'\)\)/)
+  assert.match(home, /localStorage\.setItem\('travel_theme_mode', mode\)/)
+  assert.match(home, /theme-\$\{themeMode\}/)
+  assert.match(home, /className=\{`theme-toggle/)
+  assert.match(home, /aria-pressed=\{themeMode === 'ink'\}/)
+  assert.match(home, /'现代主题' : '水墨主题'/)
+  assert.match(css, /\.theme-ink \.hero\s*\{[^}]*url\('\/travel\/ink-landscape\.webp'\)/s)
+  const inkTitle = css.slice(css.indexOf('.theme-ink .hero .hero-title'), css.indexOf('.theme-ink .hero .hero-eyebrow'))
+  assert.match(inkTitle, /font-family:\s*var\(--x-font-kai\)/)
+  assert.match(inkTitle, /-webkit-text-fill-color:\s*currentColor/)
+  assert.match(css, /\.theme-ink \.unified-submit\s*\{[^}]*linear-gradient\(145deg, var\(--x-n30\), var\(--x-n12\)\)/s)
+  assert.match(css, /\.view-mobile \.theme-toggle span\s*\{\s*display:\s*none/)
 })
 
 test('new conversation uses one automatically-routed inspiration entry', () => {
@@ -61,7 +96,8 @@ test('trip actions menu owns the top layer above the map', () => {
 })
 
 test('collaborative trip follows the reference layout while inheriting platform colors', () => {
-  const phase86 = css.slice(css.indexOf('Phase 86：协同行程参考稿视觉重构'))
+  const phase86Start = css.indexOf('Phase 86：协同行程参考稿视觉重构')
+  const phase86 = css.slice(phase86Start, css.indexOf('/* ---------- 双主题', phase86Start))
   assert.match(trips, /className="trip-workspace-tabs"/)
   assert.match(trips, /TRIP_TOOL_TABS\.map/)
   assert.match(trips, /setAiTab\(tab\.id\)[\s\S]*setWorkspaceView\('tool'\)/)
@@ -229,6 +265,10 @@ test('17tongyou brand replaces the legacy lightning favicon and travelX wordmark
   assert.match(indexHtml, /property="og:site_name" content="17同游"/)
   assert.match(brand, /className="brand-number">17</)
   assert.match(brand, /className="brand-cn">同游</)
+  assert.match(css, /\.brand-name \.brand-number\s*\{[^}]*color:\s*var\(--x-sky-44\)[^}]*-webkit-text-fill-color:\s*var\(--x-sky-44\)/s)
+  assert.match(css, /\.brand-name \.brand-cn\s*\{\s*color:\s*var\(--x-sky-30\)/)
+  assert.match(css, /\.brand-mark\s*\{[^}]*background:\s*linear-gradient\(145deg, var\(--x-sky-58\), var\(--x-sky-44\)/s)
+  assert.match(css, /\.theme-ink \.topbar-mark, \.theme-ink \.brand-mark\s*\{[^}]*background:\s*var\(--x-cinnabar\)/s)
   assert.match(favicon, /rect[^>]*fill="#B23A2F"/)  // 朱印底（2026-08-24 由蓝紫渐变改）
   assert.match(favicon, /stroke="#FFFEFB"/)
   assert.match(home, /<small>17tongyou<\/small>/)
@@ -471,7 +511,7 @@ test('攻略后主动给「接下来」，不再把入口埋在小按钮堆里',
 // ---------------------------------------------------------------------------
 
 /** 海报是调色板来源、特效靠渐变、天空是表意色——这些区块本就不该进 token 映射。 */
-const DESIGN_EXEMPT = /\.rmap-|\.poster-|\.rec-|aurora|iridescence|side-ray|\.auth-sky|marker|legend/i
+const DESIGN_EXEMPT = /\.rmap-|\.poster-|\.rec-|aurora|iridescence|side-ray|\.auth-sky|\.app\.theme-ink|marker|legend/i
 
 /** 粗切成 (选择器, 规则体)，够用来判断某段是否豁免。 */
 function cssBlocks(text) {

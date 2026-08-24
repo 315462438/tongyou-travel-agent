@@ -22,6 +22,7 @@ import {
   inferThinkingMode,
   inferThinkingProgress,
   initialLayoutMode,
+  initialThemeMode,
   MAX_PROMPT_LENGTH,
   mergeMessages,
   buildBudgetRoulettePrompt,
@@ -46,6 +47,7 @@ import {
   pickImageFiles,
   type PendingImage,
   type LayoutMode,
+  type ThemeMode,
 } from '../interaction'
 
 const TripsOverlay = lazy(() => import('./Trips'))
@@ -459,6 +461,9 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
       window.matchMedia('(pointer: coarse)').matches,
     )
   ))
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => (
+    initialThemeMode(localStorage.getItem('travel_theme_mode'))
+  ))
   const [search, setSearch] = useState('')
   const pollRef = useRef<number | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -674,6 +679,11 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
     localStorage.setItem('travel_layout_mode', mode)
     setLayoutMode(mode)
     setCollapsed(mode === 'mobile')
+  }, [])
+
+  const changeThemeMode = useCallback((mode: ThemeMode) => {
+    localStorage.setItem('travel_theme_mode', mode)
+    setThemeMode(mode)
   }, [])
 
   const deleteConv = useCallback(
@@ -912,7 +922,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
   const activeConversationTitle = convs.find((conv) => conv.id === cid)?.title || (empty ? '开始新旅程' : '旅行规划')
 
   return (
-    <div className={`app view-${layoutMode}${collapsed ? ' collapsed' : ''}`}>
+    <div className={`app view-${layoutMode} theme-${themeMode}${collapsed ? ' collapsed' : ''}`}>
       {user.must_change_password && <AdminPasswordBanner onDone={onPasswordChanged} />}
       {!collapsed && <button className="sidebar-scrim" aria-label="关闭侧栏" onClick={() => setCollapsed(true)} />}
       <aside className="sidebar">
@@ -1136,6 +1146,20 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
               <path d="M9.5 20a2.5 2.5 0 0 0 5 0" />
             </svg>
             {notificationUnread > 0 && <b className="bell-count">{notificationUnread > 99 ? '99+' : notificationUnread}</b>}
+          </button>
+          <button
+            className={`theme-toggle${themeMode === 'ink' ? ' active' : ''}`}
+            type="button"
+            aria-pressed={themeMode === 'ink'}
+            aria-label={themeMode === 'ink' ? '切换到现代主题' : '切换到水墨主题'}
+            title={themeMode === 'ink' ? '切换到现代主题' : '切换到水墨主题'}
+            onClick={() => changeThemeMode(themeMode === 'ink' ? 'modern' : 'ink')}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M4 19c3.6-1.1 5.8-3.2 6.5-6.4L17.8 5l2.2 2.2-7.6 7.3C9.2 15.2 7.1 17.4 6 21" />
+              <path d="M14.5 8.4l2.9 2.9" />
+            </svg>
+            <span>{themeMode === 'ink' ? '现代主题' : '水墨主题'}</span>
           </button>
           <div className="layout-switch" role="group" aria-label="界面视图">
             <button
