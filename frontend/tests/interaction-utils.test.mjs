@@ -520,3 +520,46 @@ test('首页只传图不打字也算有效输入', () => {
   // 传了图但没打字会被拦下报「输入一个目的地或攻略链接」——而那正是最自然的用法。
   assert.equal(canSendComposer('', 2), true)
 })
+
+// ---------- 记忆时间戳（2026-08-24）----------
+// 面板要把「建立 / 更新 / 最后使用」三个时间分开显示，见
+// docs/task_plans/记忆时间戳语义修复-2026-08-24.md。
+
+test('formatMemoryAge 分档到年，不像 formatLastSeen 那样在 30 天处塌成「很久以前」', async () => {
+  const { formatMemoryAge } = await import('../src/interaction.ts')
+  const now = Date.parse('2026-08-24T12:00:00')
+  // 造**本地**无时区串（库里就是这种）。用 toISOString() 会先转 UTC，
+  // 再被按本地时间解析回来，凭空差一个时区——正是这个函数要防的那个坑。
+  const pad = (n) => String(n).padStart(2, '0')
+  const ago = (sec) => {
+    const d = new Date(now - sec * 1000)
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+      `T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+  }
+
+  assert.equal(formatMemoryAge(ago(10), now), '刚刚')
+  assert.equal(formatMemoryAge(ago(600), now), '10 分钟前')
+  assert.equal(formatMemoryAge(ago(7200), now), '2 小时前')
+  assert.equal(formatMemoryAge(ago(86400 * 25), now), '25 天前')
+  // 记忆的价值恰恰在于分辨 25 天和 300 天——这是不复用 formatLastSeen 的全部理由
+  assert.equal(formatMemoryAge(ago(86400 * 90), now), '3 个月前')
+  assert.equal(formatMemoryAge(ago(86400 * 400), now), '1 年前')
+})
+
+test('formatMemoryAge 对缺失/非法/未来时间都有确定归宿', async () => {
+  const { formatMemoryAge } = await import('../src/interaction.ts')
+  const now = Date.parse('2026-08-24T12:00:00')
+  assert.equal(formatMemoryAge(null, now), '—')          // last_used_at 可能是 NULL
+  assert.equal(formatMemoryAge(undefined, now), '—')     // 老前端/老数据没有这个字段
+  assert.equal(formatMemoryAge('不是时间', now), '—')
+  // 客户端时钟快于服务端时不能显示「-3 分钟前」
+  assert.equal(formatMemoryAge('2026-08-24T12:00:30', now), '刚刚')
+})
+
+test('formatMemoryAge 把无时区时间串按本地时间解析（勿加 Z）', async () => {
+  const { formatMemoryAge } = await import('../src/interaction.ts')
+  // 库里是 timestamp without time zone，psycopg 写入时已转成服务器本地时区（CST）。
+  // 当成 UTC 解读会让所有时间凭空「新 8 小时」——2026-07-31 在后端踩过同一个坑。
+  const now = Date.parse('2026-08-24T12:00:00')
+  assert.equal(formatMemoryAge('2026-08-24T10:00:00', now), '2 小时前')
+})

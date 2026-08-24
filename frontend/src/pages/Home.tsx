@@ -33,6 +33,7 @@ import {
   isCompactDestinationIdea,
   type StarterChip,
   formatLastSeen,
+  formatMemoryAge,
   normalizePrompt,
   prepareMarkdown,
   shouldFollowBottom,
@@ -194,7 +195,12 @@ interface MemoryItem {
   key?: string | null
   explicit?: boolean
   content: string
+  // 三个时间语义不同，面板分开显示（2026-08-24）：建立 / 内容最后一次变化 /
+  // 最后一次被注入进 prompt。改造前 updated_at 被注入的记账写连带刷新，
+  // 实际记的是「最后注入」——见 docs/task_plans/记忆时间戳语义修复-2026-08-24.md。
+  created_at?: string | null
   updated_at: string | null
+  last_used_at?: string | null
 }
 
 const MEM_TYPE_LABEL: Record<string, string> = {
@@ -1717,6 +1723,8 @@ function AdminPanel({ onClose }: { onClose: () => void }) {
 function MemoryPanel({ onClose }: { onClose: () => void }) {
   const [items, setItems] = useState<MemoryItem[] | null>(null)
   const [tidying, setTidying] = useState(false)
+  // 打开面板时定格「现在」：这是查看态，秒级跳动的相对时间只会干扰阅读
+  const [nowMs] = useState(() => Date.now())
   const { notify } = useToast()
 
   const load = useCallback(async () => {
@@ -1782,9 +1790,20 @@ function MemoryPanel({ onClose }: { onClose: () => void }) {
           {items?.map((m) => (
             <div key={m.id} className="memory-row">
               <span className="memory-card-tag">{m.key || MEM_TYPE_LABEL[m.type] || m.type}</span>
-              <span className="memory-row-content">
-                {m.content}
-                {m.explicit && <span className="mem-explicit" title="用户明确表达">·亲述</span>}
+              <span className="memory-row-main">
+                <span className="memory-row-content">
+                  {m.content}
+                  {m.explicit && <span className="mem-explicit" title="用户明确表达">·亲述</span>}
+                </span>
+                <span className="memory-row-meta">
+                  <span title="这条记忆什么时候建立的">建立 {formatMemoryAge(m.created_at, nowMs)}</span>
+                  <span title="内容最后一次变化（不含例行注入）">
+                    更新 {formatMemoryAge(m.updated_at, nowMs)}
+                  </span>
+                  <span title="最后一次被用于规划（注入进模型上下文）">
+                    最后使用 {m.last_used_at ? formatMemoryAge(m.last_used_at, nowMs) : '从未'}
+                  </span>
+                </span>
               </span>
               <button className="memory-row-del" onClick={() => remove(m.id)} aria-label="删除">
                 🗑

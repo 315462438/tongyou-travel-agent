@@ -274,6 +274,26 @@ export function formatLastSeen(iso: string | null | undefined, nowMs: number): s
 }
 
 
+// ---------- 记忆时间戳（2026-08-24）----------
+// 记忆面板要把三个时间分开显示：建立 / 更新（内容真的变过）/ 最后使用（被注入进 prompt）。
+// 不复用 formatLastSeen —— 它 30 天以上一律「很久以前」，而记忆的价值恰恰在于分辨
+// 25 天和 300 天：「这条建立很久、最近没被用过」是用户该看到的信号。
+// naive 时间串按**本地时间**解析（勿加 Z）：库里是 timestamp without time zone，
+// psycopg 写入时已转成服务器本地时区（CST）——沿用会话列表既有约定。
+export function formatMemoryAge(iso: string | null | undefined, nowMs: number): string {
+  if (!iso) return '—'
+  const t = Date.parse(iso)
+  if (Number.isNaN(t)) return '—'
+  const sec = Math.floor((nowMs - t) / 1000)
+  if (sec < 60) return '刚刚'                    // 含客户端时钟略快于服务端的负数
+  if (sec < 3600) return `${Math.floor(sec / 60)} 分钟前`
+  if (sec < 86400) return `${Math.floor(sec / 3600)} 小时前`
+  const days = Math.floor(sec / 86400)
+  if (days < 30) return `${days} 天前`
+  if (days < 365) return `${Math.floor(days / 30)} 个月前`
+  return `${Math.floor(days / 365)} 年前`
+}
+
 // ---------- Phase 75：新用户开口率 ----------
 // 08-04 那批新用户 12 个里 4 个注册后一个字没问就走了。提问的 8 个全部拿到了完整攻略，
 // 所以门槛在**开口**，不在产出：首页示例写死成都（用户全是合肥/武汉的），

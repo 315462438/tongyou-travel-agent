@@ -1308,13 +1308,24 @@ textarea { font-family: inherit; }
 .modal-empty { color: var(--x-n78); font-size: 14px; text-align: center; padding: 30px 0; }
 .memory-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;   /* 正文下方多了一行时间 meta，顶对齐才不会让标签飘到中间 */
   gap: 10px;
   padding: 9px 2px;
   border-bottom: 1px solid var(--x-n96);
 }
-.memory-row .memory-card-tag { margin-bottom: 0; flex-shrink: 0; }
-.memory-row-content { flex: 1; font-size: 14px; line-height: 1.5; }
+.memory-row .memory-card-tag { margin-bottom: 0; flex-shrink: 0; margin-top: 1px; }
+.memory-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.memory-row-content { font-size: 14px; line-height: 1.5; }
+/* 建立 / 更新 / 最后使用 —— 三个时间语义不同，分开显示（2026-08-24）。
+   11px 是可读下限（见 docs/pitfalls/高分屏下精致小字会直接变成不可读.md），别再往下压。 */
+.memory-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--x-n60);
+}
 .memory-row-del { color: var(--x-n78); font-size: 14px; padding: 2px 6px; }
 .memory-row-del:hover { color: var(--x-cinnabar-51); }
 
