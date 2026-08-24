@@ -1317,7 +1317,7 @@ textarea { font-family: inherit; }
 
 /* 17同游品牌字：数字承接域名，中文明确产品含义。 */
 .wordmark {
-  font-family: 'Space Grotesk', 'SF Pro Display', -apple-system, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', system-ui, sans-serif;
   font-weight: 700;
   letter-spacing: -0.025em;
   white-space: nowrap;
@@ -1336,7 +1336,7 @@ textarea { font-family: inherit; }
 /* 登录页大字号品牌罗列在登机牌之上 */
 .auth-brandline { text-align: center; margin-bottom: 2px; }
 .auth-wordmark {
-  font-family: 'Space Grotesk', 'SF Pro Display', -apple-system, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', system-ui, sans-serif;
   font-weight: 700;
   font-size: 56px;
   letter-spacing: -0.02em;
@@ -2408,7 +2408,7 @@ body { color: var(--tx-ink); background: var(--tx-bg); }
 }
 .inspiration-copy { display: flex; flex-direction: column; align-items: flex-start; padding: 4px 4px 2px; }
 .inspiration-copy > small {
-  color: #7582a1; font-family: "Space Grotesk", sans-serif; font-size: 9.5px; font-weight: 720;
+  color: #7582a1; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', system-ui, sans-serif; font-size: 9.5px; font-weight: 720;
   letter-spacing: .17em;
 }
 .inspiration-copy h2 { margin: 8px 0 6px; color: #20283a; font-size: 25px; line-height: 1.1; letter-spacing: -.03em; }
@@ -2418,7 +2418,7 @@ body { color: var(--tx-ink); background: var(--tx-bg); }
   display: flex; align-items: center; gap: 6px; padding: 7px 8px; border: 1px solid rgba(206, 214, 231, .72);
   border-radius: 10px; color: #566176; background: rgba(255, 255, 255, .72); font-size: 10.5px;
 }
-.preview-checks b { color: #8794b0; font-family: "Space Grotesk", sans-serif; font-size: 8.5px; letter-spacing: .08em; }
+.preview-checks b { color: #8794b0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', system-ui, sans-serif; font-size: 8.5px; letter-spacing: .08em; }
 .inspiration-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; align-content: start; }
 .inspiration-field { display: grid; gap: 5px; min-width: 0; text-align: left; }
 .inspiration-field.field-wide, .inspiration-submit.field-wide { grid-column: 1 / -1; }

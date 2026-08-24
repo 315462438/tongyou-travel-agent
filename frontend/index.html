@@ -11,7 +11,9 @@
     <meta property="og:site_name" content="17同游" />
     <meta property="og:title" content="17同游 · 一起规划，一起出发" />
     <meta property="og:description" content="和同伴一起规划行程，让 AI 帮你查资料、排路线、管预算。" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover 是刘海屏安全区的开关：不写它，CSS 里 33 处 env(safe-area-inset-*) 一律返回 0，
+         Phase 65 那套 iOS 安全区适配全部静默失效（2026-08-24 修）。 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>17同游 · 一起规划，一起出发</title>
   </head>
   <body>
