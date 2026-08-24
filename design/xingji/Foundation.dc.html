@@ -1,0 +1,151 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; background: #F7F3EA; }
+    .kai { font-family: 'STKaiti','KaiTi','楷体','Songti SC','Noto Serif SC',serif; }
+    a { color: #3F6B52; } a:hover { color: #2C4C39; }
+  </style>
+</helmet>
+
+<div style="width: 880px; box-sizing: border-box; padding: 40px 44px 48px; background: #F7F3EA; color: #241F1B; font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', system-ui, sans-serif;">
+
+  <div style="display: flex; align-items: flex-end; justify-content: space-between; padding-bottom: 18px; border-bottom: 2px solid #CDBF9C;">
+    <div>
+      <div class="kai" style="font-size: 40px; font-weight: 700; letter-spacing: 4px; line-height: 1; color: #3F6B52;">行记</div>
+      <div style="margin-top: 10px; font-size: 14px; color: #6A6046; letter-spacing: 1px;">17同游 · 移动端设计系统</div>
+    </div>
+    <div style="display: flex; align-items: center; justify-content: center; width: 46px; height: 46px; border-radius: 8px; background: #B23A2F; color: #FBF8F1; transform: rotate(-6deg); box-shadow: 0 2px 6px rgba(150,40,30,.3);">
+      <span class="kai" style="font-size: 20px; font-weight: 700;">游</span>
+    </div>
+  </div>
+
+  <!-- 色板 -->
+  <div style="margin-top: 30px;">
+    <div style="display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px;">
+      <span style="font-size: 16px; font-weight: 700; letter-spacing: 1px;">色板</span>
+      <span style="font-size: 12px; color: #9C8F6F;">五个角色，每个只做一件事 · 现状 780 种硬编码色值</span>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px;">
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <div style="height: 68px; border-radius: 10px; background: #F7F3EA; border: 1px solid #E3DCC7;"></div>
+        <div style="font-size: 13px; font-weight: 700;">纸 #F7F3EA</div>
+        <div style="font-size: 11px; color: #9C8F6F; line-height: 1.5;">内容底色。比海报的 #f6f1e4 提亮一档，为长文阅读</div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <div style="height: 68px; border-radius: 10px; background: #241F1B;"></div>
+        <div style="font-size: 13px; font-weight: 700;">墨 #241F1B</div>
+        <div style="font-size: 11px; color: #9C8F6F; line-height: 1.5;">正文与导航底。chrome 用墨，内容用纸</div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <div style="height: 68px; border-radius: 10px; background: #3F6B52;"></div>
+        <div style="font-size: 13px; font-weight: 700;">松 #3F6B52</div>
+        <div style="font-size: 11px; color: #9C8F6F; line-height: 1.5;">主行动色。发送、创建、确认。沿用海报城市名色</div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <div style="height: 68px; border-radius: 10px; background: #B23A2F;"></div>
+        <div style="font-size: 13px; font-weight: 700;">朱 #B23A2F</div>
+        <div style="font-size: 11px; color: #9C8F6F; line-height: 1.5;">只标「已确认的事实」：已定行程、当前位置。<b style="color:#B23A2F;">不当按钮色</b></div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <div style="height: 68px; border-radius: 10px; background: #E3DCC7; border: 1px solid #CDBF9C;"></div>
+        <div style="font-size: 13px; font-weight: 700;">线 #CDBF9C</div>
+        <div style="font-size: 11px; color: #9C8F6F; line-height: 1.5;">分隔与描边。实线分区，虚线分条目</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 日序色带：签名元素 -->
+  <div style="margin-top: 34px; padding: 22px 24px; border-radius: 16px; background: #FBF8F1; border: 1px solid #E6DDC6;">
+    <div style="display: flex; align-items: baseline; gap: 10px;">
+      <span style="font-size: 16px; font-weight: 700; letter-spacing: 1px;">日序色带</span>
+      <span style="font-size: 12px; color: #B23A2F; font-weight: 700;">签名元素</span>
+    </div>
+    <div style="margin-top: 8px; font-size: 12px; color: #6A6046; line-height: 1.6;">
+      第几天 → 一个颜色。这个颜色同时出现在时间线竖轨、地图 marker、预算分类条、攻略 Day 卡。
+      它编码信息而不是装饰——看到蓝就知道是第三天，不用读字。
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; margin-top: 16px;">
+      <div style="display: flex; flex-direction: column; gap: 6px;"><div style="height: 8px; border-radius: 99px; background: #C2603E;"></div><div style="font-size: 11px; color: #6A6046;">D1 #C2603E</div></div>
+      <div style="display: flex; flex-direction: column; gap: 6px;"><div style="height: 8px; border-radius: 99px; background: #3F6B52;"></div><div style="font-size: 11px; color: #6A6046;">D2 #3F6B52</div></div>
+      <div style="display: flex; flex-direction: column; gap: 6px;"><div style="height: 8px; border-radius: 99px; background: #3C6E8F;"></div><div style="font-size: 11px; color: #6A6046;">D3 #3C6E8F</div></div>
+      <div style="display: flex; flex-direction: column; gap: 6px;"><div style="height: 8px; border-radius: 99px; background: #8A5A9B;"></div><div style="font-size: 11px; color: #6A6046;">D4 #8A5A9B</div></div>
+      <div style="display: flex; flex-direction: column; gap: 6px;"><div style="height: 8px; border-radius: 99px; background: #A8843C;"></div><div style="font-size: 11px; color: #6A6046;">D5 #A8843C</div></div>
+      <div style="display: flex; flex-direction: column; gap: 6px;"><div style="height: 8px; border-radius: 99px; background: #5C6B7A;"></div><div style="font-size: 11px; color: #6A6046;">D6 #5C6B7A</div></div>
+    </div>
+  </div>
+
+  <!-- 字阶 -->
+  <div style="margin-top: 34px;">
+    <div style="display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px;">
+      <span style="font-size: 16px; font-weight: 700; letter-spacing: 1px;">字阶</span>
+      <span style="font-size: 12px; color: #9C8F6F;">七级封顶 · 现状 37 种，其中 179 处小于 11px（最小 8px）</span>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 0; border: 1px solid #E6DDC6; border-radius: 12px; overflow: hidden; background: #FBF8F1;">
+      <div style="display: flex; align-items: baseline; gap: 16px; padding: 12px 18px; border-bottom: 1px dashed #DDD2B6;"><span class="kai" style="width: 130px; font-size: 34px; font-weight: 700; color: #3F6B52;">成都</span><span style="font-size: 12px; color: #9C8F6F;">34 / 楷体 / 目的地名 · 只此一处用楷体</span></div>
+      <div style="display: flex; align-items: baseline; gap: 16px; padding: 12px 18px; border-bottom: 1px dashed #DDD2B6;"><span style="width: 130px; font-size: 26px; font-weight: 700;">页面标题</span><span style="font-size: 12px; color: #9C8F6F;">26 / 700 / 屏级标题</span></div>
+      <div style="display: flex; align-items: baseline; gap: 16px; padding: 12px 18px; border-bottom: 1px dashed #DDD2B6;"><span style="width: 130px; font-size: 20px; font-weight: 700;">区块标题</span><span style="font-size: 12px; color: #9C8F6F;">20 / 700 / Day 标题、卡片头</span></div>
+      <div style="display: flex; align-items: baseline; gap: 16px; padding: 12px 18px; border-bottom: 1px dashed #DDD2B6;"><span style="width: 130px; font-size: 16px;">正文加强</span><span style="font-size: 12px; color: #9C8F6F;">16 / 400 / 输入框、地点名</span></div>
+      <div style="display: flex; align-items: baseline; gap: 16px; padding: 12px 18px; border-bottom: 1px dashed #DDD2B6;"><span style="width: 130px; font-size: 14px;">正文</span><span style="font-size: 12px; color: #9C8F6F;">14 / 400 / 1.75 行高 / 攻略正文下限</span></div>
+      <div style="display: flex; align-items: baseline; gap: 16px; padding: 12px 18px; border-bottom: 1px dashed #DDD2B6;"><span style="width: 130px; font-size: 12px;">操作与标签</span><span style="font-size: 12px; color: #9C8F6F;">12 / 按钮文字、tab、徽标下限</span></div>
+      <div style="display: flex; align-items: baseline; gap: 16px; padding: 12px 18px;"><span style="width: 130px; font-size: 11px; color: #6A6046;">说明与时间</span><span style="font-size: 12px; color: #9C8F6F;"><b style="color:#B23A2F;">11 = 绝对下限</b>，再小一律不做</span></div>
+    </div>
+  </div>
+
+  <!-- 圆角 / 间距 / 图标 -->
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 22px; margin-top: 34px;">
+    <div>
+      <div style="display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px;">
+        <span style="font-size: 16px; font-weight: 700; letter-spacing: 1px;">圆角与间距</span>
+        <span style="font-size: 12px; color: #9C8F6F;">现状 29 种圆角</span>
+      </div>
+      <div style="display: flex; gap: 12px; align-items: flex-end;">
+        <div style="display: flex; flex-direction: column; gap: 6px; align-items: center;"><div style="width: 58px; height: 44px; border-radius: 6px; background: #E3DCC7;"></div><span style="font-size: 11px; color: #6A6046;">6 徽标</span></div>
+        <div style="display: flex; flex-direction: column; gap: 6px; align-items: center;"><div style="width: 58px; height: 44px; border-radius: 10px; background: #E3DCC7;"></div><span style="font-size: 11px; color: #6A6046;">10 卡片</span></div>
+        <div style="display: flex; flex-direction: column; gap: 6px; align-items: center;"><div style="width: 58px; height: 44px; border-radius: 16px; background: #E3DCC7;"></div><span style="font-size: 11px; color: #6A6046;">16 面板</span></div>
+        <div style="display: flex; flex-direction: column; gap: 6px; align-items: center;"><div style="width: 58px; height: 44px; border-radius: 999px; background: #E3DCC7;"></div><span style="font-size: 11px; color: #6A6046;">999 胶囊</span></div>
+      </div>
+      <div style="margin-top: 16px; font-size: 12px; color: #6A6046; line-height: 1.7;">
+        间距只用 <b>4 / 8 / 12 / 16 / 24 / 32</b>。<br>
+        触摸目标最小 <b>44×44</b>——现状有 104 处按钮类高度在 20–39px。
+      </div>
+    </div>
+    <div>
+      <div style="display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px;">
+        <span style="font-size: 16px; font-weight: 700; letter-spacing: 1px;">图标</span>
+        <span style="font-size: 12px; color: #9C8F6F;">线性 SVG · 24px 网格 · 1.6 描边</span>
+      </div>
+      <div style="display: flex; gap: 18px; align-items: flex-start;">
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#241F1B" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M3 12h18"/><circle cx="12" cy="12" r="9"/></svg>
+          <span style="font-size: 11px; color: #6A6046;">新对话</span>
+        </div>
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#241F1B" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4 3 6.5v13L9 17l6 2.5 6-2.5v-13L15 7 9 4z"/><path d="M9 4v13M15 7v12.5"/></svg>
+          <span style="font-size: 11px; color: #6A6046;">行程</span>
+        </div>
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#241F1B" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>
+          <span style="font-size: 11px; color: #6A6046;">历史</span>
+        </div>
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#241F1B" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="9" r="3.2"/><path d="M3.5 19c.6-3.1 2.8-4.8 5.5-4.8s4.9 1.7 5.5 4.8"/><path d="M16.5 6.6a3 3 0 0 1 0 5.4M18.6 14.6c1.6.8 2.7 2.3 3 4.4"/></svg>
+          <span style="font-size: 11px; color: #6A6046;">同游圈</span>
+        </div>
+      </div>
+      <div style="margin-top: 16px; padding: 10px 12px; border-radius: 8px; background: #FBF8F1; border: 1px dashed #DDD2B6; font-size: 11px; color: #6A6046; line-height: 1.7;">
+        现状底栏是 <span style="font-family: -apple-system, sans-serif;">✦ 🗺 ☰ ⌁</span>——四个里 🗺 是彩色 emoji、其余是单色字符，⌁ 没人认得出是同游圈。
+      </div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

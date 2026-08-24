@@ -1,0 +1,116 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; background: #F7F3EA; }
+    .kai { font-family: 'STKaiti','KaiTi','楷体','Songti SC','Noto Serif SC',serif; }
+    a { color: #3F6B52; } a:hover { color: #2C4C39; }
+  </style>
+</helmet>
+
+<div style="width: 390px; height: 844px; box-sizing: border-box; display: flex; flex-direction: column; background: #F7F3EA; color: #241F1B; font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', system-ui, sans-serif; overflow: hidden;">
+
+  <div style="padding: 14px 16px 0;">
+    <div class="kai" style="font-size: 26px; font-weight: 700; letter-spacing: 3px;">同游圈</div>
+    <div style="margin-top: 5px; font-size: 12px; color: #6A6046;">按目的地看别人正在问什么、正在玩什么</div>
+  </div>
+
+  <div style="display: flex; align-items: center; gap: 9px; height: 44px; margin: 14px 16px 0; padding: 0 15px; border-radius: 999px; background: #FFFEFB; border: 1px solid #E3DCC7;">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#9C8F6F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m16.5 16.5 4 4"/></svg>
+    <span style="font-size: 14px; color: #9C8F6F;">搜一个目的地</span>
+  </div>
+
+  <div style="flex-grow: 1; padding: 18px 16px 0; overflow: hidden;">
+
+    <div style="display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 11px;">
+      <span style="font-size: 12px; font-weight: 700; letter-spacing: 2px; color: #6A6046;">正在热聊</span>
+      <span style="font-size: 11px; color: #9C8F6F;">近 30 天</span>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px;">
+      <div style="border-radius: 12px; overflow: hidden; border: 1px solid #E3DCC7;">
+        <div style="position: relative; height: 76px; background: linear-gradient(150deg, #7A9EB8, #3C6E8F);">
+          <span class="kai" style="position: absolute; left: 11px; bottom: 8px; font-size: 20px; font-weight: 700; letter-spacing: 2px; color: #FBF8F1;">大理</span>
+        </div>
+        <div style="padding: 8px 11px 10px; background: #FFFEFB; font-size: 11px; color: #6A6046;">14 条接力</div>
+      </div>
+      <div style="border-radius: 12px; overflow: hidden; border: 1px solid #E3DCC7;">
+        <div style="position: relative; height: 76px; background: linear-gradient(150deg, #C88A6A, #C2603E);">
+          <span class="kai" style="position: absolute; left: 11px; bottom: 8px; font-size: 20px; font-weight: 700; letter-spacing: 2px; color: #FBF8F1;">成都</span>
+        </div>
+        <div style="padding: 8px 11px 10px; background: #FFFEFB; font-size: 11px; color: #6A6046;">9 条接力</div>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 20px;">
+
+      <div style="padding: 14px 15px; border-radius: 14px; background: #FFFEFB; border: 1px solid #E3DCC7;">
+        <div style="display: flex; align-items: center; gap: 9px;">
+          <div style="width: 32px; height: 32px; border-radius: 999px; background: #3C6E8F;"></div>
+          <div style="flex-grow: 1; min-width: 0;">
+            <div style="font-size: 13px; font-weight: 700;">阿泽</div>
+            <div style="font-size: 11px; color: #9C8F6F;">正在大理 · 2 小时前</div>
+          </div>
+          <span style="display: inline-flex; align-items: center; height: 22px; padding: 0 9px; border-radius: 6px; background: #B23A2F; color: #FBF8F1; font-size: 11px; font-weight: 700;">现场</span>
+        </div>
+        <div style="margin-top: 11px; font-size: 14px; line-height: 1.75;">
+          洱海生态廊道南段今天在修，骑行的话从才村码头往北走，别走喜洲那头。
+        </div>
+        <div style="display: flex; gap: 8px; margin-top: 13px;">
+          <div style="display: flex; align-items: center; gap: 5px; height: 32px; padding: 0 12px; border-radius: 999px; background: #F1EEE4;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#3F6B52" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m4.5 12.5 5 5 10-11"/></svg>
+            <span style="font-size: 12px; font-weight: 600; color: #3F6B52;">已验证 6</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 5px; height: 32px; padding: 0 12px; border-radius: 999px; background: #F1EEE4;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6A6046" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 20V10l4.5-7 .8.5A2.5 2.5 0 0 1 13.3 6L12.5 10H19a2 2 0 0 1 2 2.4l-1.4 6A2 2 0 0 1 17.6 20H7z"/><rect x="3" y="10" width="4" height="10" rx="1"/></svg>
+            <span style="font-size: 12px; font-weight: 600; color: #6A6046;">有用 12</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="padding: 14px 15px; border-radius: 14px; background: #FFFEFB; border: 1px solid #E3DCC7;">
+        <div style="display: flex; align-items: center; gap: 9px;">
+          <div style="width: 32px; height: 32px; border-radius: 999px; background: #A8843C;"></div>
+          <div style="flex-grow: 1; min-width: 0;">
+            <div style="font-size: 13px; font-weight: 700;">小满</div>
+            <div style="font-size: 11px; color: #9C8F6F;">准备去成都 · 昨天</div>
+          </div>
+          <span style="display: inline-flex; align-items: center; height: 22px; padding: 0 9px; border-radius: 6px; background: #E3DCC7; color: #6A6046; font-size: 11px; font-weight: 700;">提问</span>
+        </div>
+        <div style="margin-top: 11px; font-size: 14px; line-height: 1.75;">
+          十一带老人去，青城山前山和后山选哪个？走得动但不想爬太陡的。
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); background: #241F1B; padding: 8px 8px 22px; border-radius: 20px 20px 0 0;">
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 8px 0;">
+      <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="#8C8378" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M3 12h18"/><circle cx="12" cy="12" r="9"/></svg>
+      <span style="font-size: 11px; color: #8C8378;">新对话</span>
+    </div>
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 8px 0;">
+      <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="#8C8378" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4 3 6.5v13L9 17l6 2.5 6-2.5v-13L15 7 9 4z"/><path d="M9 4v13M15 7v12.5"/></svg>
+      <span style="font-size: 11px; color: #8C8378;">行程</span>
+    </div>
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 8px 0;">
+      <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="#8C8378" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>
+      <span style="font-size: 11px; color: #8C8378;">历史</span>
+    </div>
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 8px 0;">
+      <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="#F7F3EA" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="9" r="3.2"/><path d="M3.5 19c.6-3.1 2.8-4.8 5.5-4.8s4.9 1.7 5.5 4.8"/><path d="M16.5 6.6a3 3 0 0 1 0 5.4M18.6 14.6c1.6.8 2.7 2.3 3 4.4"/></svg>
+      <span style="font-size: 11px; font-weight: 700; color: #F7F3EA;">同游圈</span>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

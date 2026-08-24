@@ -1,0 +1,120 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; background: #F7F3EA; }
+    .kai { font-family: 'STKaiti','KaiTi','楷体','Songti SC','Noto Serif SC',serif; }
+    a { color: #3F6B52; } a:hover { color: #2C4C39; }
+  </style>
+</helmet>
+
+<div style="width: 390px; height: 844px; box-sizing: border-box; display: flex; flex-direction: column; background: #F7F3EA; color: #241F1B; font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', system-ui, sans-serif; overflow: hidden;">
+
+  <!-- 顶栏 -->
+  <div style="display: flex; align-items: center; gap: 4px; padding: 12px 12px 10px; border-bottom: 1px solid #E3DCC7;">
+    <div style="display: flex; align-items: center; justify-content: center; width: 44px; height: 44px;">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#241F1B" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m14.5 5-7 7 7 7"/></svg>
+    </div>
+    <div style="flex-grow: 1; min-width: 0;">
+      <div style="font-size: 15px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">成都四天 · 两人</div>
+      <div style="font-size: 11px; color: #9C8F6F;">已生成 · 12 条来源</div>
+    </div>
+    <div style="display: flex; align-items: center; justify-content: center; width: 44px; height: 44px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#241F1B" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="5.5" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="12" cy="18.5" r="1.3"/></svg>
+    </div>
+  </div>
+
+  <!-- 消息流 -->
+  <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 16px; padding: 16px 16px 0; overflow: hidden;">
+
+    <!-- 用户 -->
+    <div style="align-self: flex-end; max-width: 78%; padding: 11px 15px; border-radius: 16px 16px 4px 16px; background: #241F1B; color: #F7F3EA; font-size: 14px; line-height: 1.65;">
+      十一想去成都玩四天，两个人，预算六千
+    </div>
+
+    <!-- 思考工作台 -->
+    <div style="padding: 14px 16px; border-radius: 16px; background: #FBF8F1; border: 1px solid #E6DDC6;">
+      <div style="display: flex; align-items: center; gap: 9px;">
+        <div style="width: 7px; height: 7px; border-radius: 999px; background: #3F6B52;"></div>
+        <span style="font-size: 13px; font-weight: 700;">正在整理方案</span>
+        <span style="margin-left: auto; font-size: 11px; color: #9C8F6F;">1:47 · 通常 2–4 分钟</span>
+      </div>
+      <div style="display: flex; gap: 5px; margin-top: 12px;">
+        <div style="flex-grow: 1; height: 3px; border-radius: 999px; background: #3F6B52;"></div>
+        <div style="flex-grow: 1; height: 3px; border-radius: 999px; background: #3F6B52;"></div>
+        <div style="flex-grow: 1; height: 3px; border-radius: 999px; background: #3F6B52;"></div>
+        <div style="flex-grow: 1; height: 3px; border-radius: 999px; background: #E3DCC7;"></div>
+        <div style="flex-grow: 1; height: 3px; border-radius: 999px; background: #E3DCC7;"></div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 7px; margin-top: 12px;">
+        <div style="font-size: 12px; color: #241F1B; line-height: 1.6;">读到「宽窄巷子早上八点前几乎没人」</div>
+        <div style="font-size: 12px; color: #6A6046; line-height: 1.6;">大熊猫基地要提前 7 天抢票</div>
+        <div style="font-size: 12px; color: #9C8F6F; line-height: 1.6;">十一期间青城山前山人流预警</div>
+      </div>
+      <div style="margin-top: 12px; padding-top: 11px; border-top: 1px dashed #DDD2B6; font-size: 11px; color: #9C8F6F; line-height: 1.6;">
+        可以关掉页面，任务在服务器继续跑
+      </div>
+    </div>
+
+    <!-- 攻略正文（Day 卡，左侧日序色轨） -->
+    <div style="border-radius: 16px; background: #FFFEFB; border: 1px solid #E3DCC7; overflow: hidden;">
+      <div style="display: flex;">
+        <div style="width: 4px; background: #C2603E;"></div>
+        <div style="flex-grow: 1; min-width: 0; padding: 14px 16px 16px;">
+          <div style="display: flex; align-items: baseline; gap: 9px;">
+            <span style="font-size: 20px; font-weight: 700;">第一天</span>
+            <span class="kai" style="font-size: 15px; color: #C2603E;">市井慢行</span>
+          </div>
+          <div style="margin-top: 4px; font-size: 11px; color: #9C8F6F;">10 月 1 日 · 步行为主 · 约 6.2 公里</div>
+
+          <div style="height: 104px; margin: 12px 0; border-radius: 10px; background: linear-gradient(155deg, #D9C3A8, #B99B7C);"></div>
+
+          <div style="font-size: 14px; line-height: 1.8; color: #241F1B;">
+            早上先去宽窄巷子，<b>八点前基本没人</b>，拍照和喝早茶都合适。中午在附近吃钟水饺，下午转去人民公园的鹤鸣茶社坐一下午。
+          </div>
+
+          <div style="margin-top: 14px; border: 1px solid #E6DDC6; border-radius: 10px; overflow: hidden;">
+            <div style="display: grid; grid-template-columns: 62px 1fr 62px; background: #F7F3EA; font-size: 11px; font-weight: 700; color: #6A6046;">
+              <div style="padding: 8px 10px;">时间</div>
+              <div style="padding: 8px 10px;">地点</div>
+              <div style="padding: 8px 10px; text-align: right;">人均</div>
+            </div>
+            <div style="display: grid; grid-template-columns: 62px 1fr 62px; border-top: 1px dashed #DDD2B6; font-size: 12px;">
+              <div style="padding: 9px 10px; color: #6A6046;">08:00</div>
+              <div style="padding: 9px 10px;">宽窄巷子</div>
+              <div style="padding: 9px 10px; text-align: right; color: #6A6046;">免费</div>
+            </div>
+            <div style="display: grid; grid-template-columns: 62px 1fr 62px; border-top: 1px dashed #DDD2B6; font-size: 12px;">
+              <div style="padding: 9px 10px; color: #6A6046;">12:00</div>
+              <div style="padding: 9px 10px;">钟水饺（总府路）</div>
+              <div style="padding: 9px 10px; text-align: right; color: #6A6046;">¥28</div>
+            </div>
+            <div style="display: grid; grid-template-columns: 62px 1fr 62px; border-top: 1px dashed #DDD2B6; font-size: 12px;">
+              <div style="padding: 9px 10px; color: #6A6046;">14:30</div>
+              <div style="padding: 9px 10px;">鹤鸣茶社</div>
+              <div style="padding: 9px 10px; text-align: right; color: #6A6046;">¥30</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 输入条 -->
+  <div style="display: flex; align-items: center; gap: 10px; padding: 10px 16px 26px; background: #F7F3EA; border-top: 1px solid #E3DCC7;">
+    <div style="flex-grow: 1; display: flex; align-items: center; height: 44px; padding: 0 16px; border-radius: 999px; background: #FFFEFB; border: 1px solid #E3DCC7; font-size: 14px; color: #9C8F6F;">接着问点什么</div>
+    <div style="display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 999px; background: #241F1B;">
+      <div style="width: 14px; height: 14px; border-radius: 3px; background: #F7F3EA;"></div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

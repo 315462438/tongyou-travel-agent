@@ -49,3 +49,8 @@ backend/*.sqlite3
 # 按 extract.yaml 里登记的 message_id + sha256 拉取。
 backend/evals/samples/*.md
 !backend/evals/samples/README.md
+
+# playwright MCP 抓下来的临时快照，不进仓库
+.playwright-mcp/
+after-mobile.png
+design/xingji/xingji-mobile.html

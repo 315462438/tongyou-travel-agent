@@ -28,7 +28,7 @@ test('single-entry hero returns to quiet travel content instead of a full-screen
   assert.doesNotMatch(home, /<Aurora/)
   assert.match(home, /className="hero-soft-glow"/)
   assert.match(css, /\.hero-soft-glow\s*\{[^}]*radial-gradient[^}]*animation:\s*hero-glow-breathe/s)
-  assert.match(css, /\.hero \.hero-title\s*\{[^}]*linear-gradient\(102deg, #244fc1[^}]*background-size:\s*180%[^}]*font-family:\s*"PingFang SC"[^}]*font-weight:\s*800[^}]*animation:\s*hero-sheen 9s/s)
+  assert.match(css, /\.hero \.hero-title\s*\{[^}]*linear-gradient\(102deg, var\(--x-n12\)[^}]*background-size:\s*180%[^}]*font-family:\s*"PingFang SC"[^}]*font-weight:\s*800[^}]*animation:\s*hero-sheen 9s/s)
   assert.match(css, /\.inspiration-launchpad\.simple\s*\{[^}]*rgba\(117, 136, 230, \.52\)[^}]*0 0 0 4px rgba\(101, 119, 224, \.055\)/s)
   assert.match(css, /\.destination-card\s*\{[^}]*animation:\s*destination-card-rise/s)
   assert.match(css, /prefers-reduced-motion: reduce\)[\s\S]*\.hero \.hero-title \{ animation: none; background-position: 45% center; \}/)
@@ -257,7 +257,7 @@ test('admin 面板展示在线状态，且不在前端重算在线阈值', () =>
   assert.match(home, /人在线/)
   // 阈值只能由服务端判定：前端出现秒数比较就是两端口径漂移的开始
   assert.doesNotMatch(home, /online_window|5 \* 60 \* 1000/)
-  assert.match(css, /\.online-dot\.on \{[^}]*background: #34c759/)
+  assert.match(css, /\.online-dot\.on \{[^}]*background: var\(--x-pine\)/)
 })
 
 test('客服会话：用户入口带红点，admin 面板有标签页与未读徽标', () => {
@@ -266,7 +266,7 @@ test('客服会话：用户入口带红点，admin 面板有标签页与未读�
   assert.match(home, /<SupportChat open=\{showSupport\}/)
   assert.match(home, /unreadTotal > 0 && <b className="support-badge">/)
   assert.match(home, /<AdminSupport \/>/)
-  assert.match(css, /\.support-badge \{[\s\S]*background: #ff3b30/)
+  assert.match(css, /\.support-badge \{[\s\S]*background: var\(--x-cinnabar\)/)
 })
 
 test('客服抽屉打开时暂停未读轮询，避免和消息轮询重复打接口', () => {
@@ -322,7 +322,7 @@ test('统一通知中心：铃铛合并社交与公告未读，并可直达对�
   assert.match(notifications, /\/notifications\/read-all/)
   assert.match(notifications, /平台公告/)
   assert.match(ann, /list\.filter\(\(a\) => !a\.read\)\.map/)
-  assert.match(css, /\.bell-count\s*\{[\s\S]*?background: #ef4b56/)
+  assert.match(css, /\.bell-count\s*\{[\s\S]*?background: var\(--x-cinnabar\)/)
   assert.match(css, /\.notification-panel\s*\{[\s\S]*?position: absolute/)
 })
 

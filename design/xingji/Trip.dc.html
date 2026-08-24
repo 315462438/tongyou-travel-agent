@@ -1,0 +1,129 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; background: #F7F3EA; }
+    .kai { font-family: 'STKaiti','KaiTi','楷体','Songti SC','Noto Serif SC',serif; }
+    a { color: #3F6B52; } a:hover { color: #2C4C39; }
+  </style>
+</helmet>
+
+<div style="width: 390px; height: 844px; box-sizing: border-box; display: flex; flex-direction: column; background: #F7F3EA; color: #241F1B; font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', system-ui, sans-serif; overflow: hidden;">
+
+  <!-- 顶栏 -->
+  <div style="padding: 12px 16px 0;">
+    <div style="display: flex; align-items: center; justify-content: space-between;">
+      <div style="display: flex; align-items: baseline; gap: 10px;">
+        <span class="kai" style="font-size: 26px; font-weight: 700; letter-spacing: 2px;">成都四天</span>
+        <span style="display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 6px; background: #B23A2F; color: #FBF8F1; font-size: 11px; font-weight: 700;">已定</span>
+      </div>
+      <div style="display: flex; align-items: center;">
+        <div style="width: 26px; height: 26px; border-radius: 999px; background: #C2603E;"></div>
+        <div style="width: 26px; height: 26px; margin-left: -8px; border-radius: 999px; background: #3C6E8F; border: 2px solid #F7F3EA;"></div>
+        <div style="display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; margin-left: -8px; border-radius: 999px; background: #E3DCC7; border: 2px solid #F7F3EA; font-size: 11px; font-weight: 700; color: #6A6046;">+2</div>
+      </div>
+    </div>
+    <div style="margin-top: 6px; font-size: 11px; color: #9C8F6F;">10 月 1 日 – 10 月 4 日 · 人均预算 ¥3,000</div>
+  </div>
+
+  <!-- 日期选择 -->
+  <div style="display: flex; gap: 8px; padding: 14px 16px 12px;">
+    <div style="flex-grow: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 0 9px; border-radius: 10px; background: #C2603E;">
+      <span style="font-size: 11px; color: rgba(251,248,241,.75);">10/1</span>
+      <span style="font-size: 13px; font-weight: 700; color: #FBF8F1;">第一天</span>
+    </div>
+    <div style="flex-grow: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 0 9px; border-radius: 10px; background: #FFFEFB; border: 1px solid #E3DCC7;">
+      <span style="font-size: 11px; color: #9C8F6F;">10/2</span>
+      <span style="font-size: 13px; font-weight: 600; color: #6A6046;">第二天</span>
+    </div>
+    <div style="flex-grow: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 0 9px; border-radius: 10px; background: #FFFEFB; border: 1px solid #E3DCC7;">
+      <span style="font-size: 11px; color: #9C8F6F;">10/3</span>
+      <span style="font-size: 13px; font-weight: 600; color: #6A6046;">第三天</span>
+    </div>
+    <div style="flex-grow: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 0 9px; border-radius: 10px; background: #FFFEFB; border: 1px solid #E3DCC7;">
+      <span style="font-size: 11px; color: #9C8F6F;">10/4</span>
+      <span style="font-size: 13px; font-weight: 600; color: #6A6046;">第四天</span>
+    </div>
+  </div>
+
+  <!-- 时间线：左侧日序色轨 -->
+  <div style="flex-grow: 1; padding: 4px 16px 0; overflow: hidden;">
+    <div style="display: flex; gap: 14px;">
+      <div style="width: 3px; border-radius: 999px; background: #C2603E;"></div>
+      <div style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px;">
+
+        <div style="padding: 13px 15px; border-radius: 12px; background: #FFFEFB; border: 1px solid #E3DCC7;">
+          <div style="display: flex; align-items: center; gap: 9px;">
+            <span style="display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 999px; background: #C2603E; color: #FBF8F1; font-size: 11px; font-weight: 700;">1</span>
+            <span style="font-size: 16px; font-weight: 700;">宽窄巷子</span>
+            <span style="margin-left: auto; font-size: 11px; color: #9C8F6F;">08:00</span>
+          </div>
+          <div style="margin-top: 7px; font-size: 12px; color: #6A6046; line-height: 1.6;">八点前基本没人，拍照和喝早茶都合适</div>
+          <div style="display: flex; gap: 8px; margin-top: 11px;">
+            <div style="display: flex; align-items: center; gap: 5px; height: 32px; padding: 0 12px; border-radius: 999px; background: #F1EEE4;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#3F6B52" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 18-8-8 18-2-8-8-2z"/></svg>
+              <span style="font-size: 12px; font-weight: 600; color: #3F6B52;">导航</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 5px; height: 32px; padding: 0 12px; border-radius: 999px; background: #F1EEE4;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6A6046" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-3.2-6.4"/><path d="M20 4v5h-5"/></svg>
+              <span style="font-size: 12px; font-weight: 600; color: #6A6046;">换一个</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 8px; padding-left: 2px; font-size: 11px; color: #9C8F6F;">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9C8F6F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5v17"/><path d="m7 15.5 5 5 5-5"/></svg>
+          步行 18 分钟 · 1.4 公里
+        </div>
+
+        <div style="padding: 13px 15px; border-radius: 12px; background: #FFFEFB; border: 1px solid #E3DCC7;">
+          <div style="display: flex; align-items: center; gap: 9px;">
+            <span style="display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 999px; background: #C2603E; color: #FBF8F1; font-size: 11px; font-weight: 700;">2</span>
+            <span style="font-size: 16px; font-weight: 700;">钟水饺（总府路）</span>
+            <span style="margin-left: auto; font-size: 11px; color: #9C8F6F;">12:00</span>
+          </div>
+          <div style="margin-top: 7px; font-size: 12px; color: #6A6046; line-height: 1.6;">人均 ¥28 · 排队约 15 分钟</div>
+        </div>
+
+        <div style="padding: 13px 15px; border-radius: 12px; background: #FFFEFB; border: 1px dashed #CDBF9C;">
+          <div style="display: flex; align-items: center; gap: 9px;">
+            <span style="display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 999px; background: #E3DCC7; color: #6A6046; font-size: 11px; font-weight: 700;">3</span>
+            <span style="font-size: 16px; font-weight: 600; color: #6A6046;">鹤鸣茶社</span>
+            <span style="margin-left: auto; font-size: 11px; color: #9C8F6F;">14:30</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- 分栏 tab -->
+  <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; padding: 10px 16px 26px; background: #F7F3EA; border-top: 1px solid #E3DCC7;">
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 7px 0; border-radius: 10px; background: #241F1B;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F7F3EA" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+      <span style="font-size: 11px; font-weight: 700; color: #F7F3EA;">行程</span>
+    </div>
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 7px 0;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6A6046" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4 3 6.5v13L9 17l6 2.5 6-2.5v-13L15 7 9 4z"/><path d="M9 4v13M15 7v12.5"/></svg>
+      <span style="font-size: 11px; color: #6A6046;">地图</span>
+    </div>
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 7px 0;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6A6046" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="M16.5 7H10a2.5 2.5 0 0 0 0 5h4a2.5 2.5 0 0 1 0 5H7"/></svg>
+      <span style="font-size: 11px; color: #6A6046;">预算</span>
+    </div>
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 7px 0;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6A6046" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 0 1-11.6 7.1L4 20l1-4.2A8 8 0 1 1 20 12z"/></svg>
+      <span style="font-size: 11px; color: #6A6046;">群聊</span>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>
