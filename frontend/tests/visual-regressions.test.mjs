@@ -157,6 +157,21 @@ test('trip import exposes hotel candidates and unambiguous spending labels', () 
   assert.match(home, /正在提取地点、酒店与预算/)
 })
 
+test('trip export preserves note line breaks and cost entry supports currency conversion', () => {
+  assert.match(trips, /function multilineDocHtml/)
+  assert.ok(trips.includes("replace(/\\r\\n|\\r|\\n/g, '<br />')"))
+  assert.match(trips, /function docxTextWithBreaks/)
+  assert.match(trips, /<w:br\/>/)
+  assert.match(trips, /multilineDocHtml\(stop\.note\)/)
+  assert.match(trips, /docxTextWithBreaks\(text\)/)
+  assert.match(trips, /const COST_CURRENCIES = \[/)
+  assert.match(trips, /code: 'MYR'/)
+  assert.match(trips, /code: 'USD'/)
+  assert.match(trips, /convertedTicketPrice\(ticket, ticketCurrency\)/)
+  assert.match(trips, /ticketConversionPreview\(ticket, ticketCurrency\)/)
+  assert.match(css, /\.trip-cost-inputs\s*\{[^}]*grid-template-columns/s)
+})
+
 test('thinking workspace keeps staged motion, stop control, and reduced-motion fallback', () => {
   assert.match(home, /className="thinking-workspace"/)
   assert.match(home, /THINKING_STAGES\.map/)

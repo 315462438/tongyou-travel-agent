@@ -248,9 +248,15 @@ class DraftFood(BaseModel):
     """攻略导入时的美食推荐。"""
 
     name: str
+    day: int | None = None
+    meal_type: str = "待定"
     category: str = "正餐"  # 小吃/正餐/甜点
     city: str = ""
+    address: str = ""
     price: float | None = None  # 人均参考价
+    rating: float | None = None
+    business_hours: str = ""
+    recommend_food: list[str] = []
     note: str = ""
 
 

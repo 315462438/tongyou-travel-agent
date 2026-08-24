@@ -90,18 +90,29 @@ def trip(client):
 
 def test_food_crud_and_top_ordering(client, trip):
     c, _ = client
-    c.post(f"/api/trips/{trip}/foods", json={"name": "第一楼灌汤包", "category": "正餐", "price": 45})
+    c.post(f"/api/trips/{trip}/foods", json={
+        "name": "第一楼灌汤包", "day": 1, "meal_type": "午餐", "category": "正餐",
+        "price": 45, "rating": 4.7, "address": "鼓楼附近",
+        "business_hours": "10:00-21:00", "recommend_food": ["灌汤包", "鲤鱼焙面"],
+        "is_favorite": True,
+    })
     top = c.post(f"/api/trips/{trip}/foods",
                  json={"name": "黄家老店", "category": "小吃", "is_top": True}).json()
     rows = c.get(f"/api/trips/{trip}/foods").json()
     assert [r["name"] for r in rows] == ["黄家老店", "第一楼灌汤包"]  # TOP 置顶
     assert rows[0]["is_top"] is True and rows[1]["price"] == 45
+    assert rows[1]["day"] == 1 and rows[1]["meal_type"] == "午餐"
+    assert rows[1]["rating"] == 4.7 and rows[1]["address"] == "鼓楼附近"
+    assert rows[1]["business_hours"] == "10:00-21:00"
+    assert rows[1]["recommend_food"] == ["灌汤包", "鲤鱼焙面"]
+    assert rows[1]["is_favorite"] is True
     assert rows[0]["city"] == "开封"  # 未填城市时回落行程目的地
 
     c.patch(f"/api/trips/{trip}/foods/{top['id']}", json={"name": "黄家老店", "category": "小吃",
-                                                          "note": "排队久", "is_top": False})
+                                                          "note": "排队久", "checked_in": True, "is_top": False})
     rows = c.get(f"/api/trips/{trip}/foods").json()
     assert [r["name"] for r in rows] == ["第一楼灌汤包", "黄家老店"]  # 取消 TOP 后回到时间序
+    assert rows[1]["checked_in"] is True and rows[1]["status"] == "checked_in"
 
     assert c.delete(f"/api/trips/{trip}/foods/{top['id']}").status_code == 200
     assert len(c.get(f"/api/trips/{trip}/foods").json()) == 1

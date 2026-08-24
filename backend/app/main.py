@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from app.api.agent_api import router as agent_router
 from app.api.auth_api import admin_router, router as auth_router
 from app.api.chat_api import router as chat_router
+from app.api.fx_api import router as fx_router
 from app.api.img_api import router as img_router
 from app.api.immersive_api import router as immersive_router
 from app.api.memory_api import router as memory_router
@@ -89,6 +90,7 @@ app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(agent_router)
 app.include_router(chat_router)
+app.include_router(fx_router)
 app.include_router(memory_router)
 app.include_router(skill_router)
 app.include_router(sandbox_artifacts_router)

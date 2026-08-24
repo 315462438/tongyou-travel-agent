@@ -8,6 +8,8 @@
 写操作复用 `_log_event` 落进已有的动态时间线。
 """
 
+import json
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import delete, select
@@ -27,6 +29,8 @@ from app.db.session import get_db
 router = APIRouter(prefix="/api/trips", tags=["trips"])
 
 FOOD_CATEGORIES = ("小吃", "正餐", "甜点", "饮品", "其他")
+FOOD_MEALS = ("早餐", "午餐", "下午茶", "晚餐", "夜宵", "待定")
+FOOD_STATUSES = ("planned", "checked_in")
 PACKING_STATES = ("packed", "unpacked", "na")
 TIP_LEVELS = ("important", "notice")
 
@@ -39,19 +43,81 @@ def _clean(text: str, limit: int) -> str:
 
 class FoodBody(BaseModel):
     name: str
+    day: int | None = None
+    meal_type: str = "待定"
     category: str = "正餐"
     city: str = ""
+    address: str = ""
     price: float | None = None
+    rating: float | None = None
+    business_hours: str = ""
+    recommend_food: list[str] = []
     note: str = ""
+    status: str = "planned"
+    is_favorite: bool = False
+    checked_in: bool = False
     is_top: bool = False
+
+
+def _clean_food_list(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for raw in items or []:
+        item = _clean(str(raw), 40)
+        if item and item not in seen:
+            seen.add(item)
+            out.append(item)
+        if len(out) >= 12:
+            break
+    return out
+
+
+def _food_recommendations(f: TravelTripFood) -> list[str]:
+    try:
+        data = json.loads(f.recommend_food_json or "[]")
+    except Exception:
+        data = []
+    if not isinstance(data, list):
+        return []
+    return [str(x) for x in data if str(x).strip()][:12]
 
 
 def _food_dict(f: TravelTripFood, users: dict) -> dict:
     return {
-        "id": f.id, "name": f.name, "category": f.category, "city": f.city,
-        "price": f.price, "note": f.note, "is_top": f.is_top,
+        "id": f.id, "name": f.name, "day": f.day, "meal_type": f.meal_type or "待定",
+        "category": f.category, "city": f.city, "address": f.address or "",
+        "price": f.price, "rating": f.rating, "business_hours": f.business_hours or "",
+        "recommend_food": _food_recommendations(f), "note": f.note,
+        "status": f.status or "planned", "is_favorite": bool(f.is_favorite),
+        "checked_in": bool(f.checked_in), "is_top": f.is_top,
         "created_by": users.get(f.created_by, ""),
     }
+
+
+def _apply_food_body(f: TravelTripFood, body: FoodBody, trip_destination: str = "") -> None:
+    name = _clean(body.name, 128)
+    if not name:
+        raise HTTPException(400, "写一下店名或菜名")
+    cat = body.category.strip() or "正餐"
+    meal = body.meal_type.strip() or "待定"
+    status = body.status.strip() or "planned"
+    f.name = name
+    f.day = body.day if body.day and body.day > 0 else None
+    f.meal_type = meal if meal in FOOD_MEALS else _clean(meal, 16)
+    f.category = cat if cat in FOOD_CATEGORIES else _clean(cat, 24)
+    f.city = _clean(body.city, 64) or trip_destination
+    f.address = _clean(body.address, 200)
+    f.price = round(body.price, 2) if body.price and body.price > 0 else None
+    f.rating = round(body.rating, 1) if body.rating and 0 < body.rating <= 5 else None
+    f.business_hours = _clean(body.business_hours, 80)
+    f.recommend_food_json = json.dumps(_clean_food_list(body.recommend_food), ensure_ascii=False)
+    f.note = _clean(body.note, 500)
+    f.status = status if status in FOOD_STATUSES else "planned"
+    f.is_favorite = bool(body.is_favorite)
+    f.checked_in = bool(body.checked_in) or f.status == "checked_in"
+    if f.checked_in:
+        f.status = "checked_in"
+    f.is_top = bool(body.is_top)
 
 
 @router.get("/{trip_id}/foods")
@@ -71,19 +137,12 @@ def list_foods(trip_id: str, db: Session = Depends(get_db),
 def add_food(trip_id: str, body: FoodBody, db: Session = Depends(get_db),
              user: TravelUser = Depends(get_current_user)):
     trip = _member(db, trip_id, user)
-    name = _clean(body.name, 128)
-    if not name:
-        raise HTTPException(400, "写一下店名或菜名")
-    cat = body.category.strip() or "正餐"
     f = TravelTripFood(
-        trip_id=trip_id, name=name,
-        category=cat if cat in FOOD_CATEGORIES else _clean(cat, 24),
-        city=_clean(body.city, 64) or (trip.destination or ""),
-        price=round(body.price, 2) if body.price and body.price > 0 else None,
-        note=_clean(body.note, 200), is_top=bool(body.is_top), created_by=user.id,
+        trip_id=trip_id, created_by=user.id,
     )
+    _apply_food_body(f, body, trip.destination or "")
     db.add(f)
-    _log_event(db, trip_id, user, f"添加美食「{name}」")
+    _log_event(db, trip_id, user, f"添加美食「{f.name}」")
     _touch(db, trip)
     db.commit()
     return _food_dict(f, _trip_users(db, trip_id))
@@ -96,14 +155,8 @@ def update_food(trip_id: str, food_id: str, body: FoodBody, db: Session = Depend
     f = db.get(TravelTripFood, food_id)
     if f is None or f.trip_id != trip_id:
         raise HTTPException(404, "记录不存在")
-    name = _clean(body.name, 128)
-    if not name:
-        raise HTTPException(400, "写一下店名或菜名")
-    f.name, f.city, f.note, f.is_top = name, _clean(body.city, 64), _clean(body.note, 200), bool(body.is_top)
-    cat = body.category.strip() or "正餐"
-    f.category = cat if cat in FOOD_CATEGORIES else _clean(cat, 24)
-    f.price = round(body.price, 2) if body.price and body.price > 0 else None
-    _log_event(db, trip_id, user, f"修改美食「{name}」")
+    _apply_food_body(f, body, trip.destination or "")
+    _log_event(db, trip_id, user, f"修改美食「{f.name}」")
     _touch(db, trip)
     db.commit()
     return _food_dict(f, _trip_users(db, trip_id))

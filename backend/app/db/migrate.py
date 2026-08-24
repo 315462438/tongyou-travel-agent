@@ -184,6 +184,16 @@ def migrate_and_bootstrap(engine: Engine) -> None:
             ("travel_trip_packing_state", "updated_by", "VARCHAR(32) DEFAULT ''"),
             # Phase 87b：记账支持「花费日期」（补记昨天的账很常见）。同上，表已存在必须显式加列。
             ("travel_trip_expense", "spent_at", "VARCHAR(10) DEFAULT ''"),
+            # Phase 96：美食模块升级为按天/餐次的旅行执行清单，不接地图坐标。
+            ("travel_trip_food", "day", "INTEGER"),
+            ("travel_trip_food", "meal_type", "VARCHAR(16) DEFAULT '待定'"),
+            ("travel_trip_food", "address", "VARCHAR(200) DEFAULT ''"),
+            ("travel_trip_food", "rating", "FLOAT"),
+            ("travel_trip_food", "business_hours", "VARCHAR(80) DEFAULT ''"),
+            ("travel_trip_food", "recommend_food_json", "TEXT"),
+            ("travel_trip_food", "status", "VARCHAR(16) DEFAULT 'planned'"),
+            ("travel_trip_food", "is_favorite", "BOOLEAN DEFAULT FALSE"),
+            ("travel_trip_food", "checked_in", "BOOLEAN DEFAULT FALSE"),
             # Phase 91 surface 投影：压缩改为「追加遮蔽事件」而非覆盖会话字段。
             # 老规矩——表已存在，create_all 不会加列，必须显式写在这里。
             ("travel_message", "surface_op", "VARCHAR(12) DEFAULT 'append'"),

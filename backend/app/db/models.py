@@ -594,11 +594,20 @@ class TravelTripFood(Base):
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
     trip_id: Mapped[str] = mapped_column(String(32), index=True)
+    day: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     name: Mapped[str] = mapped_column(String(128))
+    meal_type: Mapped[str] = mapped_column(String(16), default="待定")  # 早餐/午餐/下午茶/晚餐/夜宵/待定
     category: Mapped[str] = mapped_column(String(24), default="正餐")  # 小吃/正餐/甜点/自定义
     city: Mapped[str] = mapped_column(String(64), default="")
+    address: Mapped[str] = mapped_column(String(200), default="")
     price: Mapped[float | None] = mapped_column(Float, nullable=True)  # 人均参考价
-    note: Mapped[str] = mapped_column(String(200), default="")
+    rating: Mapped[float | None] = mapped_column(Float, nullable=True)
+    business_hours: Mapped[str] = mapped_column(String(80), default="")
+    recommend_food_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    note: Mapped[str] = mapped_column(String(500), default="")
+    status: Mapped[str] = mapped_column(String(16), default="planned")  # planned/checked_in
+    is_favorite: Mapped[bool] = mapped_column(Boolean, default=False)
+    checked_in: Mapped[bool] = mapped_column(Boolean, default=False)
     is_top: Mapped[bool] = mapped_column(Boolean, default=False)  # TOP 排行徽章
     created_by: Mapped[str] = mapped_column(String(32), default="")
     created_at: Mapped[datetime] = mapped_column(

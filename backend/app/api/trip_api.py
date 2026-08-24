@@ -809,7 +809,7 @@ IMPORT_SUMMARY_SYSTEM = (
     "- budget_items：若攻略明确写出预算/花费拆分，逐项填 {category, amount 金额数字}，"
     "category 用 住宿/交通/餐饮/门票/大交通/其他（大交通=城际机票火车，交通=市内通勤）；"
     "攻略没写预算就留空数组，不要估算编造。\n"
-    "- foods：若攻略有美食推荐/必吃清单章节，提取每个美食项为 {name,category,city,price,note}。"
+    "- foods：若攻略有美食推荐/必吃清单章节，提取每个美食项为 {name,day,meal_type,category,city,address,price,rating,business_hours,recommend_food,note}。"
     "category 只能是 小吃/正餐/甜点 之一，price 是人均价格（元），note 是简短描述（最多30字）。"
     "**最多提取 15 项**，挑最值得吃的；没有美食章节就留空数组。\n"
     "- tips：若攻略有避坑提示/注意事项章节，提取每条提示为 {level,content}。"
@@ -1400,14 +1400,27 @@ def _run_import(trip_id: str, guide_md: str, only_days: set[int] | None = None) 
                 name = (food.name or "").strip()
                 if not name:
                     continue
-                category = food.category if food.category in ("小吃", "正餐", "甜点") else "正餐"
+                category = food.category if food.category in ("小吃", "正餐", "甜点", "饮品", "其他") else "正餐"
+                meal_type = food.meal_type if food.meal_type in ("早餐", "午餐", "下午茶", "晚餐", "夜宵", "待定") else "待定"
+                recommend_food = []
+                for item in food.recommend_food or []:
+                    dish = (item or "").strip()
+                    if dish and dish not in recommend_food:
+                        recommend_food.append(dish[:40])
                 db.add(TravelTripFood(
                     trip_id=trip_id,
+                    day=food.day if food.day and food.day > 0 else None,
                     name=name[:128],
+                    meal_type=meal_type,
                     category=category,
                     city=(food.city or draft.destination or "").strip()[:64],
+                    address=(food.address or "").strip()[:200],
                     price=food.price if food.price and food.price > 0 else None,
-                    note=(food.note or "").strip()[:200],
+                    rating=round(food.rating, 1) if food.rating and 0 < food.rating <= 5 else None,
+                    business_hours=(food.business_hours or "").strip()[:80],
+                    recommend_food_json=_json.dumps(recommend_food[:12], ensure_ascii=False),
+                    note=(food.note or "").strip()[:500],
+                    status="planned",
                     created_by="import",
                 ))
 
@@ -2407,8 +2420,32 @@ async def trip_hotels(trip_id: str, city: str = "",
     except Exception:  # noqa: BLE001
         logger.warning("search_hotels failed for %s", target, exc_info=True)
         hotels = []
+    notice = "海外酒店暂不使用高德国内数据，请从来源攻略或携程选择。" if overseas else ""
+    if overseas and not hotels and trip.hotel_recommendations_json:
+        try:
+            candidates = json.loads(trip.hotel_recommendations_json)
+        except ValueError:
+            candidates = []
+        target_key = target.lower()
+        matched = [
+            h for h in candidates
+            if target_key in str(h.get("city", "")).lower()
+            or str(h.get("city", "")).lower() in target_key
+            or target_key in str(h.get("hotel", "")).lower()
+        ]
+        if not matched:
+            matched = candidates
+        hotels = [{
+            "name": str(h.get("hotel") or h.get("name") or "").strip(),
+            "rating": "",
+            "address": str(h.get("note") or h.get("city") or "").strip(),
+            "location": str(h.get("hotel") or h.get("name") or h.get("city") or target).strip(),
+            "source": str(h.get("source") or "攻略推荐").strip(),
+            "price": h.get("price"),
+        } for h in matched if str(h.get("hotel") or h.get("name") or "").strip()]
+        notice = "海外城市已改用攻略里提取的候选酒店。"
     return {"city": target, "hotels": hotels,
-            "notice": "海外酒店暂不使用高德国内数据，请从来源攻略或携程选择。" if overseas else ""}
+            "notice": notice}
 
 
 @router.get("/{trip_id}/day-cities")

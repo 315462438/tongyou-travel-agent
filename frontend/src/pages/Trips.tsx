@@ -281,9 +281,159 @@ function escapeDocXml(value: unknown): string {
   return escapeDocHtml(value).replace(/&#39;/g, '&apos;')
 }
 
+function multilineDocHtml(value: unknown): string {
+  return escapeDocHtml(value).replace(/\r\n|\r|\n/g, '<br />')
+}
+
+function docxTextWithBreaks(value: unknown): string {
+  const lines = String(value ?? '').split(/\r\n|\r|\n/)
+  return lines.map((line, idx) => `${idx ? '<w:br/>' : ''}<w:t xml:space="preserve">${escapeDocXml(line)}</w:t>`).join('')
+}
+
 function safeDocFilename(name: string, suffix: string): string {
   const base = (name || '协同行程').replace(/[\\/:*?"<>|\n\r\t]/g, '_').trim() || '协同行程'
   return `${base}_${suffix}`
+}
+
+type CostCurrency = {
+  code: string
+  name: string
+  label: string
+  shortLabel: string
+  symbol: string
+  rateToCny: number
+}
+
+const DEFAULT_COST_CURRENCIES: CostCurrency[] = [
+  { code: 'CNY', name: '人民币', label: '人民币 CNY', shortLabel: 'CNY', symbol: '¥', rateToCny: 1 },
+  { code: 'MYR', name: '马币', label: '马币 MYR', shortLabel: 'MYR', symbol: 'RM', rateToCny: 1.55 },
+  { code: 'USD', name: '美元', label: '美元 USD', shortLabel: 'USD', symbol: '$', rateToCny: 7.2 },
+  { code: 'EUR', name: '欧元', label: '欧元 EUR', shortLabel: 'EUR', symbol: '€', rateToCny: 7.85 },
+  { code: 'GBP', name: '英镑', label: '英镑 GBP', shortLabel: 'GBP', symbol: '£', rateToCny: 9.15 },
+  { code: 'JPY', name: '日元', label: '日元 JPY', shortLabel: 'JPY', symbol: '¥', rateToCny: 0.049 },
+  { code: 'KRW', name: '韩元', label: '韩元 KRW', shortLabel: 'KRW', symbol: '₩', rateToCny: 0.0052 },
+  { code: 'THB', name: '泰铢', label: '泰铢 THB', shortLabel: 'THB', symbol: '฿', rateToCny: 0.205 },
+  { code: 'SGD', name: '新币', label: '新币 SGD', shortLabel: 'SGD', symbol: 'S$', rateToCny: 5.35 },
+  { code: 'HKD', name: '港币', label: '港币 HKD', shortLabel: 'HKD', symbol: 'HK$', rateToCny: 0.92 },
+  { code: 'TWD', name: '台币', label: '台币 TWD', shortLabel: 'TWD', symbol: 'NT$', rateToCny: 0.225 },
+  { code: 'AUD', name: '澳元', label: '澳元 AUD', shortLabel: 'AUD', symbol: 'A$', rateToCny: 4.7 },
+  { code: 'CAD', name: '加元', label: '加元 CAD', shortLabel: 'CAD', symbol: 'C$', rateToCny: 5.25 },
+  { code: 'IDR', name: '印尼盾', label: '印尼盾 IDR', shortLabel: 'IDR', symbol: 'Rp', rateToCny: 0.00044 },
+  { code: 'VND', name: '越南盾', label: '越南盾 VND', shortLabel: 'VND', symbol: '₫', rateToCny: 0.00028 },
+]
+
+type CostCurrencyCode = string
+
+type TripConfirmAction = {
+  title: string
+  message?: string
+  confirmText?: string
+  danger?: boolean
+  onConfirm: () => Promise<void> | void
+}
+
+const TRIP_TRANSPORT_OPTIONS = [
+  { value: '步行', label: '🚶 步行' },
+  { value: '打车', label: '🚗 打车' },
+  { value: '地铁', label: '🚇 地铁' },
+  { value: '公交', label: '🚌 公交' },
+  { value: '飞机', label: '✈️ 飞机' },
+  { value: '高铁', label: '🚄 高铁' },
+]
+
+function costCurrencyByCode(code: CostCurrencyCode, currencies: CostCurrency[] = DEFAULT_COST_CURRENCIES) {
+  return currencies.find((item) => item.code === code) || currencies[0] || DEFAULT_COST_CURRENCIES[0]
+}
+
+function convertedTicketPrice(value: string, currency: CostCurrencyCode, currencies: CostCurrency[] = DEFAULT_COST_CURRENCIES): number {
+  if (value.trim() === '') return 0
+  const amount = Math.max(0, Number(value) || 0)
+  const rate = costCurrencyByCode(currency, currencies).rateToCny
+  return Math.round(amount * rate)
+}
+
+function ticketConversionPreview(value: string, currency: CostCurrencyCode, currencies: CostCurrency[] = DEFAULT_COST_CURRENCIES, source = 'fallback'): string {
+  if (value.trim() === '') return '免费或不填写'
+  const amount = Math.max(0, Number(value) || 0)
+  const item = costCurrencyByCode(currency, currencies)
+  const rateHint = source === 'frankfurter' ? '实时汇率' : '参考汇率'
+  if (!amount) return '约 ¥0'
+  if (currency === 'CNY') return `按人民币保存：¥${Math.round(amount)}`
+  return `${item.symbol}${amount} ≈ ¥${convertedTicketPrice(value, currency, currencies)}（${rateHint}）`
+}
+
+function durationLabel(start: string, end: string) {
+  if (!start || !end) return '待定'
+  const [sh, sm] = start.split(':').map(Number)
+  const [eh, em] = end.split(':').map(Number)
+  if ([sh, sm, eh, em].some(Number.isNaN)) return '待定'
+  const minutes = (eh * 60 + em) - (sh * 60 + sm)
+  if (minutes <= 0) return '待定'
+  const hours = Math.floor(minutes / 60)
+  const rest = minutes % 60
+  if (!hours) return `${rest} 分钟`
+  return rest ? `${hours} 小时 ${rest} 分钟` : `${hours} 小时`
+}
+
+function TripConfirmDialog({ action, onClose }: { action: TripConfirmAction | null; onClose: () => void }) {
+  if (!action) return null
+  return createPortal(
+    <div className="modal-mask trip-confirm-mask" onClick={onClose}>
+      <div className="modal trip-confirm-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="trip-confirm-head">
+          <span className={`trip-confirm-icon${action.danger ? ' danger' : ''}`}>{action.danger ? '!' : '✓'}</span>
+          <div>
+            <strong>{action.title}</strong>
+            {action.message && <p>{action.message}</p>}
+          </div>
+        </div>
+        <div className="trip-confirm-actions">
+          <button className="trip-btn" onClick={onClose}>取消</button>
+          <button
+            className={`trip-btn ${action.danger ? 'danger' : 'primary'}`}
+            onClick={async () => {
+              const pending = action
+              onClose()
+              await pending.onConfirm()
+            }}
+          >
+            {action.confirmText || '确定'}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
+function useCostCurrencies() {
+  const [currencies, setCurrencies] = useState<CostCurrency[]>(DEFAULT_COST_CURRENCIES)
+  const [source, setSource] = useState('fallback')
+  useEffect(() => {
+    let cancelled = false
+    fetch(`${API}/fx/rates`)
+      .then((response) => response.ok ? response.json() : null)
+      .then((data) => {
+        if (cancelled || !data?.currencies?.length) return
+        const next = data.currencies
+          .map((item: { code: string; name: string; symbol: string; rate_to_cny: number }) => ({
+            code: item.code,
+            name: item.name,
+            label: `${item.name} ${item.code}`,
+            shortLabel: item.code,
+            symbol: item.symbol,
+            rateToCny: Number(item.rate_to_cny) || costCurrencyByCode(item.code).rateToCny,
+          }))
+          .filter((item: CostCurrency) => item.code && item.rateToCny > 0)
+        if (next.length) {
+          setCurrencies(next)
+          setSource(data.source || 'fallback')
+        }
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
+  return { currencies, source }
 }
 
 function documentTimeRange(stop: TripStop, next?: TripStop): string {
@@ -672,7 +822,7 @@ function buildTripShareHtml(
           <span class="timeline-dot"></span>
           <div class="timeline-body">
             <div class="stop-name">${escapeDocHtml(normalizeExportStopName(stop.name))}</div>
-            ${stop.note ? `<div class="note">${escapeDocHtml(stop.note)}</div>` : ''}
+            ${stop.note ? `<div class="note">${multilineDocHtml(stop.note)}</div>` : ''}
             ${meta.length ? `<div class="meta-row">${meta.map((m) => `<span class="meta-pill">${escapeDocHtml(m)}</span>`).join('')}</div>` : ''}
           </div>
         </div>
@@ -705,7 +855,7 @@ function buildTripShareHtml(
               <div class="food-index">${String(idx + 1).padStart(2, '0')}</div>
               <div class="card-title">${escapeDocHtml(normalizeExportStopName(f.name))}</div>
               ${f.transport || f.ticket_price ? `<div class="card-meta">${[f.transport, f.ticket_price ? `¥${f.ticket_price}/人` : ''].filter(Boolean).map(escapeDocHtml).join(' · ')}</div>` : ''}
-              ${f.note ? `<div class="note">${escapeDocHtml(f.note)}</div>` : ''}
+              ${f.note ? `<div class="note">${multilineDocHtml(f.note)}</div>` : ''}
             </div>
           `).join('')}
         </div>
@@ -721,7 +871,10 @@ function buildTripShareHtml(
                   <span class="food-line-index">${String(idx + 1).padStart(2, '0')}</span>
                   <span class="food-line-main">
                     <b>${escapeDocHtml(f.name)}</b>
-                    ${[f.is_top ? '推荐' : '', f.category, f.price ? `¥${f.price}/人` : '', f.note].filter(Boolean).length ? `<span class="food-line-meta"> · ${[f.is_top ? '推荐' : '', f.category, f.price ? `¥${f.price}/人` : '', f.note].filter(Boolean).map(escapeDocHtml).join(' · ')}</span>` : ''}
+                    ${[f.meal_type && f.meal_type !== '待定' ? f.meal_type : '', f.category, f.price ? `¥${f.price}/人` : '', f.rating ? `评分 ${f.rating}` : '', f.business_hours].filter(Boolean).length ? `<span class="food-line-meta"> · ${[f.meal_type && f.meal_type !== '待定' ? f.meal_type : '', f.category, f.price ? `¥${f.price}/人` : '', f.rating ? `评分 ${f.rating}` : '', f.business_hours].filter(Boolean).map(escapeDocHtml).join(' · ')}</span>` : ''}
+                    ${f.address ? `<span class="food-line-meta">${escapeDocHtml(f.address)}</span>` : ''}
+                    ${f.recommend_food?.length ? `<span class="food-line-meta">推荐菜：${f.recommend_food.map(escapeDocHtml).join('、')}</span>` : ''}
+                    ${f.note ? `<span class="food-line-meta">${multilineDocHtml(f.note)}</span>` : ''}
                   </span>
                 </li>
               `).join('')}
@@ -742,7 +895,7 @@ function buildTripShareHtml(
               <div>
                 <div class="card-title">${escapeDocHtml(stay.name)}</div>
                 <div class="card-meta">${[stay.city, `${stay.nights} NIGHTS`].filter(Boolean).map(escapeDocHtml).join(' · ')}</div>
-                ${stay.note ? `<div class="note">${escapeDocHtml(stay.note)}</div>` : ''}
+                ${stay.note ? `<div class="note">${multilineDocHtml(stay.note)}</div>` : ''}
               </div>
               <div class="stay-date">${escapeDocHtml(stay.startDate || `DAY ${stay.startDay}`)}${stay.endDate && stay.endDate !== stay.startDate ? ` — ${escapeDocHtml(stay.endDate)}` : ''}</div>
             </div>
@@ -762,7 +915,7 @@ function buildTripShareHtml(
               <div class="note-index">${String(idx + 1).padStart(2, '0')}</div>
               <div>
                 <div class="note-title">${escapeDocHtml(exportNoteTitle(t.content))}</div>
-                <div class="note">${escapeDocHtml(exportNoteBody(t.content))}</div>
+                <div class="note">${multilineDocHtml(exportNoteBody(t.content))}</div>
               </div>
             </div>
           `).join('')}
@@ -897,7 +1050,7 @@ function buildTripDocxBlob(
       </w:pPr>
       <w:r>
         <w:rPr>${runPr(opts)}</w:rPr>
-        <w:t xml:space="preserve">${escapeDocXml(text)}</w:t>
+        ${docxTextWithBreaks(text)}
       </w:r>
     </w:p>`
   const cell = (
@@ -991,7 +1144,18 @@ function buildTripDocxBlob(
     foodCityGroups.forEach((group) => {
       sections.push(p(`${group.city}（${group.foods.length} 项）`, 'PlaceName', { after: 35 }))
       group.foods.forEach((food, idx) => {
-        sections.push(p(line([`${String(idx + 1).padStart(2, '0')}`, food.name, food.is_top ? '推荐' : '', food.category, food.price ? `¥${food.price}/人` : '', food.note]), 'BodySmall', { after: 55 }))
+        sections.push(p(line([
+          `${String(idx + 1).padStart(2, '0')}`,
+          food.name,
+          food.meal_type && food.meal_type !== '待定' ? food.meal_type : '',
+          food.category,
+          food.price ? `¥${food.price}/人` : '',
+          food.rating ? `评分 ${food.rating}` : '',
+          food.business_hours,
+          food.address,
+          food.recommend_food?.length ? `推荐菜：${food.recommend_food.join('、')}` : '',
+          food.note,
+        ]), 'BodySmall', { after: 55 }))
       })
     })
   }
@@ -1648,6 +1812,7 @@ function TripBoard({
   const [dateEditorOpen, setDateEditorOpen] = useState(false)
   const [dateInput, setDateInput] = useState('')
   const [savingDate, setSavingDate] = useState(false)
+  const [confirmAction, setConfirmAction] = useState<TripConfirmAction | null>(null)
   // Phase 47：右栏从「6 面板堆叠」改标签页，按用户心智分四块（一次只显一块）
   const [aiTab, setAiTab] = useState<TripToolTab>('assistant')
   // Phase 48：每天过夜城市（逆地理编码）+ 受控酒店搜索城市
@@ -1661,6 +1826,8 @@ function TripBoard({
   const dayRef = useRef(1)
   const stopRefs = useRef(new Map<string, HTMLDivElement>())
   dayRef.current = selectedDay
+
+  const askConfirm = (action: TripConfirmAction) => setConfirmAction(action)
 
   const load = useCallback(async () => {
     const res = await authFetch(`${API}/trips/${tripId}?editing_day=${dayRef.current}`)
@@ -1837,10 +2004,10 @@ function TripBoard({
       const titleSection = document.createElement('div')
       titleSection.style.cssText = 'margin-bottom: 40px; border-bottom: 3px solid #5b8ff9; padding-bottom: 25px;'
       titleSection.innerHTML = `
-        <h1 style="margin: 0 0 12px 0; font-size: 32px; color: #1a1a1a; font-weight: 700;">${trip.title}</h1>
+        <h1 style="margin: 0 0 12px 0; font-size: 32px; color: #1a1a1a; font-weight: 700;">${escapeDocHtml(trip.title)}</h1>
         <div style="display: flex; gap: 20px; flex-wrap: wrap; align-items: center;">
           <span style="color: #666; font-size: 18px; display: flex; align-items: center; gap: 6px;">
-            <span style="font-weight: 600;">📍</span>${trip.destination}
+            <span style="font-weight: 600;">📍</span>${escapeDocHtml(trip.destination)}
           </span>
           <span style="color: #666; font-size: 18px; display: flex; align-items: center; gap: 6px;">
             <span style="font-weight: 600;">📅</span>${trip.days} 天
@@ -1873,7 +2040,7 @@ function TripBoard({
         daySection.innerHTML = `
           <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 18px 24px; border-radius: 12px 12px 0 0; margin-bottom: 0;">
             <h2 style="margin: 0; font-size: 24px; color: white; font-weight: 700;">
-              Day ${day} · ${dayTitle}
+              Day ${day} · ${escapeDocHtml(dayTitle)}
             </h2>
             <div style="color: rgba(255,255,255,0.9); margin-top: 6px; font-size: 15px;">
               ${dayDate ? `📅 ${dayDate}` : ''}
@@ -1888,7 +2055,7 @@ function TripBoard({
           const route = dayStops.map(s => s.name.replace(/^🏨\s*/, '')).join(' → ')
           daySection.innerHTML += `
             <div style="background: #f8f9ff; padding: 16px 24px; border-left: 4px solid #667eea; margin-bottom: 0; font-size: 15px; color: #333; line-height: 1.8;">
-              <strong style="color: #667eea; margin-right: 8px;">📍 今日路线</strong>${route}
+              <strong style="color: #667eea; margin-right: 8px;">📍 今日路线</strong>${escapeDocHtml(route)}
             </div>
           `
         }
@@ -1933,7 +2100,7 @@ function TripBoard({
                 ">${idx + 1}</div>
                 <div style="flex: 1;">
                   <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
-                    <h3 style="margin: 0; font-size: 18px; color: #1a1a1a; font-weight: 600; line-height: 1.4;">${stop.name}</h3>
+                    <h3 style="margin: 0; font-size: 18px; color: #1a1a1a; font-weight: 600; line-height: 1.4;">${escapeDocHtml(stop.name)}</h3>
                     ${timeRange ? `
                       <span style="
                         background: #e6f7ff;
@@ -1949,12 +2116,12 @@ function TripBoard({
                   </div>
                   ${stop.note ? `
                     <p style="margin: 0 0 10px 0; color: #555; font-size: 15px; line-height: 1.7;">
-                      ${stop.note}
+                      ${multilineDocHtml(stop.note)}
                     </p>
                   ` : ''}
                   ${details.length > 0 ? `
                     <div style="display: flex; flex-wrap: wrap; gap: 12px; font-size: 14px; color: #666;">
-                      ${details.map(d => `<span>${d}</span>`).join('')}
+                      ${details.map(d => `<span>${escapeDocHtml(d)}</span>`).join('')}
                     </div>
                   ` : ''}
                 </div>
@@ -1997,7 +2164,7 @@ function TripBoard({
               border-radius: 6px;
             ">
               <span style="font-size: 18px; margin-right: 10px;">${config.icon}</span>
-              <span style="color: #333; font-size: 15px; line-height: 1.7;">${tip.content}</span>
+              <span style="color: #333; font-size: 15px; line-height: 1.7;">${multilineDocHtml(tip.content)}</span>
             </div>
           `
         })
@@ -2045,14 +2212,14 @@ function TripBoard({
                 <div style="display: flex; justify-content: space-between; align-items: flex-start;">
                   <div style="flex: 1;">
                     <div style="font-weight: 600; color: #1a1a1a; font-size: 16px; margin-bottom: 6px;">
-                      ${isTop ? '<span style="color: #faad14; margin-right: 6px;">⭐</span>' : ''}${food.name}
+                      ${isTop ? '<span style="color: #faad14; margin-right: 6px;">⭐</span>' : ''}${escapeDocHtml(food.name)}
                     </div>
                     ${food.note ? `
-                      <p style="margin: 0 0 6px 0; color: #666; font-size: 14px; line-height: 1.6;">${food.note}</p>
+                      <p style="margin: 0 0 6px 0; color: #666; font-size: 14px; line-height: 1.6;">${multilineDocHtml(food.note)}</p>
                     ` : ''}
                     ${(cityText || priceText) ? `
                       <div style="font-size: 13px; color: #999;">
-                        ${[cityText, priceText].filter(Boolean).join(' · ')}
+                        ${escapeDocHtml([cityText, priceText].filter(Boolean).join(' · '))}
                       </div>
                     ` : ''}
                   </div>
@@ -2085,7 +2252,7 @@ function TripBoard({
           if (catItems.length === 0) return
 
           packingSection.innerHTML += `
-            <h3 style="margin: 20px 0 12px 0; font-size: 18px; color: #333; font-weight: 600;">${cat}</h3>
+            <h3 style="margin: 20px 0 12px 0; font-size: 18px; color: #333; font-weight: 600;">${escapeDocHtml(cat)}</h3>
             <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
           `
 
@@ -2115,7 +2282,7 @@ function TripBoard({
                   font-weight: bold;
                   flex-shrink: 0;
                 ">${statusIcon}</span>
-                <span style="color: #333; font-size: 15px; flex: 1;">${item.name}</span>
+                <span style="color: #333; font-size: 15px; flex: 1;">${escapeDocHtml(item.name)}</span>
                 ${totalCount > 1 ? `
                   <span style="color: #999; font-size: 13px; white-space: nowrap;">${packedCount}/${totalCount}</span>
                 ` : ''}
@@ -2427,14 +2594,21 @@ function TripBoard({
   }
 
   const deleteDraft = async () => {
-    if (!window.confirm('删除这份导入草稿？攻略本身不受影响，之后可以重新导入。')) return
-    const res = await authFetch(`${API}/trips/${tripId}`, { method: 'DELETE' })
-    if (res.ok) {
-      notify('草稿已删除', 'success')
-      onBack()
-    } else {
-      notify('删除失败', 'error')
-    }
+    askConfirm({
+      title: '删除这份导入草稿？',
+      message: '攻略本身不受影响，之后可以重新导入。',
+      confirmText: '删除草稿',
+      danger: true,
+      onConfirm: async () => {
+        const res = await authFetch(`${API}/trips/${tripId}`, { method: 'DELETE' })
+        if (res.ok) {
+          notify('草稿已删除', 'success')
+          onBack()
+        } else {
+          notify('删除失败', 'error')
+        }
+      },
+    })
   }
 
   const mapStops = timelineStopsOf(selectedDay).filter((s) => s.location)
@@ -2912,9 +3086,15 @@ function TripBoard({
                               className="trip-table-btn-delete"
                               onClick={(e) => {
                                 e.stopPropagation()
-                                if (!window.confirm(`删除「${s.name}」？此操作无法撤销。`)) return
-                                call(`/stops/${s.id}`, 'DELETE').then((ok) => {
-                                  if (ok) notify(`已删除「${s.name}」`, 'success')
+                                askConfirm({
+                                  title: `删除「${s.name}」？`,
+                                  message: '删除后该行程会从当天路线、地图和导出文档中移除。',
+                                  confirmText: '删除行程',
+                                  danger: true,
+                                  onConfirm: async () => {
+                                    const ok = await call(`/stops/${s.id}`, 'DELETE')
+                                    if (ok) notify(`已删除「${s.name}」`, 'success')
+                                  },
                                 })
                               }}
                               aria-label={`删除 ${s.name}`}
@@ -3042,8 +3222,13 @@ function TripBoard({
                           </button>
                           <button className="trip-mini-action" onClick={() => setEditing(stays[0])}>编辑</button>
                           <button className="trip-mini-action danger" onClick={() => {
-                            if (!window.confirm(`删除 Day${d} 住宿？`)) return
-                            call(`/stops/${stays[0].id}`, 'DELETE')
+                            askConfirm({
+                              title: `删除 Day${d} 住宿？`,
+                              message: '会从住宿汇总和当天行程中移除这条住宿。',
+                              confirmText: '删除住宿',
+                              danger: true,
+                              onConfirm: async () => { await call(`/stops/${stays[0].id}`, 'DELETE') },
+                            })
                           }}>删除</button>
                         </span>
                       ) : (
@@ -3230,6 +3415,17 @@ function TripBoard({
         <EditStopModal
           stop={editing}
           onClose={() => setEditing(null)}
+          onDelete={() => askConfirm({
+            title: `删除「${editing.name}」？`,
+            message: '删除后这条行程会从当天路线和地图中移除。',
+            confirmText: '删除',
+            danger: true,
+            onConfirm: async () => {
+              const target = editing
+              setEditing(null)
+              await call(`/stops/${target.id}`, 'DELETE')
+            },
+          })}
           onSave={async (patch) => {
             const optimisticPatch = { ...patch }
             if ('no_location' in patch) {
@@ -3267,6 +3463,7 @@ function TripBoard({
           onOpenConversation={onOpenConversation}
         />
       )}
+      <TripConfirmDialog action={confirmAction} onClose={() => setConfirmAction(null)} />
     </div>
   )
 }
@@ -3351,7 +3548,14 @@ function ShareButton({
 
 const EXPENSE_CATS = ['餐饮', '交通', '门票', '住宿', '购物', '其他']
 
-interface Hotel { name: string; rating: string; address: string; location: string }
+interface Hotel {
+  name: string
+  rating: string
+  address: string
+  location: string
+  source?: string
+  price?: number | null
+}
 
 function HotelPanel({
   tripId, city, addedNames, onCityChange, onAdd, onCtripPrice,
@@ -3364,6 +3568,7 @@ function HotelPanel({
   onCtripPrice?: (city: string) => void
 }) {
   const [hotels, setHotels] = useState<Hotel[] | null>(null)
+  const [notice, setNotice] = useState('')
   const [loading, setLoading] = useState(false)
 
   const search = useCallback(async (target: string) => {
@@ -3371,9 +3576,14 @@ function HotelPanel({
     if (!q) return
     setLoading(true)
     setHotels(null)
+    setNotice('')
     try {
       const res = await authFetch(`${API}/trips/${tripId}/hotels?city=${encodeURIComponent(q)}`)
-      if (res.ok) setHotels((await res.json()).hotels)
+      if (res.ok) {
+        const payload = await res.json()
+        setHotels(payload.hotels || [])
+        setNotice(payload.notice || '')
+      }
       else setHotels([])
     } catch {
       setHotels([])
@@ -3404,7 +3614,10 @@ function HotelPanel({
       </div>
       {loading && <div className="trip-panel-empty">正在查「{city}」的酒店…</div>}
       {hotels !== null && hotels.length === 0 && !loading && (
-        <div className="trip-panel-empty">没查到「{city}」的酒店，换个城市名试试</div>
+        <div className="trip-panel-empty">{notice || `没查到「${city}」的酒店，换个城市名试试`}</div>
+      )}
+      {notice && hotels !== null && hotels.length > 0 && !loading && (
+        <div className="trip-hotel-notice">{notice}</div>
       )}
       {hotels && hotels.length > 0 && (
         <>
@@ -3416,6 +3629,12 @@ function HotelPanel({
                   {h.rating && <span className="trip-hotel-rating">⭐{h.rating}</span>}
                 </div>
                 {h.address && <div className="trip-hotel-addr">{h.address}</div>}
+                {(h.source || h.price) && (
+                  <div className="trip-hotel-meta">
+                    {h.source && <span>{h.source}</span>}
+                    {h.price ? <strong>¥{Number(h.price).toFixed(0)}/晚</strong> : null}
+                  </div>
+                )}
                 <button
                   className="trip-btn"
                   disabled={addedNames.has(h.name)}
@@ -3469,7 +3688,7 @@ function ExpenseModal({
   const valid = Number(d.amount) > 0 && d.title.trim().length > 0
 
   return createPortal(
-    <div className="modal-mask" onClick={onClose}>
+    <div className="modal-mask trip-drawer-mask" onClick={onClose}>
       <div className="modal trip-expense-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <strong>{d.id ? '修改账目' : '记一笔'}</strong>
@@ -3733,12 +3952,92 @@ function CommentThread({
   )
 }
 
+function calcStayMinutes(startTime: string, endTime: string) {
+  if (!startTime || !endTime) return 0
+  const [sh, sm] = startTime.split(':').map(Number)
+  const [eh, em] = endTime.split(':').map(Number)
+  if ([sh, sm, eh, em].some(Number.isNaN)) return 0
+  return Math.max(0, (eh * 60 + em) - (sh * 60 + sm))
+}
+
+function TripTransportPicker({
+  value, onChange,
+}: { value: string; onChange: (value: string) => void }) {
+  const isPreset = TRIP_TRANSPORT_OPTIONS.some((item) => item.value === value)
+  return (
+    <div className="trip-transport-pills">
+      {TRIP_TRANSPORT_OPTIONS.map((item) => (
+        <button
+          key={item.value}
+          type="button"
+          className={value === item.value ? 'active' : ''}
+          onClick={() => onChange(item.value)}
+        >
+          {item.label}
+        </button>
+      ))}
+      <input
+        className="trip-transport-other"
+        value={isPreset ? '' : value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="其他"
+      />
+    </div>
+  )
+}
+
+function TripCostEditor({
+  hasCost, setHasCost, amount, setAmount, currency, setCurrency,
+  currencies, source,
+}: {
+  hasCost: boolean
+  setHasCost: (value: boolean) => void
+  amount: string
+  setAmount: (value: string) => void
+  currency: CostCurrencyCode
+  setCurrency: (value: CostCurrencyCode) => void
+  currencies: CostCurrency[]
+  source: string
+}) {
+  return (
+    <div className="trip-cost-v2">
+      <div className="trip-cost-choice">
+        <label>
+          <input type="radio" checked={!hasCost} onChange={() => { setHasCost(false); setAmount('') }} />
+          <span>免费</span>
+        </label>
+        <label>
+          <input type="radio" checked={hasCost} onChange={() => setHasCost(true)} />
+          <span>有花费</span>
+        </label>
+      </div>
+      <div className={`trip-cost-money ${hasCost ? '' : 'disabled'}`}>
+        <input
+          type="number"
+          min="0"
+          value={amount}
+          onChange={(e) => { setAmount(e.target.value); setHasCost(true) }}
+          placeholder="0"
+          disabled={!hasCost}
+        />
+        <select
+          value={currency}
+          onChange={(e) => setCurrency(e.target.value as CostCurrencyCode)}
+          disabled={!hasCost}
+        >
+          {currencies.map((item) => <option key={item.code} value={item.code}>{item.code}</option>)}
+        </select>
+      </div>
+      <small>{hasCost ? ticketConversionPreview(amount, currency, currencies, source) : '免费或不填写'}</small>
+    </div>
+  )
+}
+
 function EditStopModal({
-  stop, onClose, onSave,
-}: { stop: TripStop; onClose: () => void; onSave: (patch: Record<string, unknown>) => void }) {
+  stop, onClose, onSave, onDelete,
+}: { stop: TripStop; onClose: () => void; onSave: (patch: Record<string, unknown>) => void; onDelete?: () => void }) {
   const [name, setName] = useState(stop.name)
   const [startTime, setStartTime] = useState(stop.start_time)
-  // 从 start_time + stay_min 反推结束时间（用于初始化）
   const calcEndTime = (start: string, stayMin: number) => {
     if (!start || !stayMin) return ''
     const [h, m] = start.split(':').map(Number)
@@ -3753,84 +4052,122 @@ function EditStopModal({
   const [noLocation, setNoLocation] = useState(initialNoLocation)
   const [transport, setTransport] = useState(stop.transport)
   const [ticket, setTicket] = useState(stop.ticket_price ? String(stop.ticket_price) : '')
+  const [ticketCurrency, setTicketCurrency] = useState<CostCurrencyCode>('CNY')
+  const [hasTicketCost, setHasTicketCost] = useState(Boolean(stop.ticket_price))
+  const [advancedOpen, setAdvancedOpen] = useState(Boolean(stop.note))
+  const { currencies: costCurrencies, source: costRateSource } = useCostCurrencies()
   useEffect(() => {
     const close = (event: KeyboardEvent) => event.key === 'Escape' && onClose()
     window.addEventListener('keydown', close)
     return () => window.removeEventListener('keydown', close)
   }, [onClose])
+  const save = () => {
+    onSave({
+      name: name.trim() || undefined,
+      start_time: startTime,
+      stay_min: calcStayMinutes(startTime, endTime),
+      transport: transport.trim() || '',
+      ticket_price: hasTicketCost ? convertedTicketPrice(ticket, ticketCurrency, costCurrencies) : 0,
+      no_location: noLocation,
+      location: noLocation ? '' : locationText.trim(),
+      note: description.trim(),
+    })
+  }
   return (
-    <div className="modal-mask" onClick={onClose}>
-      <div className="modal trip-edit-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
+    <div className="modal-mask trip-drawer-mask" onClick={onClose}>
+      <div className="modal trip-edit-modal trip-edit-drawer" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head trip-edit-drawer-head">
           <strong>编辑行程</strong>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
-        <div className="trip-edit-context">
-          <span>📅 Day {stop.day}</span>
-          <b>{name || '未命名行程'}</b>
-        </div>
-        <div className="trip-edit-grid">
-          <div className="trip-edit-section trip-edit-full">
-            <b>基础信息</b>
-            <small>活动名用于行程展示，地图关键词只负责定位。</small>
+        <div className="trip-edit-drawer-body">
+          <div className="trip-edit-summary-bar">
+            <span>📅 Day {stop.day}</span>
+            <b>{name || '未命名行程'}</b>
           </div>
-          <label className="trip-edit-full">活动名称<input value={name} onChange={(e) => setName(e.target.value)} placeholder="如：双子塔（KLCC）" /></label>
-          <label>开始时间<input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} /></label>
-          <label>结束时间<input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} /></label>
-          <label>交通方式<input value={transport} onChange={(e) => setTransport(e.target.value)} placeholder="步行/打车/地铁/飞机" /></label>
-          <label>花费<input type="number" min="0" value={ticket} onChange={(e) => setTicket(e.target.value)} placeholder="免费" /></label>
-          <div className="trip-edit-section trip-edit-full">
-            <b>地图定位</b>
-            <small>开启后会参与右侧地图序号和路线展示；飞行/跨城交通可关闭。</small>
-          </div>
-          <div className="trip-edit-full trip-location-field">
-            <div className="trip-location-head">
-              <div>
-                <b>{noLocation ? '不显示在地图上' : '显示在地图上'}</b>
-                <small>{noLocation ? '飞行、跨城交通等无需地图定位' : '开启后可在地图上显示该行程位置'}</small>
-              </div>
-              <label className={`trip-map-switch ${noLocation ? '' : 'on'}`}>
-                <input type="checkbox" checked={!noLocation} onChange={(e) => setNoLocation(!e.target.checked)} />
-                <span className="trip-map-switch-track" />
-                <span>{noLocation ? '关闭' : '开启'}</span>
+
+          <section className="trip-edit-block">
+            <h4 className="trip-edit-block-title">基础信息</h4>
+            <p className="trip-edit-block-hint">活动名用于行程展示，地图关键词只用于地图搜索，不会混进备注。</p>
+            <label className="trip-field trip-title-field">
+              <span>活动名称 <em>*</em></span>
+              <input value={name} maxLength={50} onChange={(e) => setName(e.target.value)} placeholder="如：双子塔（KLCC）" />
+              <small className="trip-input-count">{name.length}/50</small>
+            </label>
+            <div className="trip-time-row">
+              <label className="trip-field">
+                <span>开始时间 <em>*</em></span>
+                <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} />
+              </label>
+              <label className="trip-field">
+                <span>结束时间</span>
+                <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} />
+              </label>
+              <label className="trip-field">
+                <span>时长</span>
+                <div className="trip-duration-box">{durationLabel(startTime, endTime)}</div>
               </label>
             </div>
-            {noLocation ? (
-              <div className="trip-map-disabled-note">开启后可填写定位关键词，并在今日路线地图上显示序号。</div>
-            ) : (
-              <label className="trip-location-keyword">地图定位关键词<input value={locationText} onChange={(e) => setLocationText(e.target.value)} placeholder="如：Petronas Twin Towers / Suria KLCC" /></label>
+            <div className="trip-field">
+              <span>交通方式</span>
+              <TripTransportPicker value={transport} onChange={setTransport} />
+            </div>
+            <div className="trip-field">
+              <span>花费</span>
+              <TripCostEditor
+                hasCost={hasTicketCost}
+                setHasCost={setHasTicketCost}
+                amount={ticket}
+                setAmount={setTicket}
+                currency={ticketCurrency}
+                setCurrency={setTicketCurrency}
+                currencies={costCurrencies}
+                source={costRateSource}
+              />
+            </div>
+          </section>
+
+          <section className="trip-edit-block">
+            <h4 className="trip-edit-block-title">地点</h4>
+            <div className="trip-location-card-v2">
+              <span className="trip-location-pin">📍</span>
+              <div>
+                <b>{locationText || name || '未设置地点'}</b>
+                <small>{noLocation ? '这条行程不会显示在右侧路线地图里' : '会显示在路线地图和今日路线序号中'}</small>
+              </div>
+            </div>
+            <label className="trip-inline-check">
+              <input type="checkbox" checked={!noLocation} onChange={(e) => setNoLocation(!e.target.checked)} />
+              <span>在路线地图中显示</span>
+            </label>
+            {!noLocation && (
+              <label className="trip-field">
+                <span>地图定位关键词</span>
+                <input value={locationText} onChange={(e) => setLocationText(e.target.value)} placeholder="地点名或详细地址，如：Petronas Twin Towers" />
+              </label>
             )}
-          </div>
-          <div className="trip-edit-section trip-edit-full">
-            <b>补充信息</b>
-          </div>
-          <label className="trip-edit-full">描述/备注<textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="参观博物馆，逛街购物；预约、门票、注意事项等" /></label>
+          </section>
+
+          <section className="trip-edit-block">
+            <button className="trip-advanced-toggle" type="button" onClick={() => setAdvancedOpen(!advancedOpen)}>
+              <span>更多设置</span>
+              <small>描述/备注、联系人、预订信息等（选填）</small>
+              <b>{advancedOpen ? '收起' : '展开'}</b>
+            </button>
+            {advancedOpen && (
+              <label className="trip-field">
+                <span>描述/备注</span>
+                <textarea rows={4} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="补充说明、注意事项、预约信息等" />
+              </label>
+            )}
+          </section>
         </div>
-        <div className="trip-edit-ops">
-          <button className="trip-btn" onClick={onClose}>取消</button>
-          <button className="trip-btn primary" onClick={() => {
-            // 从开始、结束时间计算停留分钟数
-            let stayMin = 0
-            if (startTime && endTime) {
-              const [sh, sm] = startTime.split(':').map(Number)
-              const [eh, em] = endTime.split(':').map(Number)
-              if (!isNaN(sh) && !isNaN(sm) && !isNaN(eh) && !isNaN(em)) {
-                stayMin = Math.max(0, (eh * 60 + em) - (sh * 60 + sm))
-              }
-            }
-            onSave({
-              name: name.trim() || undefined,
-              start_time: startTime,
-              stay_min: stayMin,
-              transport: transport.trim() || '',
-              ticket_price: ticket === '' ? 0 : Math.max(0, Number(ticket) || 0),
-              no_location: noLocation,
-              location: noLocation ? '' : locationText.trim(),
-              note: description.trim(),
-            })
-          }}>
-            保存
-          </button>
+        <div className="trip-edit-footer">
+          {onDelete ? <button className="trip-btn danger" onClick={onDelete}>删除行程</button> : <span />}
+          <div className="trip-edit-footer-actions">
+            <button className="trip-btn" onClick={onClose}>取消</button>
+            <button className="trip-btn primary" onClick={save} disabled={!name.trim()}>保存</button>
+          </div>
         </div>
       </div>
     </div>
@@ -3847,7 +4184,11 @@ function AddStopModal({
   const [description, setDescription] = useState('')
   const [transport, setTransport] = useState('')
   const [ticket, setTicket] = useState('')
+  const [ticketCurrency, setTicketCurrency] = useState<CostCurrencyCode>('CNY')
+  const [hasTicketCost, setHasTicketCost] = useState(false)
   const [noLocation, setNoLocation] = useState(false)
+  const [advancedOpen, setAdvancedOpen] = useState(false)
+  const { currencies: costCurrencies, source: costRateSource } = useCostCurrencies()
   useEffect(() => {
     const close = (event: KeyboardEvent) => event.key === 'Escape' && onClose()
     window.addEventListener('keydown', close)
@@ -3855,76 +4196,112 @@ function AddStopModal({
   }, [onClose])
   const save = () => {
     if (!name.trim()) return
-    let stayMin = 0
-    if (startTime && endTime) {
-      const [sh, sm] = startTime.split(':').map(Number)
-      const [eh, em] = endTime.split(':').map(Number)
-      if (!isNaN(sh) && !isNaN(sm) && !isNaN(eh) && !isNaN(em)) {
-        stayMin = Math.max(0, (eh * 60 + em) - (sh * 60 + sm))
-      }
-    }
     onSave({
       name: name.trim(),
       start_time: startTime,
-      stay_min: stayMin,
+      stay_min: calcStayMinutes(startTime, endTime),
       transport: transport.trim(),
-      ticket_price: ticket === '' ? 0 : Math.max(0, Number(ticket) || 0),
+      ticket_price: hasTicketCost ? convertedTicketPrice(ticket, ticketCurrency, costCurrencies) : 0,
       no_location: noLocation,
       location: noLocation ? '' : locationText.trim(),
       note: description.trim(),
     })
   }
   return (
-    <div className="modal-mask" onClick={onClose}>
-      <div className="modal trip-edit-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
+    <div className="modal-mask trip-drawer-mask" onClick={onClose}>
+      <div className="modal trip-edit-modal trip-edit-drawer" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head trip-edit-drawer-head">
           <strong>添加 Day {day} 地点</strong>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
-        <div className="trip-edit-context">
-          <span>📅 Day {day}</span>
-          <b>{name || '新行程'}</b>
-        </div>
-        <div className="trip-edit-grid">
-          <div className="trip-edit-section trip-edit-full">
-            <b>基础信息</b>
-            <small>活动名用于行程展示，地图关键词只负责定位。</small>
+        <div className="trip-edit-drawer-body">
+          <div className="trip-edit-summary-bar">
+            <span>📅 Day {day}</span>
+            <b>{name || '新行程'}</b>
           </div>
-          <label className="trip-edit-full">活动名称<input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="如：双子塔夜景" /></label>
-          <label>开始时间<input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} /></label>
-          <label>结束时间<input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} /></label>
-          <label>交通方式<input value={transport} onChange={(e) => setTransport(e.target.value)} placeholder="步行/打车/地铁/飞机" /></label>
-          <label>花费<input type="number" min="0" value={ticket} onChange={(e) => setTicket(e.target.value)} placeholder="免费" /></label>
-          <div className="trip-edit-section trip-edit-full">
-            <b>地图定位</b>
-            <small>开启后会参与右侧地图序号和路线展示；飞行/跨城交通可关闭。</small>
-          </div>
-          <div className="trip-edit-full trip-location-field">
-            <div className="trip-location-head">
-              <div>
-                <b>{noLocation ? '不显示在地图上' : '显示在地图上'}</b>
-                <small>{noLocation ? '飞行、跨城交通等无需地图定位' : '开启后可在地图上显示该行程位置'}</small>
-              </div>
-              <label className={`trip-map-switch ${noLocation ? '' : 'on'}`}>
-                <input type="checkbox" checked={!noLocation} onChange={(e) => setNoLocation(!e.target.checked)} />
-                <span className="trip-map-switch-track" />
-                <span>{noLocation ? '关闭' : '开启'}</span>
+
+          <section className="trip-edit-block">
+            <h4 className="trip-edit-block-title">基础信息</h4>
+            <p className="trip-edit-block-hint">活动名用于行程展示，地图定位关键词用于搜索坐标。</p>
+            <label className="trip-field trip-title-field">
+              <span>活动名称 <em>*</em></span>
+              <input autoFocus value={name} maxLength={50} onChange={(e) => setName(e.target.value)} placeholder="如：双子塔夜景" />
+              <small className="trip-input-count">{name.length}/50</small>
+            </label>
+            <div className="trip-time-row">
+              <label className="trip-field">
+                <span>开始时间</span>
+                <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} />
+              </label>
+              <label className="trip-field">
+                <span>结束时间</span>
+                <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} />
+              </label>
+              <label className="trip-field">
+                <span>时长</span>
+                <div className="trip-duration-box">{durationLabel(startTime, endTime)}</div>
               </label>
             </div>
-            {noLocation ? (
-              <div className="trip-map-disabled-note">开启后可填写定位关键词，并在今日路线地图上显示序号。</div>
-            ) : (
-              <label className="trip-location-keyword">地图定位关键词<input value={locationText} onChange={(e) => setLocationText(e.target.value)} placeholder="详细地址或地点名，如：Petronas Twin Towers" /></label>
+            <div className="trip-field">
+              <span>交通方式</span>
+              <TripTransportPicker value={transport} onChange={setTransport} />
+            </div>
+            <div className="trip-field">
+              <span>花费</span>
+              <TripCostEditor
+                hasCost={hasTicketCost}
+                setHasCost={setHasTicketCost}
+                amount={ticket}
+                setAmount={setTicket}
+                currency={ticketCurrency}
+                setCurrency={setTicketCurrency}
+                currencies={costCurrencies}
+                source={costRateSource}
+              />
+            </div>
+          </section>
+
+          <section className="trip-edit-block">
+            <h4 className="trip-edit-block-title">地点</h4>
+            <div className="trip-location-card-v2">
+              <span className="trip-location-pin">📍</span>
+              <div>
+                <b>{locationText || name || '未设置地点'}</b>
+                <small>{noLocation ? '这条行程不会显示在右侧路线地图里' : '会显示在路线地图和今日路线序号中'}</small>
+              </div>
+            </div>
+            <label className="trip-inline-check">
+              <input type="checkbox" checked={!noLocation} onChange={(e) => setNoLocation(!e.target.checked)} />
+              <span>在路线地图中显示</span>
+            </label>
+            {!noLocation && (
+              <label className="trip-field">
+                <span>地图定位关键词</span>
+                <input value={locationText} onChange={(e) => setLocationText(e.target.value)} placeholder="地点名或详细地址，如：Petronas Twin Towers" />
+              </label>
             )}
-          </div>
-          <div className="trip-edit-section trip-edit-full">
-            <b>补充信息</b>
-          </div>
-          <label className="trip-edit-full">描述/备注<textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="补充说明、注意事项" /></label>
+          </section>
+
+          <section className="trip-edit-block">
+            <button className="trip-advanced-toggle" type="button" onClick={() => setAdvancedOpen(!advancedOpen)}>
+              <span>更多设置</span>
+              <small>描述/备注、联系人、预订信息等（选填）</small>
+              <b>{advancedOpen ? '收起' : '展开'}</b>
+            </button>
+            {advancedOpen && (
+              <label className="trip-field">
+                <span>描述/备注</span>
+                <textarea rows={4} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="补充说明、注意事项" />
+              </label>
+            )}
+          </section>
         </div>
-        <div className="trip-edit-ops">
-          <button className="trip-btn" onClick={onClose}>取消</button>
-          <button className="trip-btn primary" onClick={save} disabled={!name.trim()}>保存</button>
+        <div className="trip-edit-footer">
+          <span />
+          <div className="trip-edit-footer-actions">
+            <button className="trip-btn" onClick={onClose}>取消</button>
+            <button className="trip-btn primary" onClick={save} disabled={!name.trim()}>保存</button>
+          </div>
         </div>
       </div>
     </div>
@@ -3966,14 +4343,113 @@ function useModuleData<T>(tripId: string, path: string, active: boolean, initial
 }
 
 interface FoodItem {
-  id: string; name: string; category: string; city: string
-  price: number | null; note: string; is_top: boolean; created_by: string
+  id: string
+  name: string
+  day: number | null
+  meal_type: string
+  category: string
+  city: string
+  address: string
+  price: number | null
+  rating: number | null
+  business_hours: string
+  recommend_food: string[]
+  note: string
+  status: string
+  is_favorite: boolean
+  checked_in: boolean
+  is_top: boolean
+  created_by: string
 }
 
 const FOOD_CATS = ['小吃', '正餐', '甜点', '饮品', '其他']
+const FOOD_MEALS = ['早餐', '午餐', '下午茶', '晚餐', '夜宵', '待定']
+const FOOD_VIEWS = [
+  { id: 'plan', label: '行程安排' },
+  { id: 'favorite', label: '我的收藏' },
+  { id: 'checked', label: '已打卡' },
+] as const
+type FoodView = typeof FOOD_VIEWS[number]['id']
+
+interface FoodFormState {
+  id?: string
+  day: string
+  meal_type: string
+  category: string
+  name: string
+  city: string
+  address: string
+  price: string
+  rating: string
+  business_hours: string
+  recommendText: string
+  note: string
+  is_favorite: boolean
+  checked_in: boolean
+}
+
+function emptyFoodForm(day?: number): FoodFormState {
+  return {
+    day: day ? String(day) : '',
+    meal_type: '待定',
+    category: '正餐',
+    name: '',
+    city: '',
+    address: '',
+    price: '',
+    rating: '',
+    business_hours: '',
+    recommendText: '',
+    note: '',
+    is_favorite: false,
+    checked_in: false,
+  }
+}
+
+function foodToForm(food: FoodItem): FoodFormState {
+  return {
+    id: food.id,
+    day: food.day ? String(food.day) : '',
+    meal_type: food.meal_type || '待定',
+    category: food.category || '正餐',
+    name: food.name || '',
+    city: food.city || '',
+    address: food.address || '',
+    price: food.price ? String(food.price) : '',
+    rating: food.rating ? String(food.rating) : '',
+    business_hours: food.business_hours || '',
+    recommendText: (food.recommend_food || []).join('、'),
+    note: food.note || '',
+    is_favorite: !!food.is_favorite,
+    checked_in: !!food.checked_in,
+  }
+}
+
+function foodPayload(form: FoodFormState) {
+  const recommend_food = form.recommendText
+    .split(/[\n,，、]/)
+    .map((x) => x.trim())
+    .filter(Boolean)
+  return {
+    day: form.day ? Number(form.day) : null,
+    meal_type: form.meal_type || '待定',
+    category: form.category || '正餐',
+    name: form.name.trim(),
+    city: form.city.trim(),
+    address: form.address.trim(),
+    price: form.price ? Number(form.price) : null,
+    rating: form.rating ? Number(form.rating) : null,
+    business_hours: form.business_hours.trim(),
+    recommend_food,
+    note: form.note.trim(),
+    status: form.checked_in ? 'checked_in' : 'planned',
+    is_favorite: form.is_favorite,
+    checked_in: form.checked_in,
+  }
+}
 
 function FoodPanel({
-  tripId, active, days, stopsOf, onAddToDay, onEditStop, onDeleteStop,
+  tripId, active, days, stopsOf, onEditStop, onDeleteStop,
 }: {
   tripId: string
   active: boolean
@@ -3984,121 +4460,193 @@ function FoodPanel({
   onDeleteStop: (stop: TripStop) => Promise<unknown>
 }) {
   const { data, reload } = useModuleData<FoodItem[]>(tripId, 'foods', active, [])
-  const [name, setName] = useState('')
-  const [dayFoodName, setDayFoodName] = useState<Record<number, string>>({})
-  const [cat, setCat] = useState('正餐')
-  const [filter, setFilter] = useState('全部')
+  const [view, setView] = useState<FoodView>('plan')
+  const [form, setForm] = useState<FoodFormState | null>(null)
+  const [saving, setSaving] = useState(false)
   const { notify } = useToast()
 
-  const add = async () => {
-    if (!name.trim()) return
-    const r = await authFetch(`${API}/trips/${tripId}/foods`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: name.trim(), category: cat }),
+  const saveFood = async () => {
+    if (!form || saving) return
+    const payload = foodPayload(form)
+    if (!payload.name) {
+      notify('先写一下店名或美食名')
+      return
+    }
+    setSaving(true)
+    const r = await authFetch(`${API}/trips/${tripId}/foods${form.id ? `/${form.id}` : ''}`, {
+      method: form.id ? 'PATCH' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
     })
-    if (r.ok) { setName(''); reload() } else notify('添加失败，请重试')
-  }
-  const toggleTop = async (f: FoodItem) => {
-    const r = await authFetch(`${API}/trips/${tripId}/foods/${f.id}`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...f, is_top: !f.is_top }),
-    })
-    if (r.ok) reload()
-  }
-  const remove = async (id: string) => {
-    const r = await authFetch(`${API}/trips/${tripId}/foods/${id}`, { method: 'DELETE' })
-    if (r.ok) reload()
+    setSaving(false)
+    if (r.ok) {
+      setForm(null)
+      reload()
+      notify(form.id ? '美食已更新' : '美食已添加')
+    } else {
+      notify('保存失败，请重试')
+    }
   }
 
-  const cats = ['全部', ...FOOD_CATS.filter((c) => data.some((f) => f.category === c))]
-  const shown = filter === '全部' ? data : data.filter((f) => f.category === filter)
+  const patchFood = async (f: FoodItem, patch: Partial<FoodFormState>) => {
+    const next = { ...foodToForm(f), ...patch }
+    const r = await authFetch(`${API}/trips/${tripId}/foods/${f.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(foodPayload(next)),
+    })
+    if (r.ok) reload()
+    else notify('操作失败，请重试')
+  }
+
+  const remove = async (id: string) => {
+    if (!window.confirm('删除这条美食记录？')) return
+    const r = await authFetch(`${API}/trips/${tripId}/foods/${id}`, { method: 'DELETE' })
+    if (r.ok) reload()
+    else notify('删除失败，请重试')
+  }
+
   const foodStopsOf = (day: number) => stopsOf(day).filter((s) => (
     s.tags?.includes('food') || (s.note || '').includes('美食') || /餐|咖啡|小吃|饭|食|甜品|早餐|午餐|晚餐/.test(s.name)
   ))
+  const dayFoods = (day: number, meal: string) => data.filter((f) => (f.day || 0) === day && (f.meal_type || '待定') === meal)
+  const unplannedFoods = data.filter((f) => !f.day)
+  const currentList = view === 'favorite'
+    ? data.filter((f) => f.is_favorite)
+    : data.filter((f) => f.checked_in || f.status === 'checked_in')
+
+  const renderFoodCard = (f: FoodItem) => (
+    <article key={f.id} className={`trip-food-card${f.checked_in || f.status === 'checked_in' ? ' checked' : ''}`}>
+      <div className="trip-food-card-main">
+        <div className="trip-food-title-row">
+          <b>{f.name}</b>
+          {f.rating ? <span className="trip-food-rating">⭐ {f.rating}</span> : null}
+        </div>
+        <div className="trip-food-meta">
+          {[f.city, f.category, f.price ? `¥${f.price}/人` : '', f.business_hours].filter(Boolean).join(' · ')}
+        </div>
+        {f.address && <div className="trip-food-address">📍 {f.address}</div>}
+        {!!f.recommend_food?.length && <div className="trip-food-dishes">推荐：{f.recommend_food.join('、')}</div>}
+        {f.note && <div className="trip-food-note">{f.note}</div>}
+      </div>
+      <div className="trip-food-actions">
+        <button className={f.is_favorite ? 'active' : ''} onClick={() => patchFood(f, { is_favorite: !f.is_favorite })}>
+          {f.is_favorite ? '已收藏' : '收藏'}
+        </button>
+        <button className={f.checked_in ? 'active' : ''} onClick={() => patchFood(f, { checked_in: !f.checked_in })}>
+          {f.checked_in ? '已打卡' : '打卡'}
+        </button>
+        <button onClick={() => setForm(foodToForm(f))}>编辑</button>
+        <button className="danger" onClick={() => remove(f.id)}>删除</button>
+      </div>
+    </article>
+  )
 
   return (
     <div className="trip-panel trip-module">
-      <div className="trip-panel-head">🍜 按天美食 <span className="trip-day-km">会同步到对应 Day 行程</span></div>
-      <div className="trip-day-foods">
-        {days.map((d) => {
-          const dayFoods = foodStopsOf(d)
-          return (
-            <section key={d} className={`trip-day-food-card${dayFoods.length ? '' : ' empty'}`}>
-              <div className="trip-day-food-head">
-                <b>Day {d}</b>
-                <small>{dayFoods.length} 项</small>
-              </div>
-              {dayFoods.length ? (
-                <ul className="trip-day-food-list">
-                  {dayFoods.map((s) => (
-                    <li key={s.id}>
-                      <span>
-                        <b>{s.name}</b>
-                        {s.note && <small>{s.note.replace(/^美食\s*/, '')}</small>}
-                      </span>
-                      <button className="trip-mini-action" onClick={() => onEditStop(s)}>编辑</button>
-                      <button className="trip-mini-action danger" onClick={() => {
-                        if (window.confirm(`删除「${s.name}」？`)) onDeleteStop(s)
-                      }}>删除</button>
-                    </li>
-                  ))}
-                </ul>
-              ) : <p className="trip-module-empty">暂无美食安排</p>}
-              <div className="trip-module-add compact">
-                <input
-                  placeholder="添加这天的美食"
-                  value={dayFoodName[d] || ''}
-                  onChange={(e) => setDayFoodName((prev) => ({ ...prev, [d]: e.target.value }))}
-                  onKeyDown={async (e) => {
-                    const value = (dayFoodName[d] || '').trim()
-                    if (e.key === 'Enter' && value) {
-                      await onAddToDay(d, value)
-                      setDayFoodName((prev) => ({ ...prev, [d]: '' }))
-                    }
-                  }}
-                />
-                <button className="trip-btn primary" onClick={async () => {
-                  const value = (dayFoodName[d] || '').trim()
-                  if (!value) return
-                  await onAddToDay(d, value)
-                  setDayFoodName((prev) => ({ ...prev, [d]: '' }))
-                }}>添加</button>
-              </div>
-            </section>
-          )
-        })}
+      <div className="trip-panel-head">
+        🍜 美食中心
+        <span className="trip-day-km">按餐次规划，收藏和打卡会单独归档</span>
       </div>
-
-      <div className="trip-panel-head trip-sub-panel-head">攻略推荐美食 <span className="trip-day-km">未分天，可手动加入上面某天</span></div>
-      {cats.length > 1 && (
-        <div className="trip-module-filters">
-          {cats.map((c) => (
-            <button key={c} className={filter === c ? 'active' : ''} onClick={() => setFilter(c)}>{c}</button>
+      <div className="trip-food-toolbar">
+        <div className="trip-food-tabs">
+          {FOOD_VIEWS.map((item) => (
+            <button key={item.id} className={view === item.id ? 'active' : ''} onClick={() => setView(item.id)}>
+              {item.label}
+            </button>
           ))}
         </div>
-      )}
-      {shown.length === 0 && <p className="trip-module-empty">还没记录，先加一家想吃的。</p>}
-      <ul className="trip-module-list">
-        {shown.map((f) => (
-          <li key={f.id} className={f.is_top ? 'top' : ''}>
-            <button className="trip-module-star" title={f.is_top ? '取消 TOP' : '设为 TOP'}
-              onClick={() => toggleTop(f)}>{f.is_top ? '★' : '☆'}</button>
-            <span className="trip-module-main">
-              <b>{f.name}</b>
-              <small>{f.category}{f.price ? ` · 人均 ¥${f.price}` : ''}{f.note ? ` · ${f.note}` : ''}</small>
-            </span>
-            <button className="trip-module-del" onClick={() => remove(f.id)} aria-label="删除">×</button>
-          </li>
-        ))}
-      </ul>
-      <div className="trip-module-add">
-        <select value={cat} onChange={(e) => setCat(e.target.value)} aria-label="类型">
-          {FOOD_CATS.map((c) => <option key={c}>{c}</option>)}
-        </select>
-        <input placeholder="店名或菜名" value={name} onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && add()} />
-        <button className="trip-btn primary" onClick={add}>添加</button>
+        <button className="trip-btn primary" onClick={() => setForm(emptyFoodForm(days[0]))}>+ 添加美食</button>
       </div>
+      {view === 'plan' ? (
+        <div className="trip-food-days">
+          {days.map((d) => {
+            const legacy = foodStopsOf(d)
+            const count = data.filter((f) => f.day === d).length + legacy.length
+            return (
+              <section key={d} className="trip-food-day-section">
+                <div className="trip-food-day-head">
+                  <div><b>Day {d}</b><small>{count} 项</small></div>
+                  <button className="trip-mini-action" onClick={() => setForm(emptyFoodForm(d))}>添加这天</button>
+                </div>
+                <div className="trip-food-meals">
+                  {FOOD_MEALS.map((meal) => {
+                    const foods = dayFoods(d, meal)
+                    if (!foods.length && meal !== '待定') return null
+                    return (
+                      <div key={meal} className="trip-food-meal">
+                        <div className="trip-food-meal-head"><span>{meal}</span><small>{foods.length || '暂无安排'}</small></div>
+                        {foods.length ? foods.map(renderFoodCard) : <p className="trip-module-empty compact">还没安排，点右上角添加。</p>}
+                      </div>
+                    )
+                  })}
+                </div>
+                {!!legacy.length && (
+                  <div className="trip-food-legacy">
+                    <b>行程里识别到的美食</b>
+                    {legacy.map((s) => (
+                      <div key={s.id} className="trip-food-legacy-row">
+                        <span>{s.name}<small>{s.note?.replace(/^美食\s*/, '')}</small></span>
+                        <button className="trip-mini-action" onClick={() => onEditStop(s)}>编辑</button>
+                        <button className="trip-mini-action danger" onClick={() => {
+                          if (window.confirm(`删除「${s.name}」？`)) onDeleteStop(s)
+                        }}>删除</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )
+          })}
+          {!!unplannedFoods.length && (
+            <section className="trip-food-day-section">
+              <div className="trip-food-day-head"><div><b>攻略推荐 / 待安排</b><small>{unplannedFoods.length} 项</small></div></div>
+              <div className="trip-food-grid">{unplannedFoods.map(renderFoodCard)}</div>
+            </section>
+          )}
+        </div>
+      ) : (
+        <div className="trip-food-grid">
+          {currentList.length ? currentList.map(renderFoodCard) : <p className="trip-module-empty">这里还没有内容。</p>}
+        </div>
+      )}
+      {form && createPortal(
+        <div className="trip-modal-backdrop" onMouseDown={() => setForm(null)}>
+          <div className="trip-food-editor" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="trip-food-editor-head">
+              <b>{form.id ? '编辑美食' : '添加美食'}</b>
+              <button onClick={() => setForm(null)} aria-label="关闭">×</button>
+            </div>
+            <div className="trip-food-editor-grid">
+              <label>所属天数<select value={form.day} onChange={(e) => setForm({ ...form, day: e.target.value })}>
+                <option value="">待安排</option>
+                {days.map((d) => <option key={d} value={d}>Day {d}</option>)}
+              </select></label>
+              <label>餐次<select value={form.meal_type} onChange={(e) => setForm({ ...form, meal_type: e.target.value })}>
+                {FOOD_MEALS.map((m) => <option key={m}>{m}</option>)}
+              </select></label>
+              <label>名称<input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="如：南京大排档" /></label>
+              <label>类型<select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
+                {FOOD_CATS.map((c) => <option key={c}>{c}</option>)}
+              </select></label>
+              <label>城市<input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} placeholder="如：吉隆坡" /></label>
+              <label>地址<input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="商圈/街区/详细地址" /></label>
+              <label>人均价格<input type="number" min="0" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} placeholder="80" /></label>
+              <label>评分<input type="number" min="0" max="5" step="0.1" value={form.rating} onChange={(e) => setForm({ ...form, rating: e.target.value })} placeholder="4.8" /></label>
+              <label>营业时间<input value={form.business_hours} onChange={(e) => setForm({ ...form, business_hours: e.target.value })} placeholder="11:00-22:00" /></label>
+              <label className="wide">推荐菜<textarea value={form.recommendText} onChange={(e) => setForm({ ...form, recommendText: e.target.value })} placeholder="一行一个，或用顿号分隔" /></label>
+              <label className="wide">备注<textarea value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="排队、预约、口味、注意事项" /></label>
+              <label className="trip-food-check"><input type="checkbox" checked={form.is_favorite} onChange={(e) => setForm({ ...form, is_favorite: e.target.checked })} />收藏</label>
+              <label className="trip-food-check"><input type="checkbox" checked={form.checked_in} onChange={(e) => setForm({ ...form, checked_in: e.target.checked })} />已打卡</label>
+            </div>
+            <div className="trip-food-editor-actions">
+              <button className="trip-btn" onClick={() => setForm(null)}>取消</button>
+              <button className="trip-btn primary" disabled={saving} onClick={saveFood}>{saving ? '保存中...' : '保存'}</button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   )
 }
@@ -4144,6 +4692,12 @@ function PackingPanel({
   const [editingCat, setEditingCat] = useState('通用')
   const [invite, setInvite] = useState('')
   const [filterCat, setFilterCat] = useState('全部')
+  const [confirmAction, setConfirmAction] = useState<null | {
+    title: string
+    message?: string
+    confirmText?: string
+    onConfirm: () => Promise<void> | void
+  }>(null)
   const { notify } = useToast()
 
   useEffect(() => {
@@ -4151,14 +4705,15 @@ function PackingPanel({
       if (event.key !== 'Escape') return
       event.preventDefault()
       event.stopImmediatePropagation()
-      if (editingItem) setEditingItem(null)
+      if (confirmAction) setConfirmAction(null)
+      else if (editingItem) setEditingItem(null)
       else if (batchOpen) setBatchOpen(false)
       else if (manageCats) setManageCats(false)
       else if (managePeople) setManagePeople(false)
     }
     window.addEventListener('keydown', close)
     return () => window.removeEventListener('keydown', close)
-  }, [batchOpen, editingItem, manageCats, managePeople])
+  }, [batchOpen, confirmAction, editingItem, manageCats, managePeople])
 
   const add = async (text: string, category = '通用') => {
     if (!text.trim()) return
@@ -4211,15 +4766,22 @@ function PackingPanel({
     if (reloadAfter) reload()
     return true
   }
-  const remove = async (id: string, itemName: string) => {
-    if (!window.confirm(`删除「${itemName}」？`)) return
+  const deleteItemNow = async (id: string, afterDelete?: () => void) => {
     const r = await authFetch(`${API}/trips/${tripId}/packing/${id}`, { method: 'DELETE' })
-    // 失败必须说出来——原来静默失败，用户只看到「点了没反应」
     if (r.ok) {
       setSelectedIds((prev) => prev.filter((sid) => sid !== id))
+      afterDelete?.()
       reload()
     }
     else notify('删除失败，请重试', 'error')
+  }
+  const remove = (id: string, itemName: string, afterDelete?: () => void) => {
+    setConfirmAction({
+      title: `删除「${itemName}」？`,
+      message: '删除后会从当前行李清单移除，已带/未带状态也会一起删除。',
+      confirmText: '删除',
+      onConfirm: () => deleteItemNow(id, afterDelete),
+    })
   }
   const recategorize = async (itemId: string, category: string, reloadAfter = true) => {
     const ok = await updateItem(itemId, { category }, false)
@@ -4328,12 +4890,18 @@ function PackingPanel({
 
   const bulkDelete = async () => {
     if (selectedIds.length === 0) return
-    if (!window.confirm(`删除选中的 ${selectedIds.length} 个物品？`)) return
-    for (const id of selectedIds) {
-      await authFetch(`${API}/trips/${tripId}/packing/${id}`, { method: 'DELETE' })
-    }
-    setSelectedIds([])
-    reload()
+    setConfirmAction({
+      title: `删除选中的 ${selectedIds.length} 个物品？`,
+      message: '这些物品会从行李清单中移除，所有成员的勾选状态也会清空。',
+      confirmText: '删除所选',
+      onConfirm: async () => {
+        for (const id of selectedIds) {
+          await authFetch(`${API}/trips/${tripId}/packing/${id}`, { method: 'DELETE' })
+        }
+        setSelectedIds([])
+        reload()
+      },
+    })
   }
 
   const renderRows = (items: PackingData['items']) => items.map((it) => (
@@ -4530,7 +5098,11 @@ function PackingPanel({
                               notify('通用分类不能删除', 'error')
                               return
                             }
-                            if (confirm(`确定删除分类"${c}"？该分类下的物品将移至"通用"分类。`)) {
+                            setConfirmAction({
+                              title: `删除分类「${c}」？`,
+                              message: '该分类下的物品会保留，并自动移动到「通用」分类。',
+                              confirmText: '删除分类',
+                              onConfirm: async () => {
                               const itemsToUpdate = data.items.filter(it => (it.category || '通用') === c)
                               for (const item of itemsToUpdate) {
                                 await recategorize(item.id, '通用', false)
@@ -4540,7 +5112,8 @@ function PackingPanel({
                               setBulkCat((cur) => cur === c ? '通用' : cur)
                               setFilterCat((cur) => cur === c ? '全部' : cur)
                               reload()
-                            }
+                              },
+                            })
                           }}
                           title={`删除分类 ${c}`}
                         >
@@ -4599,8 +5172,7 @@ function PackingPanel({
             <div className="trip-modal-foot">
               <button className="trip-btn danger" onClick={() => {
                 if (!editingItem) return
-                remove(editingItem.id, editingItem.name)
-                setEditingItem(null)
+                remove(editingItem.id, editingItem.name, () => setEditingItem(null))
               }}>删除</button>
               <span />
               <button className="trip-btn" onClick={() => setEditingItem(null)}>取消</button>
@@ -4630,7 +5202,7 @@ function PackingPanel({
                 </div>
               </div>
             )}
-            <div className="trip-batch-section">
+            <div className="trip-batch-section trip-batch-add-section">
               <b>批量新增物品</b>
               <small>一小行就是一个物品；每行可以单独选择分类。</small>
               <div className="trip-batch-rows">
@@ -4715,6 +5287,28 @@ function PackingPanel({
             ) : (
               <p className="trip-module-empty">只有行程创建者能邀请新成员。</p>
             )}
+          </div>
+        </div>, document.body)}
+      {confirmAction && createPortal(
+        <div className="modal-mask trip-confirm-mask" onClick={() => setConfirmAction(null)}>
+          <div className="modal trip-confirm-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="trip-confirm-head">
+              <span className="trip-confirm-icon">!</span>
+              <div>
+                <strong>{confirmAction.title}</strong>
+                {confirmAction.message && <p>{confirmAction.message}</p>}
+              </div>
+            </div>
+            <div className="trip-confirm-actions">
+              <button className="trip-btn" onClick={() => setConfirmAction(null)}>取消</button>
+              <button className="trip-btn danger" onClick={async () => {
+                const action = confirmAction
+                setConfirmAction(null)
+                await action.onConfirm()
+              }}>
+                {confirmAction.confirmText || '确定'}
+              </button>
+            </div>
           </div>
         </div>, document.body)}
     </div>
