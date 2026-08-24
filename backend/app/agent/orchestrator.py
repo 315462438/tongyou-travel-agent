@@ -1561,6 +1561,10 @@ def finalize_guide(
         "memories_used": mem_ctx.get("used", []),
         "memories_saved": saved,
     }
+    # 已通知过的记忆变更（2026-08-24）：下一轮据此跳过，保证同一次变更只说一遍。
+    # 空 dict 不写，免得给每条 meta 都塞个没用的键。
+    if mem_ctx.get("announced"):
+        meta["memories_changed"] = mem_ctx["announced"]
     # Phase 89：把这轮的上下文装配清单一并落盘——事后能回答「那轮喂了什么进模型」
     attach(meta, _LAST_MANIFEST.pop(cid, None))
     _finalize_streaming_message(msg_id, guide, reasoning, meta=meta)
@@ -2269,9 +2273,12 @@ def run_direct_answer(cid: str, user_text: str, user_id: str) -> None:
         answer += ("\n\n---\n> ⚠️ 这是快速回答，内容较长已截断。要**完整攻略**（含全程路线、"
                    "每天酒店、分项预算、注意事项），请打开输入框旁的「深度推理」开关重新提问。")
     saved = extract_and_save(cid, user_text, answer, user_id)  # 有依赖：saved 要进 meta
+    direct_meta = {"memories_used": mem_ctx.get("used", []), "memories_saved": saved}
+    if mem_ctx.get("announced"):  # 已通知过的记忆变更，下一轮据此跳过
+        direct_meta["memories_changed"] = mem_ctx["announced"]
     _finalize_streaming_message(
         msg_id, answer or "抱歉，这次没有生成内容，请重试。", "".join(reasoning_parts),
-        meta={"memories_used": mem_ctx.get("used", []), "memories_saved": saved},
+        meta=direct_meta,
     )
     update_history_summary(cid)  # Phase 103：同 finalize_guide，压缩不挡终稿
 

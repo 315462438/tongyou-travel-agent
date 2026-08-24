@@ -212,6 +212,8 @@ async def run_deep_research(cid: str, user_text: str, user_id: str, sandbox_enab
         # extract_and_save/update_history_summary 内部自带失败兜底，不会拖垮终稿。
         if mem_ctx.get("used"):
             meta["memories_used"] = mem_ctx["used"]
+        if mem_ctx.get("announced"):  # 已通知过的记忆变更，下一轮据此跳过
+            meta["memories_changed"] = mem_ctx["announced"]
         from app.agent.memory import extract_and_save
         from app.agent.orchestrator import update_history_summary
 

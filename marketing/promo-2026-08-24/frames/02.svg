@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f7f8ff"/><stop offset=".48" stop-color="#eef5ff"/><stop offset="1" stop-color="#f5efff"/></linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#6f63f6"/><stop offset="1" stop-color="#37c6b0"/></linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#ffffff" stop-opacity=".98"/><stop offset="1" stop-color="#ffffff" stop-opacity=".86"/></linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="24" stdDeviation="28" flood-color="#3f4784" flood-opacity=".16"/></filter>
+    <filter id="soft"><feGaussianBlur stdDeviation="42"/></filter>
+    <clipPath id="phone"><rect x="58" y="374" width="964" height="1390" rx="58"/></clipPath>
+  </defs>
+  <style>
+    text{font-family:'Hiragino Sans GB','PingFang SC','Microsoft YaHei',sans-serif;fill:#182033}.kicker{font-size:25px;font-weight:700;letter-spacing:3px;fill:#6f63f6}.headline{font-size:58px;font-weight:800;letter-spacing:-1px}.sub{font-size:29px;fill:#687089}.label{font-size:24px;fill:#7d8498}.body{font-size:29px;fill:#273047}.strong{font-size:31px;font-weight:700}.tiny{font-size:20px;fill:#838a9d}.white{fill:#fff}.center{text-anchor:middle}
+  </style>
+  <rect width="1080" height="1920" fill="url(#bg)"/>
+  <circle cx="95" cy="380" r="170" fill="#6f63f6" opacity=".08" filter="url(#soft)"/><circle cx="1010" cy="170" r="180" fill="#37c6b0" opacity=".1" filter="url(#soft)"/>
+  <text x="72" y="98" class="kicker">17同游 · TRAVEL TOGETHER</text>
+    <text x="72" y="182" class="headline">一句话，</text>
+    <text x="72" y="252" class="headline">说清旅行需求</text>
+  <rect x="58" y="374" width="964" height="1390" rx="58" fill="url(#glass)" stroke="#fff" stroke-width="3" filter="url(#shadow)"/>
+  <g clip-path="url(#phone)"><rect x="58" y="374" width="964" height="112" fill="#fbfcff"/><g transform="translate(94 405)"><g transform="translate(0 0) scale(1.05)" fill="none" stroke="#6f63f6" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="10.5" cy="33.5" r="3.5" fill="#6f63f6" stroke="none"/>
+    <path d="M14.2 32.7c4.3-8 9.2 1.8 14.3-7 2.7-4.7 5.5-6.7 9-7.3" stroke-width="3.6"/>
+    <path d="m31.7 13.8 7.8 3.6-5.4 6.8" stroke-width="3.6"/>
+    <circle cx="10.5" cy="33.5" r="6.3" opacity=".3" stroke-width="1.7"/>
+  </g><text x="62" y="34" class="strong">17同游</text></g><text x="964" y="442" class="body" text-anchor="end">开始新旅程</text><line x1="58" y1="486" x2="1022" y2="486" stroke="#e8ebf5"/><text x="108" y="570" class="label">今天想从哪里开始？</text><rect x="92" y="602" width="896" height="230" rx="34" fill="#fff" stroke="#bfc8ff" stroke-width="4"/><text x="132" y="670" class="body">国庆想和朋友去马来西亚玩 5 天，</text><text x="132" y="718" class="body">喜欢潜水，预算 8000 元，节奏轻松</text><rect x="132" y="758" width="154" height="42" rx="21" fill="#eeecff"/><text x="209" y="787" class="tiny center" fill="#6658e8">已识别需求</text><g transform="translate(92 876)"><rect width="426" height="126" rx="30" fill="#f4f6fb"/><text x="30" y="43" class="tiny">出发地</text><text x="30" y="88" class="strong">上海</text><rect x="452" width="436" height="126" rx="30" fill="#f4f6fb"/><text x="482" y="43" class="tiny">行程天数</text><text x="482" y="88" class="strong">5 天</text></g><g transform="translate(92 1024)"><rect width="426" height="126" rx="30" fill="#f4f6fb"/><text x="30" y="43" class="tiny">预算</text><text x="30" y="88" class="strong">¥ 8000</text><rect x="452" width="436" height="126" rx="30" fill="#f4f6fb"/><text x="482" y="43" class="tiny">节奏</text><text x="482" y="88" class="strong">松弛一点</text></g><rect x="92" y="1210" width="896" height="112" rx="56" fill="url(#accent)"/><text x="540" y="1280" class="strong white center">开始规划  →</text><text x="540" y="1394" class="label center">会检查路线、节奏、预算和备选方案</text><rect x="58" y="1636" width="964" height="128" fill="#fbfcff"/><line x1="58" y1="1636" x2="1022" y2="1636" stroke="#e3e7f3"/><g transform="translate(178 1674)"><text class="strong center" fill="#6f63f6">✦</text><text y="42" class="tiny center" fill="#6f63f6">对话</text></g><g transform="translate(418 1674)"><text class="strong center" fill="#99a0b1">⌁</text><text y="42" class="tiny center" fill="#99a0b1">同游圈</text></g><g transform="translate(658 1674)"><text class="strong center" fill="#99a0b1">▣</text><text y="42" class="tiny center" fill="#99a0b1">行程</text></g><g transform="translate(898 1674)"><text class="strong center" fill="#99a0b1">◇</text><text y="42" class="tiny center" fill="#99a0b1">我的</text></g></g></g>
+  <rect x="72" y="1827" width="936" height="8" rx="4" fill="#dfe3f2"/><rect x="72" y="1827" width="234" height="8" rx="4" fill="url(#accent)"/>
+  <text x="72" y="1878" class="tiny">17tongyou</text><text x="1008" y="1878" class="tiny" text-anchor="end">一起规划，一起出发</text>
+  </svg>

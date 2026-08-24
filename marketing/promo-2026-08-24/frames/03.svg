@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f7f8ff"/><stop offset=".48" stop-color="#eef5ff"/><stop offset="1" stop-color="#f5efff"/></linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#6f63f6"/><stop offset="1" stop-color="#37c6b0"/></linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#ffffff" stop-opacity=".98"/><stop offset="1" stop-color="#ffffff" stop-opacity=".86"/></linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="24" stdDeviation="28" flood-color="#3f4784" flood-opacity=".16"/></filter>
+    <filter id="soft"><feGaussianBlur stdDeviation="42"/></filter>
+    <clipPath id="phone"><rect x="58" y="374" width="964" height="1390" rx="58"/></clipPath>
+  </defs>
+  <style>
+    text{font-family:'Hiragino Sans GB','PingFang SC','Microsoft YaHei',sans-serif;fill:#182033}.kicker{font-size:25px;font-weight:700;letter-spacing:3px;fill:#6f63f6}.headline{font-size:58px;font-weight:800;letter-spacing:-1px}.sub{font-size:29px;fill:#687089}.label{font-size:24px;fill:#7d8498}.body{font-size:29px;fill:#273047}.strong{font-size:31px;font-weight:700}.tiny{font-size:20px;fill:#838a9d}.white{fill:#fff}.center{text-anchor:middle}
+  </style>
+  <rect width="1080" height="1920" fill="url(#bg)"/>
+  <circle cx="95" cy="380" r="170" fill="#6f63f6" opacity=".08" filter="url(#soft)"/><circle cx="1010" cy="170" r="180" fill="#37c6b0" opacity=".1" filter="url(#soft)"/>
+  <text x="72" y="98" class="kicker">17同游 · TRAVEL TOGETHER</text>
+    <text x="72" y="182" class="headline">不止“加载中”</text>
+    <text x="72" y="252" class="headline">每一步都看得见</text>
+  <rect x="58" y="374" width="964" height="1390" rx="58" fill="url(#glass)" stroke="#fff" stroke-width="3" filter="url(#shadow)"/>
+  <g clip-path="url(#phone)"><rect x="58" y="374" width="964" height="112" fill="#fbfcff"/><g transform="translate(94 405)"><g transform="translate(0 0) scale(1.05)" fill="none" stroke="#6f63f6" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="10.5" cy="33.5" r="3.5" fill="#6f63f6" stroke="none"/>
+    <path d="M14.2 32.7c4.3-8 9.2 1.8 14.3-7 2.7-4.7 5.5-6.7 9-7.3" stroke-width="3.6"/>
+    <path d="m31.7 13.8 7.8 3.6-5.4 6.8" stroke-width="3.6"/>
+    <circle cx="10.5" cy="33.5" r="6.3" opacity=".3" stroke-width="1.7"/>
+  </g><text x="62" y="34" class="strong">17同游</text></g><text x="964" y="442" class="body" text-anchor="end">正在规划</text><line x1="58" y1="486" x2="1022" y2="486" stroke="#e8ebf5"/><g transform="translate(540 720)"><circle r="152" fill="#7467f6" opacity=".08"/><circle r="112" fill="#45c9b0" opacity=".14"/><circle r="74" fill="url(#accent)"/><circle r="32" fill="#fff" opacity=".95"/><path d="M-18 5c20-34 42 12 68-29" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round"/><circle cx="-18" cy="5" r="8" fill="#fff"/></g><text x="540" y="942" class="strong center">正在为你整理旅行方案</text><text x="540" y="991" class="label center">已用时 00:18 · 正在匹配路线与图片</text><g transform="translate(132 1084)"><g transform="translate(0 0)"><circle cx="24" cy="24" r="22" fill="#6f63f6"/><text x="24" y="32" class="tiny white center">✓</text><text x="70" y="33" class="body" font-weight="400">理解需求</text></g><g transform="translate(0 94)"><circle cx="24" cy="24" r="22" fill="#6f63f6"/><text x="24" y="32" class="tiny white center">✓</text><text x="70" y="33" class="body" font-weight="400">搜集资料</text></g><g transform="translate(0 188)"><circle cx="24" cy="24" r="22" fill="#6f63f6"/><text x="24" y="32" class="tiny white center">3</text><text x="70" y="33" class="body" font-weight="700">整理方案</text><rect x="694" y="2" width="90" height="42" rx="21" fill="#efedff"/><text x="739" y="30" class="tiny center" fill="#6658e8">进行中</text></g><g transform="translate(0 282)"><circle cx="24" cy="24" r="22" fill="#e3e7f2"/><text x="24" y="32" class="tiny white center"></text><text x="70" y="33" class="body" font-weight="400">生成内容</text></g><g transform="translate(0 376)"><circle cx="24" cy="24" r="22" fill="#e3e7f2"/><text x="24" y="32" class="tiny white center"></text><text x="70" y="33" class="body" font-weight="400">检查优化</text></g></g></g>
+  <rect x="72" y="1827" width="936" height="8" rx="4" fill="#dfe3f2"/><rect x="72" y="1827" width="351" height="8" rx="4" fill="url(#accent)"/>
+  <text x="72" y="1878" class="tiny">17tongyou</text><text x="1008" y="1878" class="tiny" text-anchor="end">一起规划，一起出发</text>
+  </svg>

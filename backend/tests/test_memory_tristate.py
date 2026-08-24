@@ -68,7 +68,7 @@ def test_known_when_prior_reply_recorded_keys(db):
     from app.agent.memory import previous_injected_memories
 
     _reply(db, 1, used=[{"kind": "memory", "key": "忌口", "content": "吃素"}])
-    assert previous_injected_memories("c1") == {"忌口": "吃素"}
+    assert previous_injected_memories("c1").shown == {"忌口": {"吃素"}}
 
 
 def test_unknown_when_prior_reply_has_no_record(db):
@@ -95,7 +95,7 @@ def test_poster_and_budget_messages_are_skipped(db):
     _reply(db, 2, poster={"title": "x"})
     _reply(db, 3, budget={"total": 1})
     _reply(db, 4, streaming=True)
-    assert previous_injected_memories("c1") == {"忌口": "吃素"}
+    assert previous_injected_memories("c1").shown == {"忌口": {"吃素"}}
 
 
 def test_empty_memories_used_is_known_not_unknown(db):
@@ -103,38 +103,51 @@ def test_empty_memories_used_is_known_not_unknown(db):
     from app.agent.memory import previous_injected_memories
 
     _reply(db, 1, used=[{"kind": "past_chat", "title": "t", "content": "c"}])
-    assert previous_injected_memories("c1") == {}
+    assert previous_injected_memories("c1").shown == {}
 
 
 # ---------- 变更渲染 ----------
+#
+# `previous` 现在是 InjectionHistory（shown = 全会话展示过的每个 (key, value)，
+# announced = 已通知过什么）。`_h` 把简写展开成它。
+
+def _h(shown: dict, announced: dict | None = None):
+    from app.agent.memory import InjectionHistory
+
+    return InjectionHistory(
+        {k: (set(v) if isinstance(v, (set, list)) else {v}) for k, v in shown.items()},
+        announced or {},
+    )
+
 
 def test_absent_emits_nothing():
     from app.agent.memory import format_memory_changes
 
-    assert format_memory_changes(None, [_mem("忌口", "吃素")], {"忌口"}) == ""
+    assert format_memory_changes(None, [_mem("忌口", "吃素")], {"忌口"}) == ("", {})
 
 
 def test_addition_emits_nothing():
     """新增不与历史里任何表述矛盾，说了是噪声（同 Codex 不加 REPLACEMENT_NOTICE 那格）。"""
     from app.agent.memory import format_memory_changes
 
-    out = format_memory_changes({}, [_mem("忌口", "吃素")], {"忌口"})
-    assert out == ""
+    assert format_memory_changes(_h({}), [_mem("忌口", "吃素")], {"忌口"}) == ("", {})
 
 
 def test_update_is_announced():
     from app.agent.memory import format_memory_changes
 
-    out = format_memory_changes({"忌口": "吃素"}, [_mem("忌口", "不忌口")], {"忌口"})
+    out, newly = format_memory_changes(_h({"忌口": "吃素"}), [_mem("忌口", "不忌口")], {"忌口"})
     assert "忌口" in out and "不忌口" in out and "已更新" in out
+    assert newly == {"忌口": "不忌口"}
 
 
 def test_removal_is_announced():
     """最要紧的一格：删除必须显式说，否则模型只看得到自己早前基于旧偏好写的推荐。"""
     from app.agent.memory import format_memory_changes
 
-    out = format_memory_changes({"忌口": "吃素"}, [], set())
+    out, newly = format_memory_changes(_h({"忌口": "吃素"}), [], set())
     assert "忌口" in out and "不再适用" in out
+    assert newly == {"忌口": None}
 
 
 def test_filtered_out_memory_is_not_reported_as_removed():
@@ -145,8 +158,7 @@ def test_filtered_out_memory_is_not_reported_as_removed():
     """
     from app.agent.memory import format_memory_changes
 
-    out = format_memory_changes({"忌口": "吃素"}, [], all_keys={"忌口"})
-    assert out == ""
+    assert format_memory_changes(_h({"忌口": "吃素"}), [], all_keys={"忌口"}) == ("", {})
 
 
 def test_unknown_emits_blanket_authority_notice():
@@ -154,60 +166,130 @@ def test_unknown_emits_blanket_authority_notice():
     漏说则模型继续按历史里那条已被推翻的约束作答。"""
     from app.agent.memory import _UNKNOWN, format_memory_changes
 
-    out = format_memory_changes(_UNKNOWN, [_mem("忌口", "不忌口")], {"忌口"})
-    assert out and "以此为准" not in out or "为准" in out
+    out, newly = format_memory_changes(_UNKNOWN, [_mem("忌口", "不忌口")], {"忌口"})
     assert "当前有效" in out
+    assert newly == {}  # 兜底重申不进账本（它没有具体针对哪个 key）
 
 
 def test_no_change_emits_nothing():
     from app.agent.memory import format_memory_changes
 
-    out = format_memory_changes({"忌口": "吃素"}, [_mem("忌口", "吃素")], {"忌口"})
-    assert out == ""
+    assert format_memory_changes(_h({"忌口": "吃素"}), [_mem("忌口", "吃素")], {"忌口"}) == ("", {})
 
 
 def test_update_and_removal_together():
     from app.agent.memory import format_memory_changes
 
-    out = format_memory_changes(
-        {"忌口": "吃素", "预算": "3000"},
-        [_mem("忌口", "不忌口")],
-        all_keys={"忌口"},
+    out, newly = format_memory_changes(
+        _h({"忌口": "吃素", "预算": "3000"}), [_mem("忌口", "不忌口")], all_keys={"忌口"},
     )
     assert "已更新" in out and "不再适用" in out
+    assert newly == {"忌口": "不忌口", "预算": None}
+
+
+# ---------- 跨轮累积（2026-08-24 修的那个洞）----------
+
+def test_change_is_caught_even_if_key_was_filtered_out_last_turn():
+    """病灶是**跨轮累积**的，不能只跟上一轮比。
+
+    第 1 轮展示「忌口=吃素」→ 模型写下素食推荐（病灶从此留在历史里）；
+    第 2 轮用户问机场怎么走、忌口被相关性筛掉；第 3 轮忌口被删。
+    只跟第 2 轮比的话 `忌口 ∉ previous` → 静默漏发，而第 1 轮那段推荐还在。
+    """
+    from app.agent.memory import format_memory_changes
+
+    # shown 收的是全会话展示过的，第 2 轮没提不影响
+    out, newly = format_memory_changes(_h({"忌口": "吃素", "预算": "3000"}),
+                                       [_mem("预算", "3000")], all_keys={"预算"})
+    assert "忌口" in out and "不再适用" in out
+    assert newly == {"忌口": None}
+
+
+def test_aggregates_shown_values_across_the_whole_conversation(db):
+    """previous_injected_memories 聚合全会话，不是只读最近一条。"""
+    from app.agent.memory import previous_injected_memories
+
+    _reply(db, 1, used=[{"kind": "memory", "key": "忌口", "content": "吃素"},
+                        {"kind": "memory", "key": "预算", "content": "3000"}])
+    _reply(db, 2, used=[{"kind": "memory", "key": "预算", "content": "3000"}])  # 忌口被筛掉
+    hist = previous_injected_memories("c1")
+    assert hist.shown == {"忌口": {"吃素"}, "预算": {"3000"}}
+
+
+def test_shown_keeps_every_historical_value_not_just_the_latest(db):
+    """同一个 key 展示过多个值时全都要留——历史里可能有基于任意一个值写下的内容。"""
+    from app.agent.memory import previous_injected_memories
+
+    _reply(db, 1, used=[{"kind": "memory", "key": "预算", "content": "3000"}])
+    _reply(db, 2, used=[{"kind": "memory", "key": "预算", "content": "8000"}])
+    assert previous_injected_memories("c1").shown == {"预算": {"3000", "8000"}}
+
+
+def test_older_legacy_message_does_not_pin_conversation_to_unknown(db):
+    """只用**最近**那条判 Unknown：一条老消息不该让整个会话永远发兜底重申。"""
+    from app.agent.memory import previous_injected_memories
+
+    _reply(db, 1)  # 老消息，没有 memories_used
+    _reply(db, 2, used=[{"kind": "memory", "key": "忌口", "content": "吃素"}])
+    hist = previous_injected_memories("c1")
+    assert hist is not None and hasattr(hist, "shown")
+    assert hist.shown == {"忌口": {"吃素"}}
 
 
 # ---------- 「恰好通知一次」 ----------
 
-def test_notice_fires_exactly_once_after_a_change():
-    """变更通知只在变更后的**那一轮**出现，下一轮自动消失。
-
-    它是投影产物（拼在本轮 <background_memory> 里，不落库），而下一轮的 previous
-    已经是新值 → diff 为空。写错成「持续提醒」的话，模型会在之后每一轮都被同一条
-    「已更新」骚扰，还可能反复道歉修正。
-    """
+def test_notice_fires_exactly_once_after_an_update():
+    """并集里旧值永远在，所以「只说一遍」靠的是 announced 账本，不是 diff 自然消失。"""
     from app.agent.memory import format_memory_changes
 
     now = [_mem("忌口", "不忌口")]
-    turn_n = format_memory_changes({"忌口": "吃素"}, now, {"忌口"})
-    assert "已更新" in turn_n
+    shown = {"忌口": {"吃素", "不忌口"}}  # 第 N 轮通知后，新值也进了 shown
 
-    # 第 N 轮的 memories_used 记下的就是新值 → 第 N+1 轮的 previous
-    turn_n1 = format_memory_changes({"忌口": "不忌口"}, now, {"忌口"})
-    assert turn_n1 == ""
+    out1, newly = format_memory_changes(_h({"忌口": "吃素"}), now, {"忌口"})
+    assert "已更新" in out1 and newly == {"忌口": "不忌口"}
+
+    # 第 N+1 轮：announced 记着已经说过 → 不再重复
+    out2, newly2 = format_memory_changes(_h(shown, announced=newly), now, {"忌口"})
+    assert (out2, newly2) == ("", {})
 
 
 def test_removal_notice_fires_exactly_once():
     from app.agent.memory import format_memory_changes
 
-    assert "不再适用" in format_memory_changes({"忌口": "吃素"}, [], set())
-    assert format_memory_changes({}, [], set()) == ""  # 下一轮 previous 里已经没有它
+    out1, newly = format_memory_changes(_h({"忌口": "吃素"}), [], set())
+    assert "不再适用" in out1 and newly == {"忌口": None}
+
+    out2, newly2 = format_memory_changes(_h({"忌口": "吃素"}, announced=newly), [], set())
+    assert (out2, newly2) == ("", {})
 
 
-def test_unknown_notice_fires_exactly_once():
-    """老会话第一轮发整体重申；那一轮的 memories_used 带上 key 后转入 Known，不再重申。"""
-    from app.agent.memory import _UNKNOWN, format_memory_changes
+def test_second_change_is_announced_again():
+    """「只说一遍」是针对**同一次**变更；再次变更必须再说。
 
-    mems = [_mem("忌口", "吃素")]
-    assert "当前有效" in format_memory_changes(_UNKNOWN, mems, {"忌口"})
-    assert format_memory_changes({"忌口": "吃素"}, mems, {"忌口"}) == ""
+    账本记的是「上次通知的新值」而不是「这个 key 通知过了」，就是为了这个。
+    """
+    from app.agent.memory import format_memory_changes
+
+    prev = _h({"预算": {"3000", "8000"}}, announced={"预算": "8000"})
+    out, newly = format_memory_changes(prev, [_mem("预算", "12000")], {"预算"})
+    assert "12000" in out and newly == {"预算": "12000"}
+
+
+def test_readded_memory_after_removal_is_announced():
+    """通知过移除（announced=None）之后又加回来 → 与账本不一致，要再说一次。"""
+    from app.agent.memory import format_memory_changes
+
+    prev = _h({"忌口": "吃素"}, announced={"忌口": None})
+    out, newly = format_memory_changes(prev, [_mem("忌口", "不吃辣")], {"忌口"})
+    assert "已更新" in out and newly == {"忌口": "不吃辣"}
+
+
+def test_announced_ledger_accumulates_across_turns(db):
+    """announced 由旧到新回放合并，新的覆盖旧的。"""
+    from app.agent.memory import previous_injected_memories
+
+    _reply(db, 1, used=[{"kind": "memory", "key": "预算", "content": "3000"}],
+           memories_changed={"预算": "3000"})
+    _reply(db, 2, used=[{"kind": "memory", "key": "预算", "content": "8000"}],
+           memories_changed={"预算": "8000"})
+    assert previous_injected_memories("c1").announced == {"预算": "8000"}

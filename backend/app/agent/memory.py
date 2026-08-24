@@ -490,9 +490,9 @@ def gather_context(cid: str, destination: str, user_id: str, user_text: str = ""
         # 三态变更通知（2026-08-22）：对话历史承载着旧偏好，删除/更新必须显式说，
         # 否则模型只会看到自己早前基于旧偏好写下的推荐。all_keys 用**全量**记忆的 key，
         # 好把「真删了」和「本轮没被相关性筛中」区分开。
-        changes = ""
+        changes, announced = "", {}
         try:
-            changes = format_memory_changes(previous, memories, all_keys)
+            changes, announced = format_memory_changes(previous, memories, all_keys)
         except Exception:  # noqa: BLE001 — 变更通知是增强，绝不能拖垮上下文收集
             logger.warning("memory change notice failed cid=%s", cid, exc_info=True)
         block = "\n\n".join(
@@ -503,7 +503,9 @@ def gather_context(cid: str, destination: str, user_id: str, user_text: str = ""
         ] + [
             {"kind": "past_chat", "title": c["title"], "content": c["snippet"]} for c in chats
         ]
-    return {"block": block, "used": used, "changes": changes}
+    # `announced` 要由调用方写进 meta.memories_changed——它是「已经说过」的账，
+    # 落库失败/本轮被取消时**下一轮会重发**，方向安全（重复一句 vs 永久漏发）。
+    return {"block": block, "used": used, "changes": changes, "announced": announced}
 
 
 def _bump_hit_count(db: Session, memories: list[TravelMemory]) -> None:
@@ -678,19 +680,60 @@ def _run_sleep_consolidate(user_id: str) -> None:
 # 知道约束解除了，只看到自己过去言之凿凿的输出。这正是 Codex `agents_md.rs` 里
 # `(None, previous_may_contain_instructions=true)` 那一格：**删除必须显式通知**。
 #
-# 三态取自「上一轮实际注入了什么」，而这件事我们此前完全没记录。
+# ⚠️ 快照必须**跨全会话聚合**，不能只跟上一轮比（2026-08-24 修）。陈旧状态是逐轮
+# **累积**的：第 1 轮展示「忌口=吃素」→ 模型写下一堆素食推荐（病灶从此留在历史里），
+# 第 2 轮用户问机场怎么走、忌口被 `select_relevant_memories` 筛掉，第 3 轮忌口被删——
+# 只跟第 2 轮比的话 `忌口 ∉ previous`，**静默漏发**，而第 1 轮那段素食推荐还在。
+# 所以 `shown` 收全会话展示过的每个 (key, value)。
+#
+# 代价是「恰好一次」会破（并集里那条永远在，就会每轮都发），所以**通知这个动作本身
+# 也要记账**：`meta.memories_changed` 记下本轮通知过什么，下一轮据此跳过。
+# 这其实更忠于 Codex——它的 `WorldStateSnapshot` 也是 merge patch 一路累积推进的。
 
 _UNKNOWN = object()  # 三态哨兵：知道说过，但不知道说的是什么
+_MISS = object()     # "从未通知过"，与"通知过移除"（记为 None）区分
+_HISTORY_SCAN_LIMIT = 60  # 回溯的 assistant 消息条数上限
+
+
+class InjectionHistory:
+    """本会话「已经告诉过模型什么」的账本（对应 Codex 的 WorldStateSnapshot）。
+
+    - `shown`：key → 曾经展示过的**所有**值。判据是「历史里有没有基于别的值写下的内容」，
+      所以要全集，不是最后一个值。
+    - `announced`：key → 上次通知的新值；`None` 表示"已通知它被移除"。
+      用来保证同一次变更只通知一遍，而**再次变更仍会再通知**。
+    """
+
+    __slots__ = ("shown", "announced")
+
+    def __init__(self, shown: dict[str, set[str]], announced: dict[str, str | None]):
+        self.shown = shown
+        self.announced = announced
+
+    def __repr__(self) -> str:  # 调试用
+        return f"InjectionHistory(shown={ {k: sorted(v) for k, v in self.shown.items()} }, announced={self.announced})"
+
+
+def _parse_meta(m: TravelMessage) -> dict:
+    if not m.meta_json:
+        return {}
+    try:
+        return json.loads(m.meta_json)
+    except Exception:  # noqa: BLE001
+        return {}
 
 
 def previous_injected_memories(cid: str):
-    """上一轮实际注入给模型的记忆快照（三态，对应 PreviousSectionState）。
+    """本会话已经告诉过模型什么（三态，对应 `PreviousSectionState`）。
 
-    - `None`     → **Absent**：本会话还没有过终稿回复，历史里不存在与记忆冲突的表述，
-      无需任何通知。
-    - `_UNKNOWN` → **Unknown**：有过回复，但没记下当时注入了什么（改造前的老消息）。
-      **拿不准时要通知**——见 `format_memory_changes` 的代价不对称说明。
-    - `dict`     → **Known**：`{key: content}`，可精确比对。
+    - `None`               → **Absent**：本会话还没有过终稿回复，历史里不存在与记忆
+      冲突的表述，无需任何通知。
+    - `_UNKNOWN`           → **Unknown**：**最近**那条真回合没记下注入了什么
+      （改造前的老消息）。拿不准时要通知——见 `format_memory_changes` 的代价不对称说明。
+    - `InjectionHistory`   → **Known**：可精确比对。
+
+    只用**最近一条**判 Unknown，更早的老消息只是不贡献数据而已——否则一条老消息会让
+    整个会话永远停在 Unknown，那句兜底重申就会每轮都发。
     """
     from app.db.session import get_session
 
@@ -699,33 +742,47 @@ def previous_injected_memories(cid: str):
             select(TravelMessage)
             .where(TravelMessage.conversation_id == cid, TravelMessage.role == "assistant")
             .order_by(TravelMessage.created_at.desc())
-            .limit(10)
+            .limit(_HISTORY_SCAN_LIMIT)
         ).scalars().all()
-    for m in rows:
-        meta = {}
-        if m.meta_json:
-            try:
-                meta = json.loads(m.meta_json)
-            except Exception:  # noqa: BLE001
-                meta = {}
-        # 流式占位/海报/预算面板不是一次「模型读过记忆并作答」的回合，跳过
-        if meta.get("streaming") or meta.get("poster") or meta.get("budget"):
-            continue
-        used = meta.get("memories_used")
-        if not isinstance(used, list):
-            return _UNKNOWN
-        mem_entries = [u for u in used if isinstance(u, dict) and u.get("kind") == "memory"]
-        snap = {u["key"]: u.get("content", "") for u in mem_entries if u.get("key")}
-        # 有记忆被注入却一个 key 都没有 → 老格式（改造前 used 不带 key），认作 Unknown。
-        # 注意与「上一轮确实一条记忆都没注入」区分：那种情况 mem_entries 为空，是 Known({})。
-        if mem_entries and not snap:
-            return _UNKNOWN
-        return snap
-    return None  # Absent：本会话没有过终稿回复
+
+    # 流式占位/海报/预算面板不是一次「模型读过记忆并作答」的回合
+    turns = [
+        (m, meta) for m, meta in ((m, _parse_meta(m)) for m in rows)
+        if not (meta.get("streaming") or meta.get("poster") or meta.get("budget"))
+    ]
+    if not turns:
+        return None  # Absent
+
+    newest_meta = turns[0][1]
+    newest_used = newest_meta.get("memories_used")
+    if not isinstance(newest_used, list):
+        return _UNKNOWN
+    newest_mem = [u for u in newest_used if isinstance(u, dict) and u.get("kind") == "memory"]
+    if newest_mem and not any(u.get("key") for u in newest_mem):
+        # 老格式：注入过记忆却一条 key 都没有 → 比不出差异。注意与「上一轮确实一条
+        # 都没注入」区分：那种情况 newest_mem 为空，是 Known（空账本）。
+        return _UNKNOWN
+
+    shown: dict[str, set[str]] = {}
+    announced: dict[str, str | None] = {}
+    for _m, meta in reversed(turns):  # 由旧到新回放，新的通知覆盖旧的
+        for u in meta.get("memories_used") or []:
+            if not isinstance(u, dict) or u.get("kind") != "memory":
+                continue
+            key = u.get("key")
+            if key:
+                shown.setdefault(key, set()).add(u.get("content", ""))
+        changed = meta.get("memories_changed")
+        if isinstance(changed, dict):
+            announced.update(changed)
+    return InjectionHistory(shown, announced)
 
 
-def format_memory_changes(previous, injected: list[TravelMemory], all_keys: set[str]) -> str:
-    """把「相对上一轮，记忆发生了什么变化」渲染成一段通知；无变化返回空串。
+def format_memory_changes(previous, injected: list[TravelMemory], all_keys: set[str]) -> tuple[str, dict]:
+    """渲染「相对本会话早前的回复，记忆发生了什么变化」。
+
+    返回 `(通知文本, 本轮新通知的 {key: 新值/None})`——后者由调用方写进
+    `meta.memories_changed`，下一轮据此跳过，保证同一次变更只说一遍。
 
     只通知**更新**与**删除**，不通知新增——新增不与历史里的任何表述矛盾，说了是噪声。
     （同 Codex：`(Some, previous_absent)` 那一格原样发，不加 REPLACEMENT_NOTICE。）
@@ -739,23 +796,38 @@ def format_memory_changes(previous, injected: list[TravelMemory], all_keys: set[
     它为什么固执。所以 Unknown 一律往「通知」这边倒。
     """
     if previous is None:  # Absent
-        return ""
+        return "", {}
     if previous is _UNKNOWN:
         # 比不出差异，就整体重申权威性——对应 Codex 在 Unknown 下发 REPLACEMENT_NOTICE。
         return (
             "以上记忆是**当前有效**的版本。若本对话早前的回复与它冲突，一律以上面这份为准"
             "（用户可能中途更新过偏好）。"
-        )
+        ), {}
 
     current = {m.key: (m.content or "") for m in injected if m.key}
-    updated = [k for k, v in current.items() if k in previous and previous[k] != v]
-    removed = [k for k in previous if k not in all_keys]
-    if not updated and not removed:
-        return ""
+    lines: list[str] = []
+    newly: dict[str, str | None] = {}
 
-    lines = [f"- 「{k}」已更新为：{current[k]}" for k in updated]
-    lines += [f"- 「{k}」已被移除，不再适用" for k in removed]
+    for key, value in current.items():
+        seen = previous.shown.get(key)
+        if not seen or seen == {value}:
+            continue  # 没展示过（=新增，不通知）；或展示过的全是当前这个值（=没变）
+        if previous.announced.get(key, _MISS) == value:
+            continue  # 这次变更已经通知过了
+        lines.append(f"- 「{key}」已更新为：{value}")
+        newly[key] = value
+
+    for key in previous.shown:
+        if key in all_keys:
+            continue  # 库里还在——可能只是本轮没被相关性筛中，绝不能报成删除
+        if previous.announced.get(key, _MISS) is None:
+            continue  # 已经通知过它被移除了
+        lines.append(f"- 「{key}」已被移除，不再适用")
+        newly[key] = None
+
+    if not lines:
+        return "", {}
     return (
         "⚠️ 相对本对话早前的回复，以下偏好发生了变化，请以此为准（早前基于旧偏好给出的"
         "建议若与之冲突，需要主动修正）：\n" + "\n".join(lines)
-    )
+    ), newly

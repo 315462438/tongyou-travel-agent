@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f7f8ff"/><stop offset=".48" stop-color="#eef5ff"/><stop offset="1" stop-color="#f5efff"/></linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#6f63f6"/><stop offset="1" stop-color="#37c6b0"/></linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#ffffff" stop-opacity=".98"/><stop offset="1" stop-color="#ffffff" stop-opacity=".86"/></linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="24" stdDeviation="28" flood-color="#3f4784" flood-opacity=".16"/></filter>
+    <filter id="soft"><feGaussianBlur stdDeviation="42"/></filter>
+    <clipPath id="phone"><rect x="58" y="374" width="964" height="1390" rx="58"/></clipPath>
+  </defs>
+  <style>
+    text{font-family:'Hiragino Sans GB','PingFang SC','Microsoft YaHei',sans-serif;fill:#182033}.kicker{font-size:25px;font-weight:700;letter-spacing:3px;fill:#6f63f6}.headline{font-size:58px;font-weight:800;letter-spacing:-1px}.sub{font-size:29px;fill:#687089}.label{font-size:24px;fill:#7d8498}.body{font-size:29px;fill:#273047}.strong{font-size:31px;font-weight:700}.tiny{font-size:20px;fill:#838a9d}.white{fill:#fff}.center{text-anchor:middle}
+  </style>
+  <rect width="1080" height="1920" fill="url(#bg)"/>
+  <circle cx="95" cy="380" r="170" fill="#6f63f6" opacity=".08" filter="url(#soft)"/><circle cx="1010" cy="170" r="180" fill="#37c6b0" opacity=".1" filter="url(#soft)"/>
+  <text x="72" y="98" class="kicker">17同游 · TRAVEL TOGETHER</text>
+    <text x="72" y="182" class="headline">不是各做各的</text>
+    <text x="72" y="252" class="headline">群聊让同伴真正参与</text>
+  <rect x="58" y="374" width="964" height="1390" rx="58" fill="url(#glass)" stroke="#fff" stroke-width="3" filter="url(#shadow)"/>
+  <g clip-path="url(#phone)"><rect x="58" y="374" width="964" height="112" fill="#fbfcff"/><g transform="translate(94 405)"><g transform="translate(0 0) scale(1.05)" fill="none" stroke="#6f63f6" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="10.5" cy="33.5" r="3.5" fill="#6f63f6" stroke="none"/>
+    <path d="M14.2 32.7c4.3-8 9.2 1.8 14.3-7 2.7-4.7 5.5-6.7 9-7.3" stroke-width="3.6"/>
+    <path d="m31.7 13.8 7.8 3.6-5.4 6.8" stroke-width="3.6"/>
+    <circle cx="10.5" cy="33.5" r="6.3" opacity=".3" stroke-width="1.7"/>
+  </g><text x="62" y="34" class="strong">17同游</text></g><text x="964" y="442" class="body" text-anchor="end">吉隆坡之旅 · 群聊</text><line x1="58" y1="486" x2="1022" y2="486" stroke="#e8ebf5"/><g transform="translate(92 538)"><text class="tiny center" x="448" y="22">今天 19:42</text><g transform="translate(0 60)"><circle cx="42" cy="42" r="42" fill="#dcd8ff"/><text x="42" y="53" class="strong center" fill="#6759e9">A</text><rect x="104" width="570" height="116" rx="28" fill="#f1f3f9"/><text x="138" y="45" class="body">第二天潜水要不要提前订？</text><text x="138" y="83" class="tiny">我担心国庆满位</text></g><g transform="translate(0 218)"><circle cx="854" cy="42" r="42" fill="#c9f0e7"/><text x="854" y="53" class="strong center" fill="#188d78">我</text><rect x="216" width="570" height="116" rx="28" fill="#6f63f6"/><text x="250" y="45" class="body white">我已经把预约提醒加进行程了</text><text x="250" y="83" class="tiny white">大家投票后我来订</text></g><g transform="translate(0 376)"><circle cx="42" cy="42" r="42" fill="#ffe2d0"/><text x="42" y="53" class="strong center" fill="#d16b2e">M</text><rect x="104" width="610" height="116" rx="28" fill="#f1f3f9"/><text x="138" y="45" class="body">那我负责整理海鲜餐厅 🍤</text><text x="138" y="83" class="tiny">顺便看看日落时间</text></g><rect x="0" y="610" width="896" height="142" rx="36" fill="#f7f8ff" stroke="#e2e6f2"/><text x="42" y="693" class="label">和同伴聊聊行程细节…</text><circle cx="826" cy="681" r="42" fill="url(#accent)"/><path d="M811 681h30m-10-10 10 10-10 10" stroke="#fff" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/><g transform="translate(0 804)"><rect width="896" height="170" rx="30" fill="#f0edff"/><text x="38" y="52" class="strong" fill="#6658e8">沟通不再散落</text><text x="38" y="103" class="body">群聊贴着行程走，地点留言也保留</text><text x="38" y="142" class="tiny">谁改了路线、谁负责预订，一目了然</text></g></g><rect x="58" y="1636" width="964" height="128" fill="#fbfcff"/><line x1="58" y1="1636" x2="1022" y2="1636" stroke="#e3e7f3"/><g transform="translate(178 1674)"><text class="strong center" fill="#99a0b1">✦</text><text y="42" class="tiny center" fill="#99a0b1">对话</text></g><g transform="translate(418 1674)"><text class="strong center" fill="#99a0b1">⌁</text><text y="42" class="tiny center" fill="#99a0b1">同游圈</text></g><g transform="translate(658 1674)"><text class="strong center" fill="#6f63f6">▣</text><text y="42" class="tiny center" fill="#6f63f6">行程</text></g><g transform="translate(898 1674)"><text class="strong center" fill="#99a0b1">◇</text><text y="42" class="tiny center" fill="#99a0b1">我的</text></g></g></g>
+  <rect x="72" y="1827" width="936" height="8" rx="4" fill="#dfe3f2"/><rect x="72" y="1827" width="702" height="8" rx="4" fill="url(#accent)"/>
+  <text x="72" y="1878" class="tiny">17tongyou</text><text x="1008" y="1878" class="tiny" text-anchor="end">一起规划，一起出发</text>
+  </svg>
