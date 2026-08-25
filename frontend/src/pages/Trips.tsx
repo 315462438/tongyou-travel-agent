@@ -11,6 +11,7 @@ import TripMap from '../components/TripMap'
 import { useToast } from '../components/toast-context'
 import { API, authFetch } from '../api'
 import { formatTripTimeRange, pickNavUrl, prepareMarkdown } from '../interaction'
+import { composeShareGuide } from '../lib/guideComposer'
 
 interface TripSummary {
   id: string
@@ -2368,6 +2369,28 @@ function TripBoard({
     notify('正在生成 Word 文档…')
     const data = await loadShareDocumentData()
     if (!data) return
+
+    // Phase 1: 生成 ShareGuideSchema（验证阶段）
+    try {
+      const schema = composeShareGuide(trip, data.foods, data.tips, data.packing, expenses, {
+        includePacking: false,
+        includeBudget: true,
+        memberCount: undefined,
+      })
+      console.log('ShareGuideSchema 生成成功:', schema)
+      console.log('- Cover:', schema.cover)
+      console.log('- Overview cities:', schema.overview.stats.cities)
+      console.log('- Days count:', schema.days.length)
+      console.log('- Food city groups:', schema.foods.cityGroups.length)
+      console.log('- Hotels:', schema.stays.hotels.length)
+      console.log('- Tip categories:', schema.tips.categories.length)
+      console.log('- Budget breakdown:', schema.budget?.breakdown.length)
+    } catch (error) {
+      console.error('ShareGuideSchema 生成失败:', error)
+      notify('Schema 生成失败，使用旧逻辑')
+    }
+
+    // 暂时仍使用旧渲染逻辑
     const blob = buildTripDocxBlob(trip, data.foods, data.tips, data.packing, expenses)
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
