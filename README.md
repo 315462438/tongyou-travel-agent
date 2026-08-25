@@ -16,6 +16,7 @@
 
 ```bash
 cp backend/.env.example backend/.env      # 填 DEEPSEEK_API_KEY / AMAP_KEY / DATABASE_URL，找管理员要
+cp frontend/.env.example frontend/.env.local   # 填高德 Web端(JS API) key + 安全密钥
 cd backend && python3.12 -m venv .venv && .venv/bin/pip install -r requirements.txt
 cd ../frontend && npm install
 
@@ -23,12 +24,24 @@ backend/scripts/dev.sh                    # 一键：隧道 + 调试 Chrome + uv
 cd frontend && npm run dev                # → http://localhost:5173
 ```
 
-> **`.env` 不进版本库**，任何密钥都不要写进代码或文档。
+> **`.env` / `.env.local` 都不进版本库**，任何密钥都不要写进代码或文档。
+> 前端有测试钉住这条（`frontend/tests/no-inline-keys.test.mjs`）——因为把 key 写回源码
+> **不会让任何功能坏掉**，没有征兆的问题只能靠护栏。
+
+**关于高德的两个凭据**（`frontend/.env.local`，两个值性质完全不同）：
+
+| 变量 | 类型 | 性质 |
+| --- | --- | --- |
+| `VITE_AMAP_JS_KEY` | Web端(JS API) key | **本质公开**——必须下发到浏览器才能加载地图，F12 就看得到。防护靠高德控制台的**域名白名单**，不是靠藏 |
+| `VITE_AMAP_JS_SECURITY_CODE` | 安全密钥 | **真密钥**。只有本地开发用它明文直连；生产走 nginx `_AMapService` 反代由服务端注入 jscode（高德官方「代理服务器」模式），前端那段在 `import.meta.env.DEV` 分支里，构建时被摇树剔除 |
+
+自己去[高德开放平台](https://console.amap.com/dev/key/app)申请一对，别用别人的。
+后端的 `AMAP_KEY`/`AMAP_SECRET` 是**另一套**（Web服务 + 数字签名），互不相干。
 
 分步启动、断点调试（不能用 `dev.sh`，shell 套子进程挂不上断点）见 `CLAUDE.md`。
 
 ```bash
-cd backend && .venv/bin/python -m pytest tests/ -q      # 970+ 全离线单测
+cd backend && .venv/bin/python -m pytest tests/ -q      # 1370+ 全离线单测
 ```
 
 > 本地无外网 DNS 时 `test_research_context.py` / `test_context_security.py` 有几个失败——
@@ -190,6 +203,10 @@ Markdown ──LLM 只解析一次──> TripObject 对象图 ──纯函数�
   非 root + 内存/CPU/PID 限额；产物拷贝防软链外泄
 - **鉴权护栏**：`tests/test_agent_api_auth.py` 用 AST 全量扫描路由——新增路由默认必须带鉴权，
   有意公开的须登记，且登记表不许留过期条目
+- **凭据不进源码**（`frontend/tests/no-inline-keys.test.mjs`）：扫全部前端源码，
+  禁止 32 位 hex 字面量（高德 key 的形状），并断言安全密钥只出现在 `import.meta.env.DEV`
+  分支里。**这条必须靠测试**——把 key 写回源码不会让任何功能坏掉，构建照过、lint 不管，
+  唯一后果是仓库里多一个真值，而这在开源仓库里不可逆（删文件删不掉 git 历史）
 
 ### 8. 其他机制
 
@@ -280,6 +297,10 @@ docs/
 cd frontend && npm run build && cp -r dist/. ../backend/static/   # 末尾 /. 不能省
 bash backend/deploy/deploy.sh                                     # rsync + 装依赖 + 重启
 ```
+
+⚠️ **构建前确认 `frontend/.env.local` 存在**：`VITE_AMAP_JS_KEY` 是**构建期**注入的，
+漏了既不报错也不会让构建失败，只会让行程板的互动地图静默回退成静态图
+（TripMap 会在浏览器控制台打一条 error）。换机器构建时最容易漏这一步。
 
 部署后**必须去线上核对**（曾连踩三次「部署成功但没生效」）：
 

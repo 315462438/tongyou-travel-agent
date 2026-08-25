@@ -1,10 +1,19 @@
 /** 高德 JS 互动地图（Phase 40）：编号 marker + 路线 polyline + 双向联动。
- * 安全密钥不进前端：生产走 nginx `_AMapService` 代理（官方模式）；仅本地 dev 内联
- * （import.meta.env.DEV 分支在生产构建中被摇树剔除）。加载失败由父组件回退静态图。 */
+ *
+ * 凭据一律从 Vite 环境变量读，源码里不留真值（见 `frontend/.env.example`）。两个值的
+ * 性质不同，别一起对待：
+ *   - **key**（Web端/JS API）本质公开——必须下发到每个访客浏览器才能加载地图，F12 就能看到。
+ *     从源码挪走不是为了保密，是为了别人 fork 之后默认用自己的 key、不蹭本站配额；
+ *     真正的防护是高德控制台的域名白名单。
+ *   - **安全密钥** 才是真密钥。生产**永远**走 nginx `_AMapService` 代理由服务端注入 jscode
+ *     （官方代理模式），前端只在 dev 分支内联，该分支在生产构建中被摇树剔除。
+ *
+ * ⚠️ key 缺失时不静默白屏：立刻 onFail 让父组件回退静态图，并在控制台留话——
+ * 否则「构建时忘了注入」和「高德挂了」现象一模一样，没法排查。 */
 import { useEffect, useRef, useState } from 'react'
 import AMapLoader from '@amap/amap-jsapi-loader'
 
-const AMAP_JS_KEY = 'ed9a6608256ee71b70b4f5a157460193'
+const AMAP_JS_KEY = import.meta.env.VITE_AMAP_JS_KEY ?? ''
 
 declare global {
   interface Window {
@@ -13,7 +22,9 @@ declare global {
 }
 
 if (import.meta.env.DEV) {
-  window._AMapSecurityConfig = { securityJsCode: '746aca39a18383debae857c907f418c4' }
+  // 本地开发直连高德，需要明文安全密钥；没配就不设，交给下面的加载失败回退
+  const jsCode = import.meta.env.VITE_AMAP_JS_SECURITY_CODE ?? ''
+  if (jsCode) window._AMapSecurityConfig = { securityJsCode: jsCode }
 } else {
   window._AMapSecurityConfig = { serviceHost: `${window.location.origin}/_AMapService` }
 }
@@ -50,6 +61,14 @@ export default function TripMap({
 
   // 初始化地图（一次）
   useEffect(() => {
+    if (!AMAP_JS_KEY) {
+      console.error(
+        '[TripMap] 缺少 VITE_AMAP_JS_KEY，互动地图不可用，已回退静态图。'
+        + '构建/开发前请按 frontend/.env.example 配置。',
+      )
+      onFail()
+      return
+    }
     let disposed = false
     AMapLoader.load({ key: AMAP_JS_KEY, version: '2.0', plugins: [] })
       .then((AMap) => {

@@ -1,7 +1,10 @@
 import time
 
 import httpx
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+
+from app.api.deps import get_current_user
+from app.db.models import TravelUser
 
 router = APIRouter(prefix="/api/fx", tags=["fx"])
 
@@ -62,7 +65,10 @@ async def _fetch_frankfurter() -> dict | None:
 
 
 @router.get("/rates")
-async def fx_rates() -> dict:
+async def fx_rates(user: TravelUser = Depends(get_current_user)) -> dict:
+    """汇率表。**要登录**：它没有任何必须公开的理由（不是 <img> 源、不是分享链），
+    而未鉴权时任何人都能驱动服务端向 frankfurter.app 发外呼。返回值与用户无关，
+    user 只用于挡门——所以缓存仍是全局一份。"""
     now = time.time()
     cached = _CACHE.get("data")
     if cached and now - float(_CACHE.get("ts") or 0) < _CACHE_TTL_SECONDS:

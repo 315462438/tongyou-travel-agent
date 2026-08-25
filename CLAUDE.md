@@ -95,6 +95,9 @@ SSH 密钥登录已配置（`ssh ubuntu@42.194.202.233` 免密）。
 拷成子目录 `static/dist/`，index.html 仍是旧的，前端改动看起来「没生效」（2026-08-13 踩过，
 见 `docs/pitfalls/前端构建产物拷成了嵌套目录.md`）。
 再跑 `backend/deploy/deploy.sh`（rsync + 装依赖 + 重启服务）。
+⚠️ **构建前确认 `frontend/.env.local` 存在**（不进版本库，模板见 `frontend/.env.example`）：
+高德 JS key 现在由 `VITE_AMAP_JS_KEY` 在**构建时**注入，漏了不会报错、也不会构建失败，
+只会让行程板的互动地图静默回退成静态图（TripMap 会打一条 console.error）。换机器构建时最容易漏。
 
 服务管理：
 ```bash
@@ -105,7 +108,8 @@ ssh ubuntu@42.194.202.233 'sudo journalctl -u travel-backend -n 50 --no-pager'
 ## Environment
 
 - Backend: Python 3.12 venv at `backend/.venv`（本机 `python3.12`；PyCharm 里显示的 3.9 已过时）
-- Frontend: Node 23 + Vite + React-TS（`frontend/`）
+- Frontend: Node 23 + Vite + React-TS（`frontend/`）。构建期环境变量见
+  `frontend/.env.example`，真值放 `frontend/.env.local`（`*.local` 已 gitignore）
 - LLM: DeepSeek（OpenAI 兼容接口），key 在 `backend/.env`；模型分层 v4-pro（规划/抽取）+ v4-flash（分类）
 - DB: 远程 PostgreSQL 16（部署在上面的服务器），**必须走 SSH 隧道**，不能公网直连
   （原因见 `docs/pitfalls/远程PostgreSQL公网直连被重置.md`）

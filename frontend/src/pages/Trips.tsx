@@ -411,7 +411,8 @@ function useCostCurrencies() {
   const [source, setSource] = useState('fallback')
   useEffect(() => {
     let cancelled = false
-    fetch(`${API}/fx/rates`)
+    // 走 authFetch：该接口要登录（无 token 会 401，下面 .ok 判假 → 保留静态兜底汇率）
+    authFetch(`${API}/fx/rates`)
       .then((response) => response.ok ? response.json() : null)
       .then((data) => {
         if (cancelled || !data?.currencies?.length) return

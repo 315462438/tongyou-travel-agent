@@ -164,12 +164,20 @@ test('trip export preserves note line breaks and cost entry supports currency co
   assert.match(trips, /<w:br\/>/)
   assert.match(trips, /multilineDocHtml\(stop\.note\)/)
   assert.match(trips, /docxTextWithBreaks\(text\)/)
-  assert.match(trips, /const COST_CURRENCIES = \[/)
+  // 2026-08-24 起汇率可由 /api/fx/rates 动态覆盖，这个常量降级为**离线兜底**表；
+  // 断言它仍在，是为了守住「拿不到汇率时记账依然可用」。
+  assert.match(trips, /const DEFAULT_COST_CURRENCIES: CostCurrency\[\] = \[/)
   assert.match(trips, /code: 'MYR'/)
   assert.match(trips, /code: 'USD'/)
-  assert.match(trips, /convertedTicketPrice\(ticket, ticketCurrency\)/)
-  assert.match(trips, /ticketConversionPreview\(ticket, ticketCurrency\)/)
-  assert.match(css, /\.trip-cost-inputs\s*\{[^}]*grid-template-columns/s)
+  // 只钉「换算函数被用在存盘的 ticket_price 上」「预览渲染给用户看」这两件事，
+  // 不钉完整实参列表——2026-08-24 加了个 currencies 参数就让写死签名的断言假红了一次。
+  assert.match(trips, /ticket_price: hasTicketCost \? convertedTicketPrice\(/)
+  assert.match(trips, /ticketConversionPreview\(/)
+  assert.match(trips, /Math\.round\(amount \* rate\)/)
+  // 金额输入框与币种下拉并排成一个整体控件。原断言写的是 `.trip-cost-inputs`，
+  // 而实际类名是 `.trip-cost-money`——**该类名在本仓库历史里从未存在过**，
+  // 断言从写下那天起就是红的（2026-08-25 开源审计时才被翻出来）。
+  assert.match(css, /\.trip-cost-money\s*\{[^}]*grid-template-columns/s)
 })
 
 test('thinking workspace keeps staged motion, stop control, and reduced-motion fallback', () => {
