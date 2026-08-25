@@ -7,7 +7,7 @@
       "category": "single",
       "text": "我想去成都玩3天，两个人，喜欢逛老街和吃小吃，帮我排个行程",
       "note": "最常见的单城攻略。守表格完整、无占位符泄漏、无裸星号。",
-      "conversation_id": "666326b897544f71bc565ec8153219e6",
+      "conversation_id": "",
       "metrics": {
         "elapsed_s": 288.8,
         "chars": 6783,
@@ -33,7 +33,7 @@
       "category": "memory",
       "text": "帮我规划厦门2天1晚，两个人，喜欢海边和咖啡馆",
       "note": "用户没提任何节假日。守旧行程记忆不把「国庆」「预算5000」泄漏进来。",
-      "conversation_id": "c3d267f1c69e4555bc7bf76b1859d0db",
+      "conversation_id": "",
       "metrics": {
         "elapsed_s": 268.1,
         "chars": 6165,

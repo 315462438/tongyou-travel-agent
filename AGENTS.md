@@ -43,13 +43,13 @@ as the project grows.
 
 ## Deployment server
 
-SSH 密钥登录已配置（`ssh ubuntu@42.194.202.233` 免密）。
+SSH 密钥登录已配置（`ssh "$DEPLOY_HOST"` 免密）。
 
-- Host: `42.194.202.233`　User: `ubuntu`
+- Host: `<服务器IP>`　User: `ubuntu`
 - **密码不写在仓库里**：需要密码登录时找项目管理员要；日常运维一律用 SSH 密钥。
   （2026-08-13 开源协作前移除了此处的明文密码。）
 
-**线上体验地址**：http://42.194.202.233/travel/
+**线上体验地址**：http://<服务器IP>/travel/
 
 服务器部署架构：
 - **nginx**（:80）反代 `/travel/` → 后端 :8080（配置在 `/etc/nginx/sites-enabled/default`）
@@ -74,8 +74,8 @@ SSH 密钥登录已配置（`ssh ubuntu@42.194.202.233` 免密）。
 
 服务管理：
 ```bash
-ssh ubuntu@42.194.202.233 'sudo systemctl restart travel-backend'
-ssh ubuntu@42.194.202.233 'sudo journalctl -u travel-backend -n 50 --no-pager'
+ssh "$DEPLOY_HOST" 'sudo systemctl restart travel-backend'
+ssh "$DEPLOY_HOST" 'sudo journalctl -u travel-backend -n 50 --no-pager'
 ```
 
 ## Environment

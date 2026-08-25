@@ -45,7 +45,7 @@
   docs/pitfalls/langfuse自托管小内存与v4API.md）。
 - 密钥：`/home/ubuntu/langfuse/.env`（openssl 随机生成，LANGFUSE_INIT_* 无头引导出
   固定 pk/sk）；数据全在本机磁盘（clickhouse/minio 卷 + 宿主 PG langfuse 库）。
-- UI 只监听 127.0.0.1:3000（外网不可达）：本地 `ssh -L 3000:localhost:3000 ubuntu@42.194.202.233`
+- UI 只监听 127.0.0.1:3000（外网不可达）：本地 `ssh -L 3000:localhost:3000 $DEPLOY_HOST`
   后开 http://localhost:3000，账号 admin@travelx.local（密码在服务器 .env 的 LF_ADMIN_PASSWORD）。
 - 线上 E2E（✅）：一轮 direct 对话 → Langfuse API 查到 1 条 conversation_turn trace
   （sessionId=cid、userId、latency 14.9s），下挂 3 个 GENERATION 均含完整 messages

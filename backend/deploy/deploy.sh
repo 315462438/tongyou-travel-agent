@@ -1,10 +1,16 @@
 #!/bin/bash
 # 部署到服务器（本地执行）：rsync 代码 → 服务器侧装依赖 → 重启服务
 set -e
-SERVER=ubuntu@42.194.202.233
 REMOTE_DIR=/home/ubuntu/travel-agent
 
 cd "$(dirname "$0")/../.."   # 项目根目录
+ENV_FILE="backend/.env"
+# 服务器地址不写进仓库（本仓库公开）。优先取环境变量，其次读 backend/.env 的 DEPLOY_HOST。
+if [ -z "$DEPLOY_HOST" ] && [ -f "$ENV_FILE" ]; then
+    DEPLOY_HOST=$(grep -E '^DEPLOY_HOST=' "$ENV_FILE" | head -1 | cut -d= -f2-)
+fi
+: "${DEPLOY_HOST:?未设置 DEPLOY_HOST。在 backend/.env 里加一行 DEPLOY_HOST=user@host，或导出同名环境变量}"
+SERVER="$DEPLOY_HOST"
 
 echo "== 1. 同步代码 =="
 # 代码用 --delete（清理旧文件），但排除 static——前端哈希 chunk 单独同步且【不删旧版】，
@@ -45,4 +51,4 @@ if [ \"\$healthy\" -ne 1 ]; then
     exit 1
 fi
 "
-echo "== 部署完成: http://42.194.202.233/travel/ =="
+echo "== 部署完成: https://17tongyou.com/travel/ =="

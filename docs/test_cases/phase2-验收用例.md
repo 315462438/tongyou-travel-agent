@@ -2,7 +2,7 @@
 
 > 更新日期：2026-07-03
 > 对应 `docs/task_plans/task_plan-phase2-对话式攻略生成.md` 第 6 节
-> 环境：线上 http://42.194.202.233/travel/
+> 环境：线上 http://<服务器IP>/travel/
 
 ## 单元测试（tests/，23 passed）
 

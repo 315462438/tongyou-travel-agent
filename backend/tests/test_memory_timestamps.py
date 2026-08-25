@@ -207,6 +207,11 @@ def test_real_migration_backfills_and_stays_idempotent(tmp_path, monkeypatch):
     import app.db.session as db_session
     from app.db.migrate import migrate_and_bootstrap
 
+    # 引导管理员现在**要求**显式配置口令（开源仓库不给默认值，见
+    # test_migrate_lock.py::test_bootstrap_refuses_to_create_admin_without_a_configured_password）。
+    # 这条测试关心的是回填，不是引导，所以给一个就行。
+    monkeypatch.setattr("app.db.migrate.settings.admin_password", "pw-for-test")
+
     url = f"sqlite:///{tmp_path}/old.db"
     engine = create_engine(url)
     # `_bootstrap_admin_and_backfill` 用的是模块级 get_session()，不是传进去的 engine

@@ -120,6 +120,41 @@ def test_migration_still_bootstraps_admin_when_schema_is_current(engine, monkeyp
     assert session.query(TravelUser).filter(TravelUser.is_admin.is_(True)).first() is not None
 
 
+def test_bootstrap_refuses_to_create_admin_without_a_configured_password(engine, monkeypatch):
+    """没配 ADMIN_PASSWORD 时必须**拒绝启动**，不能悄悄用一个默认口令建管理员。
+
+    仓库是公开的：默认口令写在代码里 = 所有照此部署的站点共用同一个管理员密码。
+    而 `_must_change_password` 只是登录后的提示，token 照发、`/api/admin/*` 照开，
+    拦不住任何人。所以这一格只能失败关闭。
+    """
+    monkeypatch.setattr("app.db.migrate.settings.admin_username", "admin")
+    monkeypatch.setattr("app.db.migrate.settings.admin_password", "")
+
+    from contextlib import contextmanager
+
+    session = Session(engine)
+
+    @contextmanager
+    def fake_session():
+        yield session
+
+    monkeypatch.setattr("app.db.session.SessionLocal", lambda: session)
+    monkeypatch.setattr("app.db.session.get_session", fake_session, raising=False)
+
+    with pytest.raises(RuntimeError, match="ADMIN_PASSWORD"):
+        migrate_and_bootstrap(engine)
+    assert session.query(TravelUser).filter(TravelUser.is_admin.is_(True)).first() is None
+
+
+def test_config_ships_no_usable_admin_password():
+    """护栏：默认值必须是空的。写回任何非空字面量都会让上面那条失败关闭形同虚设。"""
+    from app.config import Settings
+
+    assert Settings.model_fields["admin_password"].default == "", (
+        "config.py 不得给 admin_password 任何默认口令——仓库公开，默认值即通用密码"
+    )
+
+
 def test_ddl_transaction_declares_a_lock_timeout():
     """真要跑 DDL 时必须先设 lock_timeout，否则又会把用户那一轮拖进死锁。"""
     import pathlib

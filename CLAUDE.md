@@ -43,17 +43,19 @@ as the project grows.
 
 ## Deployment server
 
-SSH 密钥登录已配置（`ssh ubuntu@42.194.202.233` 免密）。
+SSH 密钥登录已配置（`ssh "$DEPLOY_HOST"` 免密）。
 
-- Host: `42.194.202.233`　User: `ubuntu`
+- Host / User: **不写在仓库里**（2026-08-25 开源前移除）。真值在 `backend/.env` 的
+  `DEPLOY_HOST=user@host`（该文件已 gitignore）。脚本 `deploy.sh` / `db_tunnel.sh` 自己会读它，
+  没配就响亮报错退出。手工敲命令前先 `export DEPLOY_HOST=$(grep ^DEPLOY_HOST= backend/.env | cut -d= -f2-)`。
 - **密码不写在仓库里**：需要密码登录时找项目管理员要；日常运维一律用 SSH 密钥。
   （2026-08-13 开源协作前移除了此处的明文密码。）
 
-**线上体验地址**：https://17tongyou.com （自动跳 `/travel/`）。裸 IP `http://42.194.202.233/travel/`
+**线上体验地址**：https://17tongyou.com （自动跳 `/travel/`）。裸 IP `http://<服务器IP>/travel/`
 仍可用作调试入口（不跳 https，无证书）。
 
 **域名 / HTTPS / 备案**（2026-07 落地）：
-- 域名 **`17tongyou.com`**（DNS 托管 DNSPod，A 记录 `@`/`www` → `42.194.202.233`）。
+- 域名 **`17tongyou.com`**（DNS 托管 DNSPod，A 记录 `@`/`www` → `<服务器IP>`）。
 - **ICP 备案已通过**：`鄂ICP备2026020535号-2`（主体腾讯云）。备案号已悬挂在登录页页脚
   （`frontend/src/Auth.tsx` 的 `.auth-beian`，链工信部 beian.miit.gov.cn）——工信部硬性要求，别删。
   ⚠️ **公安联网备案（beian.mps.gov.cn，30 天内）待办**：数据码 `7e985a59f45baf0e8e75203a289a736f`，
@@ -101,8 +103,8 @@ SSH 密钥登录已配置（`ssh ubuntu@42.194.202.233` 免密）。
 
 服务管理：
 ```bash
-ssh ubuntu@42.194.202.233 'sudo systemctl restart travel-backend'
-ssh ubuntu@42.194.202.233 'sudo journalctl -u travel-backend -n 50 --no-pager'
+ssh "$DEPLOY_HOST" 'sudo systemctl restart travel-backend'
+ssh "$DEPLOY_HOST" 'sudo journalctl -u travel-backend -n 50 --no-pager'
 ```
 
 ## Environment
@@ -162,7 +164,7 @@ cd backend
 ```
 
 ⚠️ **本机连不上 `api.deepseek.com`**（服务器可以）——评估要在服务器上跑：
-`ssh ubuntu@42.194.202.233 'cd /home/ubuntu/travel-agent/backend && .venv/bin/python -m evals.…'`。
+`ssh "$DEPLOY_HOST" 'cd /home/ubuntu/travel-agent/backend && .venv/bin/python -m evals.…'`。
 断网时报表会打「🚨 N 条没跑成」并退出码 2，**不会**把它算成模型判错
 （见 `docs/pitfalls/评估器把断网算成了模型判错.md`）。
 

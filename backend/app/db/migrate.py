@@ -253,6 +253,14 @@ def _bootstrap_admin_and_backfill(engine: Engine) -> None:
     with get_session() as db:
         admin = db.query(TravelUser).filter(TravelUser.is_admin.is_(True)).first()
         if admin is None:
+            if not settings.admin_password:
+                # 只在「还没有管理员」时触发：存量部署早就引导过，走不到这里。
+                raise RuntimeError(
+                    "未配置 ADMIN_PASSWORD，无法引导管理员账号。请在 backend/.env 里设置一个"
+                    "（例：ADMIN_PASSWORD=<你自己的强口令>）后重启。\n"
+                    "本项目刻意不提供默认管理员口令——代码是公开的，默认值等于所有部署共用"
+                    "同一个管理员密码。"
+                )
             admin = TravelUser(
                 id=_uuid(), username=settings.admin_username,
                 password_hash=hash_password(settings.admin_password), is_admin=True,

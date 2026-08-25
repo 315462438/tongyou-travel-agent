@@ -2,7 +2,7 @@
 
 用法（**必须在服务器上跑**，本机连不上 api.deepseek.com）：
 
-    ssh ubuntu@42.194.202.233 'cd /home/ubuntu/travel-agent/backend && \
+    ssh "$DEPLOY_HOST" 'cd /home/ubuntu/travel-agent/backend && \
         .venv/bin/python -m scripts.probe_reasoning_effort'
 
 判定标准：**只看 `usage.completion_tokens_details.reasoning_tokens`**。

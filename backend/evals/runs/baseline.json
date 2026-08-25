@@ -7,7 +7,7 @@
       "category": "single",
       "text": "我想去成都玩3天，两个人，喜欢逛老街和吃小吃，帮我排个行程",
       "note": "最常见的单城攻略。守表格完整、无占位符泄漏、无裸星号。",
-      "conversation_id": "7dfceed9b98742d5b1c4f774cc84f695",
+      "conversation_id": "",
       "metrics": {
         "elapsed_s": 230.6,
         "chars": 6136,
@@ -63,7 +63,7 @@
       "category": "single",
       "text": "十月国庆想去成都玩4天3晚，两个人，预算5000左右，爱吃辣、喜欢小众不挤的地方",
       "note": "带预算与偏好。守价格区间不被删除线吃掉（¥400~600 类）。",
-      "conversation_id": "968b49e9ae1342a48353c809483e200c",
+      "conversation_id": "",
       "metrics": {
         "elapsed_s": 251.1,
         "chars": 10139,
@@ -119,7 +119,7 @@
       "category": "multi",
       "text": "帮我规划武汉、开封、洛阳6天的动车游，两个人，喜欢历史古迹",
       "note": "多城。守高德数据不整条丢失、搜索词不整串塞、正文覆盖每一城。",
-      "conversation_id": "b37bb4731c634e209f1fbae2b4cae580",
+      "conversation_id": "",
       "metrics": {
         "elapsed_s": 166.1,
         "chars": 8324,

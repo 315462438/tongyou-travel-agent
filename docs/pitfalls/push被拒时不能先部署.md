@@ -39,7 +39,7 @@ push 被拒 → 先 `git fetch` 看清分歧 → rebase → 跑测试 → 再部
 ```bash
 rsync -azn --delete --itemize-changes \
   --exclude '.venv' --exclude '__pycache__' --exclude '.env' --exclude 'static' \
-  backend ubuntu@42.194.202.233:/home/ubuntu/travel-agent/
+  backend $DEPLOY_HOST:/home/ubuntu/travel-agent/
 ```
 
 `*deleting` 和对源码文件的 `<f` 变更就是将要覆盖的内容。这次正是靠它发现了问题。

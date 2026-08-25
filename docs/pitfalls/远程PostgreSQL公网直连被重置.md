@@ -4,8 +4,8 @@
 
 ## 现象
 
-- 服务器（腾讯云 42.194.202.233，Ubuntu 24.04，PostgreSQL 16.14）配置了 `listen_addresses='*'` + pg_hba 放行，`ss` 确认监听 0.0.0.0:5432
-- 本地 `nc -z 42.194.202.233 5432` **TCP 握手成功**
+- 服务器（腾讯云 <服务器IP>，Ubuntu 24.04，PostgreSQL 16.14）配置了 `listen_addresses='*'` + pg_hba 放行，`ss` 确认监听 0.0.0.0:5432
+- 本地 `nc -z <服务器IP> 5432` **TCP 握手成功**
 - 但 psycopg 真实连接报 `server closed the connection unexpectedly`
 - **关键证据**：PostgreSQL 日志里完全没有任何连接记录——数据包在到达 PG 之前就被丢弃/重置
 
@@ -25,7 +25,7 @@ TCP 握手能通但协议数据被重置，且服务器端 iptables（仅腾讯�
 
 ```bash
 # backend/scripts/db_tunnel.sh
-ssh -f -N -L 15432:localhost:5432 ubuntu@42.194.202.233
+ssh -f -N -L 15432:localhost:5432 $DEPLOY_HOST
 # .env 改为
 DATABASE_URL=postgresql+psycopg://travel_agent:***@127.0.0.1:15432/travel_agent
 ```

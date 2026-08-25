@@ -52,7 +52,11 @@ class Settings(BaseSettings):
     # LLM 账单按用量）本就不支持公开流量。
     register_invite_code: str = ""
     admin_username: str = "admin"
-    admin_password: str = "admin123"  # 首次引导用，建议在 .env 覆盖后重启
+    # 首次引导管理员用。**故意没有默认值**：本仓库会开源，一旦这里写着能用的口令，
+    # 所有照此部署的站点就共用同一个管理员密码，而 `_must_change_password` 只是登录后
+    # 的提示、不拦登录（token 照发）。空值时 `_bootstrap_admin_and_backfill` 直接拒绝
+    # 启动并说明怎么配——失败要响，不能静默给一个能猜到的口令。
+    admin_password: str = ""
 
     # 图级 checkpoint（Phase 16）：LangGraph 每步 state 存 PG，支持重启续跑
     checkpointer_enabled: bool = True
@@ -75,7 +79,7 @@ class Settings(BaseSettings):
     # Photon（OSM POI）+ Open-Meteo（GeoNames 城市）；请求串行限速并持久缓存。
     global_geocoder_url: str = "https://photon.komoot.io"
     global_city_geocoder_url: str = "https://geocoding-api.open-meteo.com"
-    global_geocoder_user_agent: str = "TravelBrowserAgent/1.0 (http://42.194.202.233/travel/)"
+    global_geocoder_user_agent: str = "TravelBrowserAgent/1.0 (https://17tongyou.com/)"
     global_geocoder_min_interval_s: float = 1.05
 
     # 记忆系统（Phase 4）

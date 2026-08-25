@@ -68,5 +68,5 @@
   10–200kB chunk，消除 Vite 大包警告；
 - 新增 Node 自动化测试，前端 test/lint/typecheck/build 和后端 376 项测试均通过；
 - `frontend/dist` 已同步到 `backend/static`。
-- 2026-07-20 已部署至 `http://42.194.202.233/travel/`；systemd 服务运行正常，内网健康接口
+- 2026-07-20 已部署至 `http://<服务器IP>/travel/`；systemd 服务运行正常，内网健康接口
   与公网首页均验证通过。

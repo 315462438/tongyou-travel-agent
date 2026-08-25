@@ -63,7 +63,7 @@ def test_route_classify_failure_falls_back_to_guide():
     ("10.0.0.8", True),
     ("192.168.1.1", True),
     ("172.16.0.1", True),
-    ("42.194.202.233", False),  # 公网 IP 放行
+    ("8.8.8.8", False),  # 公网 IP 放行
     ("www.example.com", False),  # 域名放行
 ])
 def test_private_host_guard(host, expected):

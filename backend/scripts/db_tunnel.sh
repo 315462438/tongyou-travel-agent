@@ -5,7 +5,13 @@
 set -e
 
 LOCAL_PORT=15432
-SERVER=ubuntu@42.194.202.233
+ENV_FILE="$(dirname "$0")/../.env"
+# 服务器地址不写进仓库（本仓库公开）。优先取环境变量，其次读 backend/.env 的 DEPLOY_HOST。
+if [ -z "$DEPLOY_HOST" ] && [ -f "$ENV_FILE" ]; then
+    DEPLOY_HOST=$(grep -E '^DEPLOY_HOST=' "$ENV_FILE" | head -1 | cut -d= -f2-)
+fi
+: "${DEPLOY_HOST:?未设置 DEPLOY_HOST。在 backend/.env 里加一行 DEPLOY_HOST=user@host，或导出同名环境变量}"
+SERVER="$DEPLOY_HOST"
 
 # 只认 LISTEN 状态：残留的 CLOSED 客户端 socket 也会被 lsof -i 匹配到，
 # 曾导致隧道已死却误报「已在运行」（见 docs/pitfalls/db_tunnel误判隧道存活.md）
