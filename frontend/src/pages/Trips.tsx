@@ -576,7 +576,9 @@ function groupExportFoodsByCity(foods: FoodItem[]): ExportFoodCityGroup[] {
 }
 
 function isFoodStop(stop: TripStop): boolean {
-  return stop.tags?.includes('food') || (stop.note || '').includes('美食') || /餐|咖啡|小吃|饭|食|甜品|早餐|午餐|晚餐/.test(stop.name)
+  // 只认抽取时打的 food 标记或 note 里明确写「美食」；
+  // 不再用单字正则猜 name——「吃饭 / 冲洗，吃饭 / 水屋晚餐、看星空」这类行程活动会被误判成美食。
+  return !!stop.tags?.includes('food') || (stop.note || '').includes('美食')
 }
 
 function isStayStop(stop: TripStop): boolean {
@@ -4507,9 +4509,7 @@ function FoodPanel({
     else notify('删除失败，请重试')
   }
 
-  const foodStopsOf = (day: number) => stopsOf(day).filter((s) => (
-    s.tags?.includes('food') || (s.note || '').includes('美食') || /餐|咖啡|小吃|饭|食|甜品|早餐|午餐|晚餐/.test(s.name)
-  ))
+  const foodStopsOf = (day: number) => stopsOf(day).filter(isFoodStop)
   const dayFoods = (day: number, meal: string) => data.filter((f) => (f.day || 0) === day && (f.meal_type || '待定') === meal)
   const unplannedFoods = data.filter((f) => !f.day)
   const currentList = view === 'favorite'
@@ -4570,18 +4570,22 @@ function FoodPanel({
                   <div><b>Day {d}</b><small>{count} 项</small></div>
                   <button className="trip-mini-action" onClick={() => setForm(emptyFoodForm(d))}>添加这天</button>
                 </div>
-                <div className="trip-food-meals">
-                  {FOOD_MEALS.map((meal) => {
-                    const foods = dayFoods(d, meal)
-                    if (!foods.length && meal !== '待定') return null
-                    return (
-                      <div key={meal} className="trip-food-meal">
-                        <div className="trip-food-meal-head"><span>{meal}</span><small>{foods.length || '暂无安排'}</small></div>
-                        {foods.length ? foods.map(renderFoodCard) : <p className="trip-module-empty compact">还没安排，点右上角添加。</p>}
-                      </div>
-                    )
-                  })}
-                </div>
+                {data.some((f) => f.day === d) ? (
+                  <div className="trip-food-meals">
+                    {FOOD_MEALS.map((meal) => {
+                      const foods = dayFoods(d, meal)
+                      if (!foods.length) return null
+                      return (
+                        <div key={meal} className="trip-food-meal">
+                          <div className="trip-food-meal-head"><span>{meal}</span><small>{foods.length}</small></div>
+                          {foods.map(renderFoodCard)}
+                        </div>
+                      )
+                    })}
+                  </div>
+                ) : !legacy.length ? (
+                  <p className="trip-module-empty compact">这天还没安排美食，点右上角「添加这天」。</p>
+                ) : null}
                 {!!legacy.length && (
                   <div className="trip-food-legacy">
                     <b>行程里识别到的美食</b>

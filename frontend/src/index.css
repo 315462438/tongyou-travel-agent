@@ -8340,6 +8340,75 @@ body { color: var(--tx-ink); background: var(--tx-bg); }
 .trip-tip-list li.level-important .trip-tip-badge { background: var(--x-cinnabar-96); color: var(--x-cinnabar-44); }
 .trip-tip-list li.level-notice .trip-tip-badge { background: var(--x-warn-96); color: #9a3412; }
 
+/* —— 美食中心 —— */
+.trips-overlay .trip-food-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; flex-wrap: wrap; margin-bottom: 12px;
+}
+.trips-overlay .trip-food-tabs { display: inline-flex; gap: 4px; padding: 3px; border-radius: var(--x-r-pill); background: var(--trip-accent-soft); }
+.trips-overlay .trip-food-tabs button {
+  min-height: 28px; padding: 0 12px; border: 0; border-radius: var(--x-r-pill);
+  background: transparent; color: var(--trip-muted); font-size: 12px; font-weight: 700; cursor: pointer;
+}
+.trips-overlay .trip-food-tabs button.active { background: var(--x-n100); color: var(--trip-accent-strong); box-shadow: var(--tx-shadow-sm); }
+
+.trips-overlay .trip-food-days { display: grid; gap: 14px; }
+.trips-overlay .trip-food-day-section {
+  border: 1px solid var(--trip-line); border-radius: var(--x-r-lg);
+  background: var(--x-n100); padding: 12px 14px;
+}
+.trips-overlay .trip-food-day-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px;
+}
+.trips-overlay .trip-food-day-head b { color: var(--trip-ink); font-size: 14px; font-weight: 780; }
+.trips-overlay .trip-food-day-head small { margin-left: 8px; color: var(--trip-muted); font-size: 11px; font-weight: 600; }
+
+.trips-overlay .trip-food-meals { display: grid; gap: 12px; }
+.trips-overlay .trip-food-meal { display: grid; gap: 8px; }
+.trips-overlay .trip-food-meal-head { display: flex; align-items: baseline; gap: 8px; }
+.trips-overlay .trip-food-meal-head span { color: var(--trip-accent-strong); font-size: 12px; font-weight: 780; }
+.trips-overlay .trip-food-meal-head small { color: var(--trip-muted); font-size: 11px; }
+
+.trips-overlay .trip-food-grid { display: grid; gap: 8px; }
+
+.trips-overlay .trip-food-card {
+  display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: start;
+  border: 1px solid var(--trip-line); border-radius: var(--x-r-md);
+  background: var(--x-n100); padding: 10px 12px;
+}
+.trips-overlay .trip-food-card.checked { background: var(--x-pine-96); border-color: var(--x-pine-90); }
+.trips-overlay .trip-food-card-main { display: grid; gap: 3px; min-width: 0; }
+.trips-overlay .trip-food-title-row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.trips-overlay .trip-food-title-row b { color: var(--trip-ink); font-size: 14px; font-weight: 720; }
+.trips-overlay .trip-food-rating { color: #9a6a00; font-size: 11px; font-weight: 600; }
+.trips-overlay .trip-food-meta { color: var(--trip-muted); font-size: 12px; }
+.trips-overlay .trip-food-meta:empty { display: none; }
+.trips-overlay .trip-food-address { color: var(--trip-muted); font-size: 12px; }
+.trips-overlay .trip-food-dishes { color: var(--x-n50); font-size: 12px; }
+.trips-overlay .trip-food-note { color: var(--x-n50); font-size: 12px; line-height: 1.6; }
+
+.trips-overlay .trip-food-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.trips-overlay .trip-food-actions button {
+  min-height: 26px; padding: 0 10px; border: 1px solid var(--trip-line);
+  border-radius: var(--x-r-md); background: var(--x-n100);
+  color: var(--trip-muted); font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+.trips-overlay .trip-food-actions button:hover { border-color: rgba(82, 104, 221, .45); color: var(--trip-accent-strong); }
+.trips-overlay .trip-food-actions button.active { background: var(--trip-accent-soft); border-color: rgba(82, 104, 221, .45); color: var(--trip-accent-strong); }
+.trips-overlay .trip-food-actions button.danger { color: var(--x-cinnabar-44); }
+.trips-overlay .trip-food-actions button.danger:hover { background: var(--x-cinnabar-96); border-color: var(--x-cinnabar-90); }
+
+.trips-overlay .trip-food-legacy {
+  margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--trip-line); display: grid; gap: 6px;
+}
+.trips-overlay .trip-food-legacy > b { color: var(--trip-muted); font-size: 11px; font-weight: 700; }
+.trips-overlay .trip-food-legacy-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 8px; border-radius: var(--x-r-sm); background: var(--x-n96);
+}
+.trips-overlay .trip-food-legacy-row > span { flex: 1; min-width: 0; color: var(--trip-ink); font-size: 13px; }
+.trips-overlay .trip-food-legacy-row > span small { margin-left: 6px; color: var(--trip-muted); font-size: 11px; font-weight: 400; }
+
 @media (max-width: 820px) {
   .trip-fab { right: 14px; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); }
   .trip-module-add input { min-width: 0; }
