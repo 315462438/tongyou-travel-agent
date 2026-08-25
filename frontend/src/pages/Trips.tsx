@@ -12,6 +12,7 @@ import { useToast } from '../components/toast-context'
 import { API, authFetch } from '../api'
 import { formatTripTimeRange, pickNavUrl, prepareMarkdown } from '../interaction'
 import { composeShareGuide } from '../lib/guideComposer'
+import { renderShareGuideDocx } from '../lib/docxRenderer'
 
 interface TripSummary {
   id: string
@@ -2370,35 +2371,41 @@ function TripBoard({
     const data = await loadShareDocumentData()
     if (!data) return
 
-    // Phase 1: 生成 ShareGuideSchema（验证阶段）
+    // Phase 1+2: 使用新架构（Schema + Renderer）
     try {
       const schema = composeShareGuide(trip, data.foods, data.tips, data.packing, expenses, {
         includePacking: false,
         includeBudget: true,
         memberCount: undefined,
       })
-      console.log('ShareGuideSchema 生成成功:', schema)
-      console.log('- Cover:', schema.cover)
-      console.log('- Overview cities:', schema.overview.stats.cities)
-      console.log('- Days count:', schema.days.length)
-      console.log('- Food city groups:', schema.foods.cityGroups.length)
-      console.log('- Hotels:', schema.stays.hotels.length)
-      console.log('- Tip categories:', schema.tips.categories.length)
-      console.log('- Budget breakdown:', schema.budget?.breakdown.length)
-    } catch (error) {
-      console.error('ShareGuideSchema 生成失败:', error)
-      notify('Schema 生成失败，使用旧逻辑')
-    }
+      console.log('✓ ShareGuideSchema 生成成功')
+      console.log('  - Days:', schema.days.length)
+      console.log('  - Food cities:', schema.foods.cityGroups.length)
+      console.log('  - Hotels:', schema.stays.hotels.length)
+      console.log('  - Tip categories:', schema.tips.categories.length)
 
-    // 暂时仍使用旧渲染逻辑
-    const blob = buildTripDocxBlob(trip, data.foods, data.tips, data.packing, expenses)
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = safeDocFilename(trip.title, '好友分享版.docx')
-    a.click()
-    URL.revokeObjectURL(url)
-    notify('Word 文档已下载', 'success')
+      const blob = renderShareGuideDocx(schema)
+      console.log('✓ DOCX 渲染完成，大小:', blob.size, 'bytes')
+
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = safeDocFilename(trip.title, '好友分享版.docx')
+      a.click()
+      URL.revokeObjectURL(url)
+      notify('Word 文档已下载（新版）', 'success')
+    } catch (error) {
+      console.error('新架构导出失败，回退到旧逻辑:', error)
+      notify('生成失败，使用兜底逻辑')
+      const blob = buildTripDocxBlob(trip, data.foods, data.tips, data.packing, expenses)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = safeDocFilename(trip.title, '好友分享版.docx')
+      a.click()
+      URL.revokeObjectURL(url)
+      notify('Word 文档已下载（经典版）', 'success')
+    }
   }
 
   const exportToPdf = async () => {
