@@ -308,3 +308,23 @@ bash backend/deploy/deploy.sh                                     # rsync + 装�
 curl -s https://17tongyou.com/travel/ | grep -o 'assets/index-[^"]*\.js'   # 比对 chunk hash
 ssh <server> "sudo -u postgres psql -d travel_agent -c '\d 表名'"          # 加过列的话
 ```
+
+---
+
+## 许可证
+
+[MIT](LICENSE) © 2026 Yucheng Jiang。随便看、随便改、随便抄进你自己的项目，
+保留一份版权声明就行。
+
+两点说明：
+
+- **`backend/tests/fixtures/pages/`** 是真实网页的快照（维基百科、携程、去哪儿、
+  必应、百度百科），用作 Phase 96 结构裁剪的测试固件。**MIT 覆盖的是本仓库的代码，
+  不覆盖这些第三方页面内容**，它们各自的版权归原站点所有。
+- 部分实现注明了「移植自 XXX」（如 `llm/retry.py` 之于 opencode、`agent/memory.py`
+  的三态通知之于 Codex）。那些是**用 Python 重新实现别人的思路**，不是拷贝代码——
+  保留出处注释既是致谢，也方便你顺藤摸瓜去读原作。
+
+想跑起来看看的话，从[快速开始](#快速开始)进；想读懂它怎么运作，
+先看 `docs/dev_docs/系统架构总览.md`，再挑 `docs/pitfalls/` 里感兴趣的翻——
+那 60 多篇踩坑记录大概是这个仓库最有价值的部分。
