@@ -37,16 +37,10 @@ test('前端源码不含 32 位 hex 字面量（高德 key / 安全密钥的形�
   assert.deepEqual(hits, [], `疑似硬编码凭据，请改走环境变量（见 frontend/.env.example）：\n${hits.join('\n')}`)
 })
 
-test('曾经泄露过的两个高德值不得回到源码', () => {
-  // 这两个值进过 git 历史（TripMap.tsx，2026-08-25 前），必须在控制台重置。
-  // 即便重置了也不该再出现在源码里——留着这条断言是为了防「回滚时顺手带回来」。
-  const leaked = ['ed9a6608256ee71b70b4f5a157460193', '746aca39a18383debae857c907f418c4']
-  for (const [name, text] of files) {
-    for (const value of leaked) {
-      assert.ok(!text.includes(value), `${name} 出现了已泄露的高德凭据 ${value.slice(0, 8)}…`)
-    }
-  }
-})
+// 注：曾经有一条「已泄露的那两个具体值不得回到源码」的断言，2026-08-25 开源前删了。
+// 两个理由：① 上面那条 32 位 hex 规则**已经覆盖**它们，专列一份是冗余的；
+// ② 把真凭据的字面量留在公开仓库里，会被 GitHub secret scanning 之类当成泄露报警，
+//    而它们本身就是这次要清理掉的东西——为了防它们回来而把它们抄一遍，本末倒置。
 
 test('TripMap 的凭据全部来自构建期环境变量', () => {
   const tripMap = files.find(([name]) => name.endsWith('TripMap.tsx'))
