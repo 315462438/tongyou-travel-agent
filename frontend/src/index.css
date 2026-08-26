@@ -3183,6 +3183,8 @@ body { color: var(--tx-ink); background: var(--tx-bg); }
   position: relative; z-index: 60; overflow: visible;
   min-height: 64px; padding: 10px 16px; border-color: var(--tx-line);
 }
+/* 头部折叠切换按钮：仅移动端显示 */
+.trip-head-toggle { display: none; }
 .trip-3col { position: relative; z-index: 1; }
 .trip-title-stack { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .trip-board-title { font-size: 14px; color: var(--tx-ink); }
@@ -4408,6 +4410,26 @@ body { color: var(--tx-ink); background: var(--tx-bg); }
   white-space: nowrap;
 }
 .trips-overlay.mobile-layout .trip-board-sub { display: none; }
+
+/* 移动端头部折叠：显示切换按钮 */
+.trips-overlay.mobile-layout .trip-head-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; flex: none; margin-right: 2px;
+  border: 1px solid var(--tx-line); border-radius: var(--x-r-pill);
+  background: var(--x-n100); color: var(--tx-muted); font-size: 12px; cursor: pointer;
+}
+/* 折叠态：隐藏日期胶囊、成员头像、群聊、操作菜单，只留返回/导出/标题 */
+.trips-overlay.mobile-layout .trip-board-head.collapsed .trip-date-setter,
+.trips-overlay.mobile-layout .trip-board-head.collapsed .trip-members,
+.trips-overlay.mobile-layout .trip-board-head.collapsed .trip-ai-status {
+  display: none;
+}
+.trips-overlay.mobile-layout .trip-board-head.collapsed {
+  min-height: 0; padding: 6px 10px;
+}
+.trips-overlay.mobile-layout .trip-board-head.collapsed .trip-board-title {
+  max-width: 55vw; font-size: 13px;
+}
 .trips-overlay.mobile-layout .trip-3col {
   display: block;
   overflow-y: auto;
@@ -4422,7 +4444,8 @@ body { color: var(--tx-ink); background: var(--tx-bg); }
   height: 100%;
   min-height: 0;
   overflow-y: auto;
-  padding: 10px;
+  /* 底部留出底栏(62px)+余量，末尾内容不被底部导航遮挡 */
+  padding: 10px 10px calc(84px + env(safe-area-inset-bottom));
   border: 0;
 }
 .trips-overlay.mobile-layout .trip-col-timeline.mobile-active,
@@ -6863,7 +6886,8 @@ body { color: var(--tx-ink); background: var(--tx-bg); }
     width: 100%;
     height: 100%;
     min-width: 0;
-    padding: 14px 12px calc(28px + env(safe-area-inset-bottom));
+    /* 底部留出底栏(62px)+余量，末尾内容不被底部导航遮挡 */
+    padding: 14px 12px calc(84px + env(safe-area-inset-bottom));
     overflow-y: auto;
     border: 0;
     background: var(--trip-bg);
@@ -7376,7 +7400,8 @@ body { color: var(--tx-ink); background: var(--tx-bg); }
   min-width: 0;
   height: 100%;
   min-height: 0;
-  padding: 14px 12px calc(28px + env(safe-area-inset-bottom));
+  /* 底部留出底栏高度(62px)+余量，否则常见物品/酒店推荐等末尾内容被底部导航遮挡 */
+  padding: 14px 12px calc(84px + env(safe-area-inset-bottom));
   overflow-y: auto;
   border: 0;
   background: var(--trip-bg);
@@ -7699,7 +7724,8 @@ body { color: var(--tx-ink); background: var(--tx-bg); }
   width: 100%;
   min-width: 0;
   height: 100%;
-  padding: 14px 12px calc(28px + env(safe-area-inset-bottom));
+  /* 底部留出底栏(62px)+余量，末尾内容不被底部导航遮挡 */
+  padding: 14px 12px calc(84px + env(safe-area-inset-bottom));
   overflow-y: auto;
   border: 0;
 }
@@ -7867,6 +7893,94 @@ body { color: var(--tx-ink); background: var(--tx-bg); }
 }
 
 /* —— 行李三态表格 —— */
+/* 成员筛选 chip */
+.trip-pack-member-chips {
+  display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 4px;
+}
+.trip-pack-member-chips button {
+  border: 1px solid var(--x-pine-90); background: var(--x-n100); color: var(--x-n50);
+  border-radius: var(--x-r-pill); padding: 6px 14px; font-size: 12px; font-weight: 700; cursor: pointer;
+}
+.trip-pack-member-chips button.active {
+  background: var(--trip-accent); border-color: var(--trip-accent); color: var(--x-n100);
+}
+
+/* 多选模式操作条 */
+.trip-pack-select-bar {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px;
+  margin: 10px 0 4px; padding: 10px 12px;
+  background: var(--trip-accent-soft); border-radius: var(--x-r-md);
+}
+.trip-pack-select-info { display: flex; align-items: center; gap: 10px; }
+.trip-pack-select-info b { font-size: 13px; color: var(--trip-accent-strong); }
+.trip-pack-select-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.trip-pack-select-actions select {
+  height: 30px; border: 1px solid var(--x-pine-90); border-radius: var(--x-r-md);
+  background: var(--x-n100); font-size: 12px; padding: 0 8px;
+}
+.trip-pack-card.selected { border-color: var(--trip-accent); box-shadow: inset 0 0 0 1px var(--trip-accent); }
+.trip-pack-card-check { width: 18px; height: 18px; margin-right: 4px; accent-color: var(--trip-accent); flex: none; }
+.trip-pack-card-members.muted { opacity: .5; }
+
+/* 物品卡片列表 */
+.trip-pack-card-list { display: grid; gap: 14px; margin-top: 14px; }
+.trip-pack-group { display: grid; gap: 8px; }
+.trip-pack-group-head {
+  display: flex; align-items: baseline; gap: 8px; padding: 0 2px;
+}
+.trip-pack-group-head span { font-size: 13px; font-weight: 800; color: var(--x-n20); }
+.trip-pack-group-head small { font-size: 11px; color: var(--x-n60); }
+
+.trip-pack-card {
+  border: 1px solid var(--trip-line); border-radius: var(--x-r-lg);
+  background: var(--x-n100); padding: 12px 14px;
+}
+.trip-pack-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.trip-pack-card-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.trip-pack-card-title b { font-size: 15px; font-weight: 700; color: var(--x-n12); }
+.trip-pack-card-title small { font-size: 11px; color: var(--x-n60); }
+.trip-pack-card-more {
+  flex: none; width: 32px; height: 32px; border: 0; background: transparent;
+  color: var(--x-n50); font-size: 18px; cursor: pointer; border-radius: var(--x-r-md);
+}
+.trip-pack-card-more:hover { background: var(--x-n96); }
+
+.trip-pack-card-members { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.trip-pack-member {
+  display: inline-flex; align-items: center; gap: 8px; min-height: 34px;
+  padding: 4px 12px; border: 1px solid var(--x-n88); border-radius: var(--x-r-pill);
+  background: var(--x-n100); cursor: pointer; font-size: 12px;
+}
+.trip-pack-member-name { color: var(--x-n41); font-weight: 600; }
+.trip-pack-member-state { font-weight: 800; color: var(--x-n60); position: relative; }
+.trip-pack-member-state i {
+  margin-left: 4px; font-style: normal; font-size: 11px;
+  color: var(--x-n100); background: var(--x-n41); border-radius: var(--x-r-pill);
+  padding: 0 4px; line-height: 1.5;
+}
+.trip-pack-member.packed { background: var(--x-pine-96); border-color: var(--x-pine-90); }
+.trip-pack-member.packed .trip-pack-member-state { color: #166534; }
+.trip-pack-member.unpacked { background: var(--x-cinnabar-96); border-color: var(--x-cinnabar-90); }
+.trip-pack-member.unpacked .trip-pack-member-state { color: var(--x-cinnabar-44); }
+.trip-pack-member.mine { box-shadow: inset 0 0 0 1px var(--trip-accent); }
+
+/* 管理 Bottom Sheet */
+.trip-sheet-mask { align-items: flex-end; }
+.trip-manage-sheet {
+  width: 100%; max-width: 480px; margin: 0 auto;
+  background: var(--x-n100); border-radius: 16px 16px 0 0; padding: 12px 12px calc(16px + env(safe-area-inset-bottom, 0px));
+}
+.trip-manage-sheet-head { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px 10px; }
+.trip-manage-sheet-head strong { font-size: 15px; color: var(--x-n12); }
+.trip-manage-sheet-row {
+  width: 100%; display: grid; grid-template-columns: 28px 1fr; gap: 2px 10px;
+  padding: 12px 10px; border: 0; background: transparent; text-align: left; cursor: pointer; border-radius: var(--x-r-md);
+}
+.trip-manage-sheet-row:hover { background: var(--x-n96); }
+.trip-manage-sheet-row > span { grid-row: 1 / 3; align-self: center; font-size: 18px; }
+.trip-manage-sheet-row b { font-size: 14px; color: var(--x-n12); }
+.trip-manage-sheet-row small { font-size: 11px; color: var(--x-n60); }
+
 .trip-packing-filters {
   display: flex;
   flex-wrap: wrap;
@@ -7890,17 +8004,16 @@ body { color: var(--tx-ink); background: var(--tx-bg); }
   box-shadow: 0 10px 22px rgba(82, 104, 221, .16);
 }
 .trip-packing-scroll {
-  overflow-x: hidden;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   border: 1px solid var(--x-pine-90);
   border-radius: var(--x-r-lg);
   background: var(--x-n100);
 }  /* 成员多时横滑，页面本身不横向滚动 */
 .trip-packing-table {
   width: 100%;
-  min-width: 0;
   border-collapse: collapse;
   font-size: 12px;
-  table-layout: fixed;
 }
 .trip-packing-table th, .trip-packing-table td {
   padding: 13px 14px;
@@ -7930,6 +8043,19 @@ body { color: var(--tx-ink); background: var(--tx-bg); }
   font-weight: 700;
   width: 180px;
   min-width: 150px;
+}
+/* 成员列/操作列给最小宽度，窄屏下不再挤压重叠，超出走横滑 */
+.trip-packing-table th:not(.trip-packing-select):not(.trip-packing-name):not(.trip-packing-ops),
+.trip-packing-table td.trip-packing-member-cell {
+  min-width: 56px;
+}
+.trip-packing-ops {
+  min-width: 108px;
+  white-space: nowrap;
+}
+.trip-packing-select {
+  width: 40px;
+  min-width: 40px;
 }
 .trip-packing-group-row td {
   padding: 11px 14px !important;

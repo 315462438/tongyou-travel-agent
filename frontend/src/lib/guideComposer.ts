@@ -9,6 +9,7 @@ import type {
   OverviewSection,
   OverviewTimelineDay,
   DaySection,
+  DayHighlight,
   EventCard,
   Badge,
   TipCard,
@@ -21,6 +22,19 @@ import type {
   PackingSection,
   BudgetSection,
 } from './shareGuideSchema'
+import {
+  resolveDisplayName,
+  cleanNullable,
+  stripMarkdown,
+  stripSourceMetadata,
+  dedupeTexts,
+  textSimilarity,
+  validateDuration,
+  anonymizePackedStatus,
+  atomizeTip,
+  isActionLabel,
+  type AtomicTip,
+} from './contentCleaner'
 
 // 类型定义（从 Trips.tsx 导入的类型，这里先声明，后续会统一）
 type TripDetail = {
@@ -88,7 +102,8 @@ type Expense = {
 export type ComposeOptions = {
   includePacking?: boolean
   includeBudget?: boolean
-  memberCount?: number  // 用于计算人均预算
+  memberCount?: number              // 用于计算人均预算
+  exportMode?: 'friend' | 'personal' // 好友分享版 | 个人完整版（默认 friend）
 }
 
 /**
@@ -102,27 +117,34 @@ export function composeShareGuide(
   expenses: Expense[],
   options: ComposeOptions = {}
 ): ShareGuideSchema {
-  const { includePacking = false, includeBudget = true, memberCount } = options
+  const { includePacking = false, includeBudget = true, memberCount, exportMode = 'friend' } = options
+
+  // 酒店合并只算一次，overview 复用（避免重复跑 mergeExportHotelStays）
+  const stays = composeStays(trip)
 
   return {
     cover: composeCover(trip),
-    overview: composeOverview(trip, foods),
+    overview: composeOverview(trip, foods, stays),
     days: composeDays(trip),
     foods: composeFoods(foods),
-    stays: composeStays(trip),
+    stays,
     tips: composeTips(tips),
-    ...(includePacking ? { packing: composePacking(packing) } : {}),
-    ...(includeBudget ? { budget: composeBudget(expenses, memberCount) } : {}),
+    ...(includePacking ? { packing: composePacking(packing, exportMode) } : {}),
+    ...(includeBudget ? { budget: composeBudget(expenses, memberCount, exportMode) } : {}),
   }
 }
 
 // ===== 封面 =====
 function composeCover(trip: TripDetail): CoverSection {
-  const title = exportCoverTitle(trip)
-  const subtitle = extractSubtitle(trip)
-  const region = inferRegion(title)
+  const cityLine = exportCoverTitle(trip)          // "吉隆坡 · 仙本那 · 亚庇"
+  const region = inferRegion(`${trip.title} ${trip.destination}`)
+  const nights = Math.max(0, (trip.days || 1) - 1)
+  // 主标题：地区名 + 天数（PRD 第 8 条），如"马来西亚 8天7晚"；地区未知时退回城市串
+  const regionCn = regionChineseName(region)
+  const title = regionCn ? `${regionCn} ${trip.days}天${nights}晚` : cityLine
+  // 副标题：城市串（主标题已是地区时）或完整旅行主题
+  const subtitle = regionCn ? cityLine : extractSubtitle(trip)
   const dateRange = formatExportDateRange(trip)
-  const nights = Math.max(0, trip.days - 1)
   const tags = generateTripTags(trip)
 
   return {
@@ -131,7 +153,7 @@ function composeCover(trip: TripDetail): CoverSection {
     subtitle,
     region,
     dateRange,
-    days: trip.days,
+    days: trip.days || 1,
     nights,
     tags,
   }
@@ -146,11 +168,25 @@ function exportCoverTitle(trip: TripDetail): string {
     .trim() || '协同行程'
 }
 
+function regionChineseName(region: string): string {
+  const map: Record<string, string> = {
+    MALAYSIA: '马来西亚',
+    THAILAND: '泰国',
+    JAPAN: '日本',
+    VIETNAM: '越南',
+  }
+  return map[region] || ''
+}
+
 function extractSubtitle(trip: TripDetail): string | undefined {
-  const title = trip.title || ''
-  // 提取"海岛跳岛浮潜度假"这类副标题
-  const match = title.match(/[一-龥]{4,}(?:旅行|度假|攻略|计划)/)
-  return match?.[0]
+  // 用完整旅行主题（去掉出发地前缀和天数），不做贪婪截断
+  const title = (trip.title || '').trim()
+  if (!title) return undefined
+  const cleaned = title
+    .replace(/^[^·]+·\s*/, '')            // 去"南京出发·"前缀
+    .replace(/\d+\s*天\s*\d*\s*晚/g, '')  // 去"8天7晚"
+    .trim()
+  return cleaned || undefined
 }
 
 function inferRegion(title: string): string {
@@ -197,10 +233,11 @@ function formatExportDateRange(trip: TripDetail): string {
 }
 
 // ===== 总览 =====
-function composeOverview(trip: TripDetail, foods: FoodItem[]): OverviewSection {
+function composeOverview(trip: TripDetail, foods: FoodItem[], stays: StaySection): OverviewSection {
   const timeline = buildOverviewTimeline(trip)
   const cities = extractCities(trip)
-  const hotels = countHotels(trip)
+  // 酒店数量从 merge 后的列表统计（PRD Bug 5），复用已算好的 stays，不重复合并
+  const hotels = stays.hotels.length
   const highlights = extractHighlights(trip, foods)
 
   return {
@@ -228,7 +265,7 @@ function buildOverviewTimeline(trip: TripDetail): OverviewTimelineDay[] {
       day,
       date: date.replace(/^\d{4}年/, '').replace(/日.*$/, ''),  // "10.01"
       weekday,
-      city: city || '待定',
+      city: cleanNullable(city) || '',  // 缺失时不填"待定"，直接空
       theme: routeTitle || `第 ${day} 天`,
       hotel: hotel || '—',
     }
@@ -272,14 +309,6 @@ function findDayHotel(trip: TripDetail, day: number): string {
   return ''
 }
 
-function countHotels(trip: TripDetail): number {
-  const hotelNames = new Set<string>()
-  trip.stops.filter(isStayStop).forEach((s) => {
-    hotelNames.add(normalizeExportStopName(s.name))
-  })
-  return hotelNames.size
-}
-
 function extractHighlights(trip: TripDetail, foods: FoodItem[]): string[] {
   const highlights: string[] = []
   const text = `${trip.title} ${trip.destination}`.toLowerCase()
@@ -295,36 +324,118 @@ function extractHighlights(trip: TripDetail, foods: FoodItem[]): string[] {
 
 // ===== 每日攻略 =====
 function composeDays(trip: TripDetail): DaySection[] {
-  return Array.from({ length: trip.days }, (_, i) => i + 1).map((day) => {
+  const days = Array.from({ length: trip.days }, (_, i) => i + 1).map((day) => {
     const date = displayTripDayDate(trip, day)
     const monthLabel = exportMonthDayLabel(date)
     const dayTitle = trip.day_titles?.[day] || ''
     const { routeTitle, description } = splitExportDayTitle(dayTitle, day)
-    const city = extractCityFromDayTitle(dayTitle) || extractCityFromStops(trip, day) || '待定'
-    const theme = routeTitle || description || `第 ${day} 天`
-    const stops = trip.stops.filter((s) => s.day === day && isTimelineStop(s)).sort((a, b) => a.order_no - b.order_no)
-    const route = stops.map((s) => normalizeExportStopName(s.name)).filter(Boolean)
-    const events = stops.map((stop) => composeEventCard(stop))
+    // 城市缺失时留空由渲染层隐藏，不填"待定"
+    const city = cleanNullable(extractCityFromDayTitle(dayTitle) || extractCityFromStops(trip, day)) || ''
+    let theme = cleanNullable(routeTitle || description) || `第 ${day} 天`
+    // theme 与 city 相同则视为重复，用兜底避免"亚庇 / 亚庇"（PRD Content UI）
+    if (city && theme.trim() === city.trim()) theme = `第 ${day} 天`
+    const rawStops = trip.stops.filter((s) => s.day === day && isTimelineStop(s)).sort((a, b) => a.order_no - b.order_no)
+    // 过滤无效地点节点（"时间/待定"等），并生成 EventCard（内部再解析有效名）
+    const events = rawStops
+      .map((stop) => composeEventCard(stop))
+      .filter((e): e is EventCard => e !== null)
+    // 路线只保留真实地点，剔除行为标签（退房/晚餐/返程等噪音），时间线仍保留
+    const route = events.map((e) => e.place).filter((p) => p && !isActionLabel(p))
+
+    const dayTags = generateDayTags(events, theme)
+    const highlight = pickDayHighlight(events, rawStops)
 
     return {
-      type: 'day',
+      type: 'day' as const,
       day,
       date,
       monthLabel,
       city,
       theme,
+      dayTags,
       route,
       events,
+      ...(highlight ? { highlight } : {}),
     }
   })
+
+  // 城市前向填充：某天城市空时，继承前一天（水屋/离岛等无城市名的天）
+  let lastCity = ''
+  for (const d of days) {
+    if (d.city) lastCity = d.city
+    else if (lastCity) d.city = lastCity
+  }
+
+  return days
 }
 
-function composeEventCard(stop: TripStop): EventCard {
+// 根据当天事件生成 2-4 个标签（PRD 第 12 条，禁止硬编码）
+function generateDayTags(events: EventCard[], theme: string): string[] {
+  const text = `${theme} ${events.map((e) => `${e.place} ${e.description || ''}`).join(' ')}`
+  const rules: Array<{ test: RegExp; tag: string }> = [
+    { test: /跳岛|island hop/i, tag: '🌊 跳岛' },
+    { test: /浮潜|snorkel|潜水|dive/i, tag: '🤿 浮潜' },
+    { test: /海鲜|seafood|大排档/i, tag: '🦞 海鲜' },
+    { test: /游艇|快艇|boat|yacht/i, tag: '🚤 游艇' },
+    { test: /日落|sunset|夕阳/i, tag: '🌅 日落' },
+    { test: /水屋|overwater|海上屋/i, tag: '🏝️ 水屋' },
+    { test: /购物|市场|market|夜市/i, tag: '🛍️ 购物' },
+    { test: /美食|餐|咖啡|café/i, tag: '🍽️ 美食' },
+    { test: /机场|航班|飞机|flight/i, tag: '✈️ 交通' },
+  ]
+  const tags = rules.filter((r) => r.test.test(text)).map((r) => r.tag)
+  return tags.slice(0, 4)
+}
+
+// 选出当天重点活动（PRD 第 16 条）：门票项目/体验型活动/核心景点优先
+function pickDayHighlight(events: EventCard[], rawStops: TripStop[]): DayHighlight | undefined {
+  if (events.length === 0) return undefined
+  // 优先选带门票或体验关键词的事件
+  const experienceRe = /跳岛|浮潜|潜水|游艇|演出|门票|乐园|表演|dive|snorkel/i
+  const scored = events.map((e, idx) => {
+    let score = 0
+    const stop = rawStops[idx]
+    if (experienceRe.test(`${e.place} ${e.description || ''}`)) score += 3
+    if (stop?.ticket_price) score += 2
+    if (e.badges.some((b) => b.type === 'cost')) score += 1
+    return { event: e, score }
+  }).sort((a, b) => b.score - a.score)
+
+  let top = scored[0]
+  // 无门票/体验型事件时降级：取描述最丰富的事件兜底，保证每天都有一个重点（PRD 第 16 条）
+  if (!top || top.score === 0) {
+    const byDesc = [...events].sort((a, b) => (b.description?.length || 0) - (a.description?.length || 0))
+    if (!byDesc[0] || !byDesc[0].description) return undefined // 全无描述才放弃
+    top = { event: byDesc[0], score: 0 }
+  }
+
+  // places：取当天其余地点名作为副信息
+  const places = events.filter((e) => e.place !== top.event.place).slice(0, 3).map((e) => e.place)
+  const tags = generateDayTags([top.event], top.event.place).slice(0, 3)
+
+  return {
+    title: top.event.place,
+    places,
+    tags,
+  }
+}
+
+function composeEventCard(stop: TripStop): EventCard | null {
+  // 无效地点（"时间/待定"等）过滤掉；能推断行为的用行为描述
+  const place = resolveDisplayName(normalizeExportStopName(stop.name), stop.note)
+  if (place === null) return null
+
   const time = formatStopTime(stop)
-  const place = normalizeExportStopName(stop.name)
-  const description = stop.note || undefined
   const badges = composeEventBadges(stop)
   const tips = composeEventTips(stop)
+
+  // 描述：去 Markdown 控制字符；若与某条 tip 高度重复（同源于一段 note），丢弃描述避免渲染两遍
+  const rawDesc = cleanNullable(stop.note)
+  let description = rawDesc ? stripMarkdown(rawDesc) : undefined
+  if (description && tips.length) {
+    const dup = tips.some((t) => textSimilarity(t.content, description!) >= 0.85)
+    if (dup) description = undefined
+  }
 
   return {
     type: 'event',
@@ -353,17 +464,28 @@ function composeEventBadges(stop: TripStop): Badge[] {
     })
   }
 
-  // 从 note 提取时长
-  const duration = extractDuration(stop.note)
-  if (duration) {
-    badges.push({
-      icon: '⏱',
-      label: duration,
-      type: 'duration',
-    })
+  // 时长校验：优先用 start/end 计算，源值偏差>30min 用计算值，无结束时间则隐藏
+  const sourceDurationMin = extractDurationMinutes(stop.note)
+  const validated = validateDuration(
+    /^\d{1,2}:\d{2}$/.test(stop.start_time) ? stop.start_time : undefined,
+    undefined, // TripStop 目前无 end_time 字段，只能靠 stay_min（见下）
+    sourceDurationMin,
+  )
+  if (validated) {
+    badges.push({ icon: '⏱', label: validated, type: 'duration' })
   }
 
   return badges
+}
+
+// 从 note 里提取声明的时长（分钟），仅作为校验参考值
+function extractDurationMinutes(note: string): number | null {
+  const text = note || ''
+  const hourMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:小时|h|hour)/i)
+  const minMatch = text.match(/(\d+)\s*(?:分钟|min)/i)
+  if (hourMatch) return Math.round(Number(hourMatch[1]) * 60)
+  if (minMatch) return Number(minMatch[1])
+  return null
 }
 
 function inferTransportIcon(transport: string): string {
@@ -375,16 +497,6 @@ function inferTransportIcon(transport: string): string {
   if (/flight|飞机|航班/i.test(t)) return '✈️'
   if (/train|火车|地铁/i.test(t)) return '🚆'
   return '🚗'
-}
-
-function extractDuration(text: string): string | undefined {
-  const match = text.match(/(\d+)\s*(?:min|分钟|小时|h|hour)/i)
-  if (match) {
-    const num = match[1]
-    if (/min|分钟/i.test(match[0])) return `${num} min`
-    if (/hour|小时|h/i.test(match[0])) return `${num}h`
-  }
-  return undefined
 }
 
 function composeEventTips(stop: TripStop): TipCard[] {
@@ -454,20 +566,20 @@ function selectTopFoods(foods: FoodItem[]): { top: FoodItem[]; more: FoodItem[] 
 
 function composeRestaurantCard(food: FoodItem): RestaurantCard {
   return {
-    name: food.name,
+    name: stripSourceMetadata(food.name),
     category: food.category || undefined,
     pricePerPerson: food.price || undefined,
     rating: food.rating || undefined,
     dishes: food.recommend_food?.length ? food.recommend_food : undefined,
     reason: extractFoodReason(food),
-    address: food.address || undefined,
+    address: cleanNullable(food.address) || undefined,
     businessHours: food.business_hours || undefined,
     mealType: food.meal_type !== '待定' ? food.meal_type : undefined,
   }
 }
 
 function extractFoodReason(food: FoodItem): string | undefined {
-  const note = food.note?.trim()
+  const note = cleanNullable(food.note)
   if (!note) return undefined
   // 提取第一句作为推荐理由
   const firstSentence = note.split(/[。！？\n]/)[0]
@@ -516,10 +628,11 @@ function mergeExportHotelStays(
 
   sorted.forEach((stay) => {
     const name = normalizeExportStopName(stay.name)
+    const key = normalizeHotelKey(name)
     const last = groups[groups.length - 1]
 
-    // 合并连续同名酒店
-    if (last && last.name === name && stay.day <= last.endDay + 1) {
+    // 合并连续同名酒店（用归一化 key 比较：忽略大小写/空格差异）
+    if (last && normalizeHotelKey(last.name) === key && stay.day <= last.endDay + 1) {
       last.endDay = Math.max(last.endDay, stay.day)
       last.endDate = stay.date || last.endDate
       last.nights = Math.max(1, last.endDay - last.startDay + 1)
@@ -545,6 +658,27 @@ function mergeExportHotelStays(
   return groups
 }
 
+// 已知城市前缀，酒店名归一化时剥离（"仙本那 DBC" 与 "DBC" 视为同一家）
+const KNOWN_CITY_PREFIXES = ['吉隆坡', '仙本那', '亚庇', '斗湖', '曼谷', '普吉', '清迈', '东京', '大阪', '京都', '胡志明', '河内']
+
+/** 酒店名归一化 key：忽略大小写、空格、全半角、城市前缀差异，用于合并判定 */
+function normalizeHotelKey(name: string): string {
+  let key = (name || '').toLowerCase().replace(/\s+/g, '').replace(/[（）()·・]/g, '').trim()
+  // 剥离开头的城市名（可能出现多次）
+  let changed = true
+  while (changed) {
+    changed = false
+    for (const city of KNOWN_CITY_PREFIXES) {
+      const c = city.toLowerCase()
+      if (key.startsWith(c) && key.length > c.length) {
+        key = key.slice(c.length)
+        changed = true
+      }
+    }
+  }
+  return key
+}
+
 function exportCityFromStay(stay: TripStop): string {
   const source = [stay.location, stay.note, stay.name].filter(Boolean).join(' ')
   return extractCityFromLocation(source)
@@ -565,13 +699,13 @@ function composeHotelCard(
 ): HotelCard {
   return {
     name: stay.name,
-    city: stay.city || '待定',
+    city: cleanNullable(stay.city) || '',  // 城市空则留空，渲染层隐藏，不填"待定"
     checkIn: formatDateShort(stay.startDate),
     checkOut: formatDateShort(stay.endDate),
     nights: stay.nights,
     relatedDays: Array.from({ length: stay.nights }, (_, i) => stay.startDay + i),
     pricePerNight: stay.price || undefined,
-    note: stay.note || undefined,
+    note: cleanNullable(stay.note) || undefined,
   }
 }
 
@@ -591,52 +725,53 @@ function composeTips(tips: TipItem[]): TipsSection {
   }
 }
 
+// 分类定义：按 PRD 第 29 条主题；顺序即优先级，一个 Tip 只归第一个命中的主类
+const TIP_CATEGORY_DEFS = [
+  { title: '证件', icon: '📄', keywords: ['证件', '护照', '签证', 'visa', 'passport', 'mdac'] },
+  { title: '机场', icon: '✈️', keywords: ['机场', '值机', '登机', '安检', 'airport', 'checkin'] },
+  { title: '交通', icon: '🚗', keywords: ['交通', '打车', 'grab', '航班', 'flight', '包车', '接送'] },
+  { title: '浮潜', icon: '🤿', keywords: ['浮潜', '潜水', '装备', 'snorkel', 'dive', '水下', '晕船'] },
+  { title: '安全', icon: '🛡️', keywords: ['安全', '注意', '小心', '谨防', '骗', 'safety', 'danger'] },
+  { title: '现金', icon: '💰', keywords: ['现金', '货币', '汇率', '换钱', 'cash', 'currency', '小费'] },
+  { title: '购物', icon: '🛍️', keywords: ['购物', '砍价', 'shopping', 'market', '特产'] },
+  { title: '其他', icon: '📌', keywords: [] },
+]
+
 function categorizeTips(tips: TipItem[]): TipCategory[] {
-  const categoryDefs = [
-    { title: '证件', icon: '📄', keywords: ['证件', '护照', '签证', 'visa', 'passport'] },
-    { title: '交通', icon: '🚗', keywords: ['交通', '打车', 'grab', '机场', '航班', 'flight'] },
-    { title: '安全', icon: '🛡️', keywords: ['安全', '注意', '小心', '谨防', '骗', 'safety', 'danger'] },
-    { title: '浮潜', icon: '🤿', keywords: ['浮潜', '潜水', '装备', 'snorkel', 'dive', '水下'] },
-    { title: '购物', icon: '🛍️', keywords: ['购物', '买', '价格', '砍价', 'shopping', 'market'] },
-    { title: '现金', icon: '💰', keywords: ['现金', '货币', '汇率', '换钱', 'cash', 'currency'] },
-    { title: '机场', icon: '✈️', keywords: ['机场', '值机', '登机', '行李', 'airport', 'checkin'] },
-  ]
+  // 1. 原子化：把复合 Tip 拆成单主题条目
+  const atomicTips: AtomicTip[] = tips.flatMap((tip) => atomizeTip(tip.content, tip.level))
 
-  const categorized = categoryDefs
-    .map((def) => ({
-      title: def.title,
-      icon: def.icon,
-      tips: tips
-        .filter((tip) => def.keywords.some((kw) => tip.content.toLowerCase().includes(kw.toLowerCase())))
-        .map((tip) => composeTipCard(tip)),
-    }))
-    .filter((cat) => cat.tips.length > 0)
+  // 2. 语义去重：相似度>0.85 视为重复
+  const uniqueContents = dedupeTexts(atomicTips.map((t) => t.content))
+  const uniqueTips = uniqueContents.map((content) => {
+    const match = atomicTips.find((t) => t.content === content)
+    return { content, level: match?.level }
+  })
 
-  // 未分类的放到"其他"
-  const categorizedTipIds = new Set(categorized.flatMap((cat) => cat.tips.map((t) => t.content)))
-  const uncategorized = tips
-    .filter((tip) => !categorizedTipIds.has(tip.content))
-    .map((tip) => composeTipCard(tip))
+  // 3. 每条只归一个 Primary Category（第一个命中的）
+  const buckets = new Map<string, TipCard[]>()
+  uniqueTips.forEach((tip) => {
+    const def = TIP_CATEGORY_DEFS.find((d) =>
+      d.keywords.length > 0 && d.keywords.some((kw) => tip.content.toLowerCase().includes(kw.toLowerCase()))
+    ) || TIP_CATEGORY_DEFS[TIP_CATEGORY_DEFS.length - 1] // 兜底"其他"
+    const list = buckets.get(def.title) || []
+    list.push(composeTipCard(tip))
+    buckets.set(def.title, list)
+  })
 
-  if (uncategorized.length > 0) {
-    categorized.push({
-      title: '其他',
-      icon: '📌',
-      tips: uncategorized,
-    })
-  }
-
-  return categorized
+  // 4. 按定义顺序输出非空分类
+  return TIP_CATEGORY_DEFS
+    .filter((def) => buckets.has(def.title))
+    .map((def) => ({ title: def.title, icon: def.icon, tips: buckets.get(def.title)! }))
 }
 
-function composeTipCard(tip: TipItem): TipCard {
-  const level = tip.level === 'important' ? 'warning' : tip.level === 'notice' ? 'info' : undefined
+function composeTipCard(tip: AtomicTip): TipCard {
+  const level = tip.level
   const icon = level === 'warning' ? '⚠️' : level === 'info' ? '💡' : '📝'
-
-  // 从 content 提取标题和正文
-  const lines = tip.content.split('\n').filter(Boolean)
-  const title = lines[0]?.length < 20 ? lines[0] : '提示'
-  const content = lines.length > 1 ? lines.slice(1).join('\n') : lines[0]
+  // 原子 Tip 本身就是单主题，取首句作标题、其余作正文；短内容整体即标题
+  const content = stripSourceMetadata(tip.content.trim())
+  const firstSentence = content.split(/[，。,]/)[0]
+  const title = firstSentence.length <= 16 ? firstSentence : content.slice(0, 14)
 
   return {
     type: 'tip',
@@ -648,17 +783,25 @@ function composeTipCard(tip: TipItem): TipCard {
 }
 
 // ===== 行李 =====
-function composePacking(packing: PackingData): PackingSection {
+function composePacking(packing: PackingData, exportMode: 'friend' | 'personal' = 'friend'): PackingSection {
   const groups = Array.from(new Set(packing.items.map((i) => i.category || '通用')))
     .map((category) => ({
       category,
       items: packing.items
         .filter((i) => (i.category || '通用') === category)
-        .map((item) => ({
-          name: item.name,
-          packedBy: packing.members.filter((m) => item.states[m] === 'packed'),
-          unpackedBy: packing.members.filter((m) => item.states[m] === 'unpacked'),
-        })),
+        .map((item) => {
+          const packedReal = packing.members.filter((m) => item.states[m] === 'packed')
+          const unpackedReal = packing.members.filter((m) => item.states[m] === 'unpacked')
+          if (exportMode === 'friend') {
+            // 好友版：不暴露成员姓名，只标记是否已带
+            return {
+              name: item.name,
+              packedBy: anonymizePackedStatus(packedReal) ? ['✓'] : [],
+              unpackedBy: [],
+            }
+          }
+          return { name: item.name, packedBy: packedReal, unpackedBy: unpackedReal }
+        }),
     }))
     .filter((g) => g.items.length > 0)
 
@@ -668,8 +811,14 @@ function composePacking(packing: PackingData): PackingSection {
   }
 }
 
-// ===== 预算（聚合，过滤个人信息）=====
-function composeBudget(expenses: Expense[], memberCount?: number): BudgetSection {
+// ===== 预算 =====
+// 好友版：只给聚合总额与分类占比，不含付款人/明细
+// 个人完整版：额外给逐笔明细（含付款人）
+function composeBudget(
+  expenses: Expense[],
+  memberCount?: number,
+  exportMode: 'friend' | 'personal' = 'friend',
+): BudgetSection {
   const breakdown: Record<string, number> = {}
 
   expenses.forEach((exp) => {
@@ -678,6 +827,17 @@ function composeBudget(expenses: Expense[], memberCount?: number): BudgetSection
   })
 
   const total = Object.values(breakdown).reduce((sum, val) => sum + val, 0)
+
+  // 详细记账仅个人完整版输出（PRD 第 32 条：好友版必须删除付款人/明细）
+  const entries = exportMode === 'personal'
+    ? expenses.map((exp) => ({
+        title: exp.title,
+        category: mapExpenseCategory(exp.category || '其他'),
+        amount: exp.amount,
+        payer: exp.payer,
+        date: undefined,
+      }))
+    : undefined
 
   return {
     type: 'budget',
@@ -690,6 +850,7 @@ function composeBudget(expenses: Expense[], memberCount?: number): BudgetSection
         percentage: total > 0 ? Math.round((amount / total) * 100) : 0,
       }))
       .sort((a, b) => b.amount - a.amount),
+    ...(entries ? { entries } : {}),
   }
 }
 

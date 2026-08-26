@@ -8,6 +8,7 @@ import type {
   CoverSection,
   OverviewSection,
   DaySection,
+  DayHighlight,
   EventCard,
   Badge,
   TipCard,
@@ -18,6 +19,8 @@ import type {
   HotelCard,
   TipsSection,
   TipCategory,
+  PackingSection,
+  PackingGroup,
   BudgetSection,
 } from './shareGuideSchema'
 import { FONT_SIZES, SPACING, COLORS } from './guideStyles'
@@ -28,40 +31,47 @@ import { FONT_SIZES, SPACING, COLORS } from './guideStyles'
 export function renderShareGuideDocx(schema: ShareGuideSchema): Blob {
   const sections: string[] = []
 
-  // 封面
+  // Page 1：封面独占（PRD 第 8 条）
   sections.push(renderCover(schema.cover))
+  sections.push(pageBreak())
 
-  // 总览
-  sections.push(divider())
+  // Page 2：行程总览独占（PRD 第 9 条）
   sections.push(renderOverview(schema.overview))
+  sections.push(pageBreak())
 
-  // 每日攻略
-  schema.days.forEach((day, idx) => {
-    if (idx > 0) sections.push(divider())
+  // Page 3+：每日攻略。DayLabel 自带间距+keepNext 分隔，无需 divider（省空间）
+  schema.days.forEach((day) => {
     sections.push(renderDay(day))
   })
 
-  // 美食
+  // 美食：新章节起页（美食是大板块，独立成页合理）
   if (schema.foods.cityGroups.length > 0) {
     sections.push(pageBreak())
     sections.push(renderFoods(schema.foods))
   }
 
-  // 住宿
+  // 住宿：不强制分页，接美食后自然流动（PRD §39 动态布局）
   if (schema.stays.hotels.length > 0) {
-    sections.push(pageBreak())
+    sections.push(divider())
     sections.push(renderStays(schema.stays))
   }
 
-  // 避坑
+  // 避坑：不强制分页，自然流动
   if (schema.tips.categories.length > 0) {
-    sections.push(pageBreak())
+    sections.push(divider())
     sections.push(renderTips(schema.tips))
   }
 
-  // 预算
-  if (schema.budget) {
-    sections.push(pageBreak())
+  // 行李：物品 <5 件不独占页面（PRD 第 30 条），跟在避坑后面用 divider 分隔
+  if (schema.packing) {
+    const itemCount = schema.packing.groups.reduce((sum, g) => sum + g.items.length, 0)
+    sections.push(itemCount >= 5 ? pageBreak() : divider())
+    sections.push(renderPacking(schema.packing))
+  }
+
+  // 预算：无数据（总额 0 且无明细）不渲染，避免空页
+  if (schema.budget && ((schema.budget.total ?? 0) > 0 || (schema.budget.entries?.length ?? 0) > 0)) {
+    sections.push(divider())
     sections.push(renderBudget(schema.budget))
   }
 
@@ -123,13 +133,32 @@ function renderOverview(overview: OverviewSection): string {
 // ===== 每日攻略 =====
 function renderDay(day: DaySection): string {
   const route = day.route.length > 0 ? day.route.join(' → ') : ''
+  const metaLine = [day.monthLabel, day.city].filter(Boolean).join('     ')
 
+  // DayLabel keepNext 避免标题留页尾；缩小天间距让短天可与相邻天共页（PRD §39）
   return `
-    ${p(`DAY ${String(day.day).padStart(2, '0')}`, 'DayLabel', { before: SPACING.xxl, after: SPACING.xs })}
-    ${p(`${day.monthLabel}     ${day.city}`, 'DayMeta', { after: SPACING.xs })}
-    ${p(day.theme, 'DayTitle', { after: SPACING.md })}
-    ${route ? p(route, 'DayRoute', { after: SPACING.lg }) : ''}
+    ${p(`DAY ${String(day.day).padStart(2, '0')}`, 'DayLabel', { before: SPACING.md, after: SPACING.xs, keepNext: true })}
+    ${metaLine ? p(metaLine, 'DayMeta', { after: SPACING.xs, keepNext: true }) : ''}
+    ${p(day.theme, 'DayTitle', { after: SPACING.xs, keepNext: true })}
+    ${day.dayTags.length ? p(day.dayTags.join('   '), 'DayMeta', { after: SPACING.sm }) : ''}
+    ${route ? p(route, 'DayRoute', { after: SPACING.md }) : ''}
+    ${day.highlight ? renderHighlightCard(day.highlight) : ''}
     ${day.events.map(renderEventCard).join('')}
+  `
+}
+
+function renderHighlightCard(h: DayHighlight): string {
+  const sub = [h.places.join(' / '), h.tags.join('  ')].filter(Boolean).join('\n')
+  return `
+    <w:p>
+      <w:pPr>
+        <w:shd w:fill="${COLORS.primaryLight}"/>
+        <w:spacing w:before="${SPACING.sm}" w:after="0"/>
+        <w:keepNext/>
+      </w:pPr>
+      <w:r><w:rPr><w:b/><w:color w:val="${COLORS.primaryDark}"/><w:sz w:val="${FONT_SIZES.placeName}"/></w:rPr><w:t>⭐ 今日重点：${escapeXml(h.title)}</w:t></w:r>
+    </w:p>
+    ${sub ? `<w:p><w:pPr><w:shd w:fill="${COLORS.primaryLight}"/><w:spacing w:before="0" w:after="${SPACING.md}"/></w:pPr><w:r><w:rPr><w:color w:val="${COLORS.textLight}"/><w:sz w:val="${FONT_SIZES.eventDesc}"/></w:rPr>${sub.split('\n').map((l, i) => `${i ? '<w:br/>' : ''}<w:t xml:space="preserve">${escapeXml(l)}</w:t>`).join('')}</w:r></w:p>` : ''}
   `
 }
 
@@ -161,7 +190,7 @@ function renderEventCard(event: EventCard): string {
         </w:tblBorders>
         <w:tblCellMar>
           <w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/>
-          <w:bottom w:w="${SPACING.lg}" w:type="dxa"/><w:right w:w="0" w:type="dxa"/>
+          <w:bottom w:w="${SPACING.md}" w:type="dxa"/><w:right w:w="0" w:type="dxa"/>
         </w:tblCellMar>
       </w:tblPr>
       <w:tblGrid>
@@ -193,19 +222,23 @@ function renderTipCard(tip: TipCard): string {
   const bgColor = tip.level === 'warning' ? COLORS.bgWarn : tip.level === 'info' ? COLORS.bgInfo : COLORS.bg
   const textColor = tip.level === 'warning' ? COLORS.textWarn : tip.level === 'info' ? COLORS.textInfo : COLORS.text
 
+  // title 与 content 高度相似时只显示 title（避免"MDAC提前3天 / MDAC提前3天"重复）
+  const showContent = tip.content && !tipTextsAlike(tip.title, tip.content)
+
   return `
     <w:p>
       <w:pPr>
         <w:shd w:fill="${bgColor}"/>
         <w:spacing w:before="${SPACING.sm}" w:after="${SPACING.xs}"/>
         <w:ind w:left="${SPACING.lg}" w:right="${SPACING.lg}"/>
+        ${showContent ? '<w:keepNext/>' : ''}
       </w:pPr>
       <w:r>
         <w:rPr><w:color w:val="${textColor}"/><w:sz w:val="${FONT_SIZES.tipTitle}"/><w:b/></w:rPr>
         <w:t>${tip.icon} ${escapeXml(tip.title)}</w:t>
       </w:r>
     </w:p>
-    <w:p>
+    ${showContent ? `<w:p>
       <w:pPr>
         <w:shd w:fill="${bgColor}"/>
         <w:spacing w:after="${SPACING.sm}"/>
@@ -215,8 +248,18 @@ function renderTipCard(tip: TipCard): string {
         <w:rPr><w:color w:val="${COLORS.text}"/><w:sz w:val="${FONT_SIZES.tipContent}"/></w:rPr>
         ${textWithBreaks(tip.content)}
       </w:r>
-    </w:p>
+    </w:p>` : ''}
   `
+}
+
+/** 两段文本是否高度相似（字符级 Jaccard > 0.85），用于隐藏与标题重复的正文 */
+function tipTextsAlike(a: string, b: string): boolean {
+  const sa = new Set((a || '').replace(/\s/g, '').split(''))
+  const sb = new Set((b || '').replace(/\s/g, '').split(''))
+  if (sa.size === 0 || sb.size === 0) return false
+  let inter = 0
+  sa.forEach((c) => { if (sb.has(c)) inter += 1 })
+  return inter / (sa.size + sb.size - inter) > 0.85
 }
 
 // ===== 美食 =====
@@ -230,9 +273,9 @@ function renderFoods(foods: FoodSection): string {
 function renderFoodCityGroup(group: FoodCityGroup): string {
   return `
     ${p(group.city, 'CityLabel', { before: SPACING.lg, after: SPACING.md })}
-    ${group.top.map((r) => renderRestaurantCard(r, true)).join('')}
+    ${twoColumnGrid(group.top.map((r) => renderRestaurantCard(r, true)))}
     ${group.more.length > 0 ? p(`其他收藏 (${group.more.length})`, 'BodySmall', { before: SPACING.md, after: SPACING.sm }) : ''}
-    ${group.more.map((r) => renderRestaurantCard(r, false)).join('')}
+    ${group.more.length > 0 ? twoColumnGrid(group.more.map((r) => renderRestaurantCard(r, false))) : ''}
   `
 }
 
@@ -269,7 +312,7 @@ function renderRestaurantCard(card: RestaurantCard, isTop: boolean): string {
 function renderStays(stays: StaySection): string {
   return `
     ${p('住宿安排', 'SectionTitle', { before: SPACING.lg, after: SPACING.lg })}
-    ${stays.hotels.map(renderHotelCard).join('')}
+    ${twoColumnGrid(stays.hotels.map(renderHotelCard))}
   `
 }
 
@@ -306,21 +349,83 @@ function renderTips(tips: TipsSection): string {
 }
 
 function renderTipCategory(category: TipCategory): string {
+  // 分类标题 keepNext：不让标题留在页尾、内容掉下一页
   return `
-    ${p(`${category.icon} ${category.title}`, 'CategoryLabel', { before: SPACING.lg, after: SPACING.md })}
+    ${p(`${category.icon} ${category.title}`, 'CategoryLabel', { before: SPACING.lg, after: SPACING.md, keepNext: true })}
     ${category.tips.map(renderTipCard).join('')}
   `
 }
 
+// ===== 行李 =====
+function renderPacking(packing: PackingSection): string {
+  return `
+    ${p('行李清单', 'SectionTitle', { before: SPACING.lg, after: SPACING.lg })}
+    ${packing.groups.map(renderPackingGroup).join('')}
+  `
+}
+
+function renderPackingGroup(group: PackingGroup): string {
+  const rows = group.items.map((item) => {
+    const status = renderPackStatus(item.packedBy, item.unpackedBy)
+    return tableRow([
+      { text: item.name, style: 'TableCell' },
+      { text: status, style: 'TableCell' },
+    ])
+  })
+
+  return `
+    ${p(`${group.category}（共 ${group.items.length} 件）`, 'CategoryLabel', { before: SPACING.lg, after: SPACING.md })}
+    ${table(
+      [300, 260],
+      tableRow([
+        { text: '物品', style: 'TableHeader' },
+        { text: '状态', style: 'TableHeader' },
+      ]),
+      ...rows
+    )}
+  `
+}
+
+function renderPackStatus(packedBy: string[], unpackedBy: string[]): string {
+  // 好友版：packedBy = ['✓'] 表示已带但不暴露姓名
+  if (packedBy.length === 1 && packedBy[0] === '✓') return '✓'
+  // 个人完整版：显示成员姓名
+  if (packedBy.length > 0) return `已带：${packedBy.join('、')}`
+  if (unpackedBy.length > 0) return `未带：${unpackedBy.join('、')}`
+  return '—'
+}
+
 // ===== 预算 =====
 function renderBudget(budget: BudgetSection): string {
-  const tableRows = budget.breakdown.map((item) => {
+  const breakdownRows = budget.breakdown.map((item) => {
     return tableRow([
       { text: item.category, style: 'TableCell' },
       { text: `¥${item.amount}`, style: 'TableCell' },
       { text: `${item.percentage}%`, style: 'TableCell' },
     ])
   })
+
+  // 详细记账条目
+  const entriesTable = budget.entries && budget.entries.length > 0 ? `
+    ${p('详细记账', 'CategoryLabel', { before: SPACING.xl, after: SPACING.md })}
+    ${table(
+      [240, 100, 100, 120],
+      tableRow([
+        { text: '项目', style: 'TableHeader' },
+        { text: '分类', style: 'TableHeader' },
+        { text: '金额', style: 'TableHeader' },
+        { text: '付款人', style: 'TableHeader' },
+      ]),
+      ...budget.entries.map((entry) =>
+        tableRow([
+          { text: entry.title, style: 'TableCell' },
+          { text: entry.category, style: 'TableCell' },
+          { text: `¥${entry.amount}`, style: 'TableCell' },
+          { text: entry.payer || '—', style: 'TableCell' },
+        ])
+      )
+    )}
+  ` : ''
 
   return `
     ${p('预算概览', 'SectionTitle', { before: SPACING.lg, after: SPACING.lg })}
@@ -333,22 +438,25 @@ function renderBudget(budget: BudgetSection): string {
         { text: '金额', style: 'TableHeader' },
         { text: '占比', style: 'TableHeader' },
       ]),
-      ...tableRows
+      ...breakdownRows
     )}
+    ${entriesTable}
   `
 }
 
 // ===== 工具函数 =====
-function p(text: string, style: string, spacing?: { before?: number; after?: number }): string {
+function p(text: string, style: string, spacing?: { before?: number; after?: number; keepNext?: boolean }): string {
   const beforeAttr = spacing?.before ? `w:before="${spacing.before}"` : ''
   const afterAttr = spacing?.after ? `w:after="${spacing.after}"` : ''
   const spacingTag = beforeAttr || afterAttr ? `<w:spacing ${beforeAttr} ${afterAttr}/>` : ''
+  const keepNextTag = spacing?.keepNext ? '<w:keepNext/>' : ''
 
   return `
     <w:p>
       <w:pPr>
         <w:pStyle w:val="${style}"/>
         ${spacingTag}
+        ${keepNextTag}
       </w:pPr>
       <w:r><w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r>
     </w:p>
@@ -401,6 +509,43 @@ function divider(): string {
 
 function pageBreak(): string {
   return `<w:p><w:pPr><w:pageBreakBefore/></w:pPr></w:p>`
+}
+
+/**
+ * 把一组卡片内容（每个是若干 w:p）两两排进一个无边框 2 列表格，实现双栏布局
+ */
+function twoColumnGrid(cards: string[]): string {
+  if (cards.length === 0) return ''
+  const rows: string[] = []
+  for (let i = 0; i < cards.length; i += 2) {
+    const left = cards[i]
+    const right = cards[i + 1] || ''
+    rows.push(`
+      <w:tr>
+        <w:tc>
+          <w:tcPr><w:tcW w:w="4400" w:type="dxa"/><w:tcMar><w:right w:w="160" w:type="dxa"/></w:tcMar></w:tcPr>
+          ${left}
+        </w:tc>
+        <w:tc>
+          <w:tcPr><w:tcW w:w="4400" w:type="dxa"/><w:tcMar><w:left w:w="160" w:type="dxa"/></w:tcMar></w:tcPr>
+          ${right || '<w:p/>'}
+        </w:tc>
+      </w:tr>
+    `)
+  }
+  return `
+    <w:tbl>
+      <w:tblPr>
+        <w:tblW w:w="8800" w:type="dxa"/>
+        <w:tblBorders>
+          <w:top w:val="none"/><w:left w:val="none"/><w:bottom w:val="none"/><w:right w:val="none"/>
+          <w:insideH w:val="none"/><w:insideV w:val="none"/>
+        </w:tblBorders>
+      </w:tblPr>
+      <w:tblGrid><w:gridCol w:w="4400"/><w:gridCol w:w="4400"/></w:tblGrid>
+      ${rows.join('')}
+    </w:tbl>
+  `
 }
 
 function escapeXml(value: unknown): string {
@@ -509,34 +654,33 @@ function createZipBlob(files: { name: string; content: string }[], type: string)
     const nameBytes = encoder.encode(name)
     const data = encoder.encode(content)
     const crc = crc32(data)
+    // ZIP local file header：偏移必须严格按规范，写错一个字段整个包就打不开
     const local = new Uint8Array(30 + nameBytes.length)
     const localView = new DataView(local.buffer)
-    write32(localView, 0, 0x04034b50)
-    write16(localView, 4, 20)
-    write16(localView, 8, 0)
-    write16(localView, 10, 0)
-    write16(localView, 12, dosTime)
-    write16(localView, 14, dosDate)
-    write32(localView, 16, crc)
-    write32(localView, 20, data.length)
-    write32(localView, 24, data.length)
-    write16(localView, 28, nameBytes.length)
+    write32(localView, 0, 0x04034b50)   // 签名
+    write16(localView, 4, 20)           // version needed
+    write16(localView, 8, 0)            // 压缩方法：0 = stored
+    write16(localView, 10, dosTime)
+    write16(localView, 12, dosDate)
+    write32(localView, 14, crc)
+    write32(localView, 18, data.length) // 压缩后大小
+    write32(localView, 22, data.length) // 原始大小
+    write16(localView, 26, nameBytes.length)
     local.set(nameBytes, 30)
     chunks.push(local, data)
 
     const dir = new Uint8Array(46 + nameBytes.length)
     const dirView = new DataView(dir.buffer)
     write32(dirView, 0, 0x02014b50)
-    write16(dirView, 4, 20)
-    write16(dirView, 6, 20)
-    write16(dirView, 10, dosTime)
-    write16(dirView, 12, dosTime)
+    write16(dirView, 4, 20)             // version made by
+    write16(dirView, 6, 20)             // version needed
+    write16(dirView, 12, dosTime)       // offset 10 是压缩方法，留 0
     write16(dirView, 14, dosDate)
     write32(dirView, 16, crc)
     write32(dirView, 20, data.length)
     write32(dirView, 24, data.length)
     write16(dirView, 28, nameBytes.length)
-    write32(dirView, 42, offset)
+    write32(dirView, 42, offset)        // 对应 local header 的偏移
     dir.set(nameBytes, 46)
     central.push(dir)
     offset += local.length + data.length

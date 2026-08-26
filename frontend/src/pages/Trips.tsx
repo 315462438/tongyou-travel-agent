@@ -1,6 +1,6 @@
 /** 协同行程规划板（Phase 35-63）：三栏 = Timeline | 每日地图 | AI Copilot。
  * 协同 = 2.5s 轮询（顺带上报 presence）+ 行程群聊；AI 一律提案制（Preview→采纳/拒绝/恢复）。 */
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -13,6 +13,7 @@ import { API, authFetch } from '../api'
 import { formatTripTimeRange, pickNavUrl, prepareMarkdown } from '../interaction'
 import { composeShareGuide } from '../lib/guideComposer'
 import { renderShareGuideDocx } from '../lib/docxRenderer'
+import { renderShareGuideHtml } from '../lib/htmlRenderer'
 
 interface TripSummary {
   id: string
@@ -1813,6 +1814,8 @@ function TripBoard({
   const [mobilePane, setMobilePane] = useState<'timeline' | 'map' | 'assistant'>('timeline')
   const [workspaceView, setWorkspaceView] = useState<'day' | 'tool'>('day')
   const [mapCollapsed, setMapCollapsed] = useState(false)
+  // 移动端头部信息块折叠：默认收起省垂直空间，点标题展开看副标题/日期/成员
+  const [headerCollapsed, setHeaderCollapsed] = useState(true)
   const [exportingDoc, setExportingDoc] = useState(false)
   const [dateEditorOpen, setDateEditorOpen] = useState(false)
   const [dateInput, setDateInput] = useState('')
@@ -2374,7 +2377,7 @@ function TripBoard({
     // Phase 1+2: 使用新架构（Schema + Renderer）
     try {
       const schema = composeShareGuide(trip, data.foods, data.tips, data.packing, expenses, {
-        includePacking: false,
+        includePacking: true,
         includeBudget: true,
         memberCount: undefined,
       })
@@ -2424,7 +2427,20 @@ function TripBoard({
       win.close()
       return
     }
-    const html = buildTripShareHtml(trip, data.foods, data.tips, data.packing, expenses)
+    // Phase 3: 走新架构（Schema → HTML Renderer），失败时回退旧逻辑
+    let html: string
+    try {
+      const schema = composeShareGuide(trip, data.foods, data.tips, data.packing, expenses, {
+        includePacking: false,
+        includeBudget: true,
+      })
+      html = renderShareGuideHtml(schema)
+
+      console.log('✓ PDF HTML 渲染完成，长度:', html.length)
+    } catch (error) {
+      console.error('新架构 HTML 渲染失败，回退到旧逻辑:', error)
+      html = buildTripShareHtml(trip, data.foods, data.tips, data.packing, expenses)
+    }
     win.document.open()
     win.document.write(html)
     win.document.close()
@@ -2682,7 +2698,16 @@ function TripBoard({
 
   return (
     <div className="trip-board">
-      <div className="trip-board-head">
+      <div className={`trip-board-head${headerCollapsed ? ' collapsed' : ''}`}>
+        <button
+          type="button"
+          className="trip-head-toggle"
+          aria-label={headerCollapsed ? '展开行程信息' : '收起行程信息'}
+          aria-expanded={!headerCollapsed}
+          onClick={() => setHeaderCollapsed((v) => !v)}
+        >
+          {headerCollapsed ? '▾' : '▴'}
+        </button>
         <button className="trip-btn" onClick={onBack}>← 返回</button>
         <details className="trip-export-menu">
           <summary className="trip-btn">导出</summary>
@@ -4727,6 +4752,14 @@ function PackingPanel({
   const [editingCat, setEditingCat] = useState('通用')
   const [invite, setInvite] = useState('')
   const [filterCat, setFilterCat] = useState('全部')
+  // 成员筛选：'全部' 或某成员名——只看某人的物品状态
+  const [memberFilter, setMemberFilter] = useState('全部')
+  // 管理面板：收纳批量维护 / 管理分类 / 人员管理（低频操作）
+  const [manageOpen, setManageOpen] = useState(false)
+  // 常见物品默认只展示前 6 个
+  const [showAllTemplates, setShowAllTemplates] = useState(false)
+  // 多选模式：卡片上出现勾选框，用于批量移动分类/批量删除（从「管理」进入）
+  const [selectMode, setSelectMode] = useState(false)
   const [confirmAction, setConfirmAction] = useState<null | {
     title: string
     message?: string
@@ -4745,10 +4778,12 @@ function PackingPanel({
       else if (batchOpen) setBatchOpen(false)
       else if (manageCats) setManageCats(false)
       else if (managePeople) setManagePeople(false)
+      else if (manageOpen) setManageOpen(false)
+      else if (selectMode) { setSelectMode(false); setSelectedIds([]) }
     }
     window.addEventListener('keydown', close)
     return () => window.removeEventListener('keydown', close)
-  }, [batchOpen, confirmAction, editingItem, manageCats, managePeople])
+  }, [batchOpen, confirmAction, editingItem, manageCats, managePeople, manageOpen, selectMode])
 
   const add = async (text: string, category = '通用') => {
     if (!text.trim()) return
@@ -4835,7 +4870,6 @@ function PackingPanel({
     .filter((group) => group.items.length > 0)
 
   const unused = data.templates.filter((t) => !data.items.some((i) => i.name === t))
-  const selectedItems = data.items.filter((it) => selectedIds.includes(it.id))
 
   const addCategory = () => {
     const nextName = categoryName.trim()
@@ -4939,62 +4973,87 @@ function PackingPanel({
     })
   }
 
-  const renderRows = (items: PackingData['items']) => items.map((it) => (
-    <tr key={it.id} className="trip-packing-item-row">
-      <td className="trip-packing-select">
-        <input
-          type="checkbox"
-          checked={selectedIds.includes(it.id)}
-          onChange={(e) => setSelectedIds((prev) => e.target.checked
-            ? Array.from(new Set([...prev, it.id]))
-            : prev.filter((id) => id !== it.id))}
-          aria-label={`选择 ${it.name}`}
-        />
-      </td>
-      <td className="trip-packing-name">
-        <div className="trip-packing-item-cell">
+  // 成员筛选后要显示哪些成员的状态：选了某人就只显示他，否则全部
+  const shownMembers = memberFilter === '全部' ? data.members : data.members.filter((m) => m === memberFilter)
+
+  // 物品卡片：卡片内展示各成员的已带/未带状态，点击切换
+  const toggleSelect = (id: string, checked: boolean) => setSelectedIds((prev) =>
+    checked ? Array.from(new Set([...prev, id])) : prev.filter((sid) => sid !== id))
+
+  const renderPackCard = (it: PackingData['items'][number]) => (
+    <div key={it.id} className={`trip-pack-card${selectMode && selectedIds.includes(it.id) ? ' selected' : ''}`}>
+      <div className="trip-pack-card-head">
+        {selectMode && (
+          <input
+            type="checkbox"
+            className="trip-pack-card-check"
+            checked={selectedIds.includes(it.id)}
+            onChange={(e) => toggleSelect(it.id, e.target.checked)}
+            aria-label={`选择 ${it.name}`}
+          />
+        )}
+        <div className="trip-pack-card-title">
           <b>{it.name}</b>
           <small>{it.category || '通用'}</small>
         </div>
-      </td>
-      {data.members.map((m) => {
-        const st = it.states[m] || 'na'
-        const mine = m === username
-        const by = it.marked_by?.[m]
-        const statusText = st === 'packed' ? '已带' : st === 'unpacked' ? '未带' : '–'
-
-        return (
-          <td key={m}>
+        {!selectMode && (
+          <button className="trip-pack-card-more" aria-label="更多操作" onClick={() => openEditItem(it)}>⋯</button>
+        )}
+      </div>
+      <div className={`trip-pack-card-members${selectMode ? ' muted' : ''}`}>
+        {shownMembers.map((m) => {
+          const st = it.states[m] || 'na'
+          const mine = m === username
+          const by = it.marked_by?.[m]
+          const statusText = st === 'packed' ? '已带' : st === 'unpacked' ? '未带' : '未定'
+          return (
             <button
-              className={`trip-pack-status ${st}${mine ? ' mine' : ''}`}
-              title={`${mine ? '我' : m}：点击切换 已带 / 未带 / 未设置${by ? `（由 ${by} 代勾）` : ''}`}
+              key={m}
+              className={`trip-pack-member ${st}${mine ? ' mine' : ''}`}
+              disabled={selectMode}
               onClick={() => cycle(it.id, st, mine ? '' : m)}
+              title={selectMode ? '多选模式下不可勾选状态' : `${mine ? '我' : m}：点击切换 已带 / 未带 / 未定${by ? `（由 ${by} 代勾）` : ''}`}
             >
-              {statusText}
-              {by && <i>{by[0]?.toUpperCase()}</i>}
+              <span className="trip-pack-member-name">{m}{mine ? '（我）' : ''}</span>
+              <span className="trip-pack-member-state">{statusText}{by && <i>{by[0]?.toUpperCase()}</i>}</span>
             </button>
-          </td>
-        )
-      })}
-      <td className="trip-packing-ops">
-        <button className="trip-mini-action" onClick={() => openEditItem(it)}>编辑</button>
-        <button className="trip-mini-action danger" onClick={() => remove(it.id, it.name)}>删除</button>
-      </td>
-    </tr>
-  ))
+          )
+        })}
+      </div>
+    </div>
+  )
 
   return (
     <div className="trip-panel trip-module">
       <div className="trip-panel-head">🧳 行李清单 <span className="trip-day-km">可以替同伴勾，会记下是谁勾的</span></div>
 
+      {/* 工具栏收敛：只留主按钮「添加物品」+「管理」入口，低频操作进管理面板 */}
       <div className="trip-module-toolbar">
         <button className="trip-btn primary" onClick={() => setAdding(true)}>+ 添加物品</button>
-        <button className="trip-btn" onClick={() => setBatchOpen(true)}>批量维护</button>
-        <button className="trip-btn" onClick={() => setManageCats(true)}>
-          🏷 管理分类
-        </button>
-        <button className="trip-btn" onClick={() => setManagePeople(true)}>👥 人员管理</button>
+        <button className="trip-btn" onClick={() => setManageOpen(true)}>⚙ 管理</button>
       </div>
+
+      {/* 多选模式操作条：批量改分类 / 批量删除 / 退出 */}
+      {selectMode && (
+        <div className="trip-pack-select-bar">
+          <div className="trip-pack-select-info">
+            <b>已选 {selectedIds.length} 件</b>
+            <button className="trip-btn tiny ghost" onClick={() => setSelectedIds(
+              selectedIds.length === displayedItems.length ? [] : displayedItems.map((it) => it.id)
+            )}>
+              {selectedIds.length === displayedItems.length && displayedItems.length > 0 ? '取消全选' : '全选'}
+            </button>
+          </div>
+          <div className="trip-pack-select-actions">
+            <select value={bulkCat} onChange={(e) => setBulkCat(e.target.value)} aria-label="移动到分类">
+              {cats.map((c) => <option key={c}>{c}</option>)}
+            </select>
+            <button className="trip-btn tiny" disabled={selectedIds.length === 0} onClick={bulkMove}>移到分类</button>
+            <button className="trip-btn tiny danger" disabled={selectedIds.length === 0} onClick={bulkDelete}>删除</button>
+            <button className="trip-btn tiny ghost" onClick={() => { setSelectMode(false); setSelectedIds([]) }}>完成</button>
+          </div>
+        </div>
+      )}
 
       {adding && (
         <div className="trip-module-add">
@@ -5010,13 +5069,27 @@ function PackingPanel({
 
       {data.items.length === 0 && <p className="trip-module-empty">还没有物品，用下面的常见清单或「添加物品」加起。</p>}
 
-      {data.items.length > 0 && (
+      {/* 成员筛选 chip：全部 / 各成员，点击后只看某人物品状态 */}
+      {data.items.length > 0 && data.members.length > 1 && (
+        <div className="trip-pack-member-chips">
+          <button className={memberFilter === '全部' ? 'active' : ''} onClick={() => setMemberFilter('全部')}>全部</button>
+          {data.members.map((m) => (
+            <button key={m} className={memberFilter === m ? 'active' : ''} onClick={() => setMemberFilter(m)}>
+              {m}{m === username ? '（我）' : ''}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* 分类筛选 chip */}
+      {data.items.length > 0 && cats.length > 1 && (
         <div className="trip-packing-filters">
           <button className={filterCat === '全部' ? 'active' : ''} onClick={() => setFilterCat('全部')}>
             全部 ({data.items.length})
           </button>
           {cats.map(c => {
             const count = data.items.filter(i => (i.category || '通用') === c).length
+            if (count === 0) return null
             return (
               <button key={c} className={filterCat === c ? 'active' : ''} onClick={() => setFilterCat(c)}>
                 {c} ({count})
@@ -5026,60 +5099,59 @@ function PackingPanel({
         </div>
       )}
 
+      {/* 物品卡片列表：按分类分组，卡片内展示各成员状态 */}
       {data.items.length > 0 && (
-        <div className="trip-packing-scroll">
-          <table className="trip-packing-table">
-            <thead>
-              <tr>
-                <th className="trip-packing-select">
-                  <input
-                    type="checkbox"
-                    checked={displayedItems.length > 0 && displayedItems.every((it) => selectedIds.includes(it.id))}
-                    onChange={(e) => {
-                      const nextIds = e.target.checked ? displayedItems.map((it) => it.id) : []
-                      setSelectedIds(nextIds)
-                      if (nextIds.length > 0) {
-                        setBulkCat(filterCat === '全部' ? cats[0] || '通用' : filterCat)
-                        setBatchOpen(true)
-                      }
-                    }}
-                    aria-label="选择当前列表全部物品"
-                  />
-                </th>
-                <th className="trip-packing-name">物品</th>
-                {data.members.map((m) => (
-                  <th key={m} className={m === username ? 'me' : ''}>
-                    <span className="trip-packing-avatar">{m[0]?.toUpperCase()}</span>
-                    <b>{m}</b>
-                  </th>
-                ))}
-                <th className="trip-packing-ops">操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {groupedItems.map((group) => (
-                <Fragment key={group.category}>
-                  <tr key={`${group.category}-group`} className="trip-packing-group-row">
-                    <td colSpan={3 + data.members.length}>
-                      <span>{group.category}</span>
-                      <small>总数 {group.items.length}</small>
-                    </td>
-                  </tr>
-                  {renderRows(group.items)}
-                </Fragment>
-              ))}
-            </tbody>
-          </table>
+        <div className="trip-pack-card-list">
+          {groupedItems.map((group) => (
+            <div key={group.category} className="trip-pack-group">
+              <div className="trip-pack-group-head">
+                <span>{group.category}</span>
+                <small>{group.items.length} 件</small>
+              </div>
+              {group.items.map(renderPackCard)}
+            </div>
+          ))}
         </div>
       )}
 
+      {/* 常见物品：默认前 6 个，其余「展开更多」 */}
       {unused.length > 0 && (
         <div className="trip-module-templates">
           <small>常见物品：</small>
-          {unused.map((t) => (
+          {(showAllTemplates ? unused : unused.slice(0, 6)).map((t) => (
             <button key={t} className="trip-btn tiny ghost" onClick={() => add(t)}>+ {t}</button>
           ))}
+          {unused.length > 6 && (
+            <button className="trip-btn tiny ghost" onClick={() => setShowAllTemplates((v) => !v)}>
+              {showAllTemplates ? '收起' : `展开更多 (${unused.length - 6})`}
+            </button>
+          )}
         </div>
+      )}
+
+      {/* 管理面板：收纳低频操作（批量维护/管理分类/人员管理） */}
+      {manageOpen && createPortal(
+        <div className="modal-mask trip-sheet-mask" onClick={() => setManageOpen(false)}>
+          <div className="trip-manage-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="trip-manage-sheet-head">
+              <strong>管理</strong>
+              <button className="modal-close" onClick={() => setManageOpen(false)}>✕</button>
+            </div>
+            <button className="trip-manage-sheet-row" onClick={() => { setManageOpen(false); setBatchOpen(true) }}>
+              <span>📝</span><b>批量维护</b><small>一次添加多件物品</small>
+            </button>
+            <button className="trip-manage-sheet-row" onClick={() => { setManageOpen(false); setSelectMode(true); setSelectedIds([]) }}>
+              <span>☑️</span><b>多选物品</b><small>批量改分类 / 批量删除</small>
+            </button>
+            <button className="trip-manage-sheet-row" onClick={() => { setManageOpen(false); setManageCats(true) }}>
+              <span>🏷</span><b>管理分类</b><small>新增 / 重命名分类</small>
+            </button>
+            <button className="trip-manage-sheet-row" onClick={() => { setManageOpen(false); setManagePeople(true) }}>
+              <span>👥</span><b>人员管理</b><small>邀请同行人</small>
+            </button>
+          </div>
+        </div>,
+        document.body
       )}
 
       {manageCats && createPortal(
@@ -5223,20 +5295,6 @@ function PackingPanel({
               <strong>批量维护</strong>
               <button className="modal-close" onClick={() => setBatchOpen(false)}>✕</button>
             </div>
-            {selectedItems.length > 0 && (
-              <div className="trip-batch-selected trip-batch-section">
-                <b>已选 {selectedItems.length} 个物品</b>
-                <small>{selectedItems.map((it) => it.name).join('、')}</small>
-                <div className="trip-batch-actions">
-                  <select value={bulkCat} onChange={(e) => setBulkCat(e.target.value)}>
-                    {cats.map((c) => <option key={c}>{c}</option>)}
-                  </select>
-                  <button className="trip-btn" onClick={bulkMove}>把所选移到这个分类</button>
-                  <button className="trip-btn danger" onClick={bulkDelete}>删除所选</button>
-                  <button className="trip-btn ghost" onClick={() => setSelectedIds([])}>取消选择</button>
-                </div>
-              </div>
-            )}
             <div className="trip-batch-section trip-batch-add-section">
               <b>批量新增物品</b>
               <small>一小行就是一个物品；每行可以单独选择分类。</small>

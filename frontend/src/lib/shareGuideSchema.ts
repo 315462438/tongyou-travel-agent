@@ -59,8 +59,16 @@ export type DaySection = {
   monthLabel: string         // "OCT 01"
   city: string
   theme: string              // "抵达吉隆坡 · 市区观光"
+  dayTags: string[]          // ["🌊 跳岛", "🤿 浮潜"] 每天2-4个自动标签
   route: string[]            // ["KLIA2", "酒店", "中央公园", "阿罗街"]
   events: EventCard[]
+  highlight?: DayHighlight   // 今日重点（1个）
+}
+
+export type DayHighlight = {
+  title: string              // "仙本那跳岛浮潜"
+  places: string[]           // ["马达京", "汀巴汀巴", "邦邦岛"]
+  tags: string[]             // ["🤿 浮潜", "🚤 游艇"]
 }
 
 export type EventCard = {
@@ -156,16 +164,26 @@ export type PackingItem = {
   unpackedBy: string[]       // 未打包的成员列表
 }
 
-// ===== 预算（聚合版，无个人信息）=====
+// ===== 预算 =====
 export type BudgetSection = {
   type: 'budget'
   total?: number
   perPerson?: number
   breakdown: BudgetCategory[]
+  /** 逐笔明细。好友分享版可省略，个人完整版给全量（含付款人） */
+  entries?: ExpenseEntry[]
 }
 
 export type BudgetCategory = {
   category: string           // "交通" | "住宿" | "餐饮" | "门票/玩乐"
   amount: number
   percentage?: number
+}
+
+export type ExpenseEntry = {
+  title: string
+  category: string
+  amount: number
+  payer?: string             // 仅个人完整版填充
+  date?: string
 }
