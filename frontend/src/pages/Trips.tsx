@@ -1814,8 +1814,9 @@ function TripBoard({
   const [mobilePane, setMobilePane] = useState<'timeline' | 'map' | 'assistant'>('timeline')
   const [workspaceView, setWorkspaceView] = useState<'day' | 'tool'>('day')
   const [mapCollapsed, setMapCollapsed] = useState(false)
-  // 移动端头部信息块折叠：默认收起省垂直空间，点标题展开看副标题/日期/成员
-  const [headerCollapsed, setHeaderCollapsed] = useState(true)
+  // 头部信息块折叠：顶部展开（看副标题/日期/成员），向下滚动自动收起省垂直空间，
+  // 滚回顶部再展开。也可点标题栏的 ▴/▾ 手动切换。
+  const [headerCollapsed, setHeaderCollapsed] = useState(false)
   const [exportingDoc, setExportingDoc] = useState(false)
   const [dateEditorOpen, setDateEditorOpen] = useState(false)
   const [dateInput, setDateInput] = useState('')
@@ -1833,7 +1834,37 @@ function TripBoard({
   const aiStatusRef = useRef<string | null>(null)
   const dayRef = useRef(1)
   const stopRefs = useRef(new Map<string, HTMLDivElement>())
+  const scrollWrapRef = useRef<HTMLDivElement>(null)
+  const lastScrollTopRef = useRef(0)
   dayRef.current = selectedDay
+
+  // 向下滚动自动收起头部信息块、滚回顶部再展开——把垂直空间让给内容。
+  // scroll 事件不冒泡但可在捕获阶段拿到：一个监听器即可覆盖内部任意滚动面板。
+  // 仅在窄视口（≤900px，移动端标签栏生效的断点）启用，宽屏三栏不需要。
+  useEffect(() => {
+    const wrap = scrollWrapRef.current
+    if (!wrap) return
+    if (!window.matchMedia('(max-width: 900px)').matches) return
+    let ticking = false
+    const onScroll = (e: Event) => {
+      const el = e.target as HTMLElement | null
+      if (!el || typeof el.scrollTop !== 'number') return
+      const top = el.scrollTop
+      if (ticking) return
+      ticking = true
+      window.requestAnimationFrame(() => {
+        const last = lastScrollTopRef.current
+        // 顶部一律展开；明显下滑（>8px）收起，明显上滑（>8px）展开
+        if (top <= 4) setHeaderCollapsed(false)
+        else if (top - last > 8) setHeaderCollapsed(true)
+        else if (last - top > 8) setHeaderCollapsed(false)
+        lastScrollTopRef.current = top
+        ticking = false
+      })
+    }
+    wrap.addEventListener('scroll', onScroll, { capture: true, passive: true })
+    return () => wrap.removeEventListener('scroll', onScroll, { capture: true } as EventListenerOptions)
+  }, [tripId, mobilePane, workspaceView])
 
   const askConfirm = (action: TripConfirmAction) => setConfirmAction(action)
 
@@ -2921,7 +2952,7 @@ function TripBoard({
         ))}
       </div>
 
-      <div className={`trip-3col trip-view-${workspaceView}${mapCollapsed ? ' trip-map-collapsed' : ''}`}>
+      <div ref={scrollWrapRef} className={`trip-3col trip-view-${workspaceView}${mapCollapsed ? ' trip-map-collapsed' : ''}`}>
         {/* 左：支出概览 + 每天导航（与参考 HTML 一致） */}
         <aside className="trip-day-sidebar" aria-label="支出与行程天数">
           <section className="trip-budget-summary">

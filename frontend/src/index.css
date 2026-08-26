@@ -4430,6 +4430,37 @@ body { color: var(--tx-ink); background: var(--tx-bg); }
 .trips-overlay.mobile-layout .trip-board-head.collapsed .trip-board-title {
   max-width: 55vw; font-size: 13px;
 }
+
+/* 窄视口（含桌面布局被压窄时）：头部随滚动折叠。不依赖 .mobile-layout，
+   因为用户可能在网页端模式下用窄屏浏览，那时也需要这套折叠 + 切换按钮。 */
+@media (max-width: 900px) {
+  .trips-overlay .trip-board-head {
+    transition: min-height .22s ease, padding .22s ease;
+  }
+  .trips-overlay .trip-head-toggle {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; flex: none; margin-right: 2px;
+    border: 1px solid var(--tx-line); border-radius: var(--x-r-pill);
+    background: var(--x-n100); color: var(--tx-muted); font-size: 12px; cursor: pointer;
+  }
+  .trips-overlay .trip-board-head.collapsed .trip-date-setter,
+  .trips-overlay .trip-board-head.collapsed .trip-members,
+  .trips-overlay .trip-board-head.collapsed .trip-ai-status,
+  .trips-overlay .trip-board-head.collapsed .trip-board-sub {
+    display: none;
+  }
+  .trips-overlay .trip-board-head.collapsed {
+    min-height: 0; padding: 6px 10px;
+  }
+  .trips-overlay .trip-board-head.collapsed .trip-board-title {
+    max-width: 60vw; font-size: 13px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .trips-overlay .trip-board-head { transition: none; }
+}
+
 .trips-overlay.mobile-layout .trip-3col {
   display: block;
   overflow-y: auto;
