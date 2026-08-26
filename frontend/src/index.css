@@ -9554,163 +9554,156 @@ body { color: var(--tx-ink); background: var(--tx-bg); }
   }
 }
 
-/* ---------- 连接管理面板（Phase 109） ---------- */
-/* 全部走既有 token，不新造颜色——Phase 107 的教训：颜色散落硬编码会让下次调色白改 */
-.conn-row {
-  padding: 12px 2px;
-  border-bottom: 1px solid var(--x-n96);
+/* ---------- 连接管理面板（Phase 109） ----------
+   两级结构：列表（图标 + 名字 + 一句话）→ 详情（能力 / 操作 / 边界）。
+   第一版把所有信息平铺在列表里，密不透风——密度不是信息量，是噪音。
+   全部走 token，不硬编码颜色（Phase 107 的教训）。 */
+
+.conn-panel .modal-head { align-items: center; }
+.conn-back {
+  background: none; border: 0; cursor: pointer;
+  font-size: 22px; line-height: 1; color: var(--x-n50);
+  padding: 0 8px 0 0; margin-right: -2px;
 }
-.conn-row:last-child { border-bottom: 0; }
-.conn-row-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.conn-back:hover { color: var(--x-n20); }
+
+/* 图标：色块 + 字形，不用抓来的品牌 logo */
+.conn-icon {
+  flex-shrink: 0;
+  width: 40px; height: 40px;
+  border-radius: var(--x-r-md);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 16px; font-weight: 800;
+  color: var(--x-n100);
+  background: var(--x-n60);
 }
-.conn-name {
-  font-size: 14px;
-  font-weight: 750;
-  color: var(--x-n20);
+.conn-icon-amap  { background: var(--x-sky-44); }
+.conn-icon-xhs   { background: var(--x-cinnabar); }
+.conn-icon-ctrip { background: var(--x-sky-30); }
+
+/* ---- 列表 ---- */
+.conn-item {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%;
+  padding: 12px 10px;
+  border: 0; border-radius: var(--x-r-md);
+  background: transparent;
+  text-align: left; cursor: pointer;
 }
-.conn-badge {
-  font-size: 11px;
-  font-weight: 700;
-  padding: 2px 8px;
-  border-radius: var(--x-r-pill);
+.conn-item:hover { background: var(--x-n96); }
+.conn-item-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.conn-item-title {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 14px; font-weight: 750; color: var(--x-n20);
+}
+.conn-item-desc {
+  font-size: 12px; color: var(--x-n60);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.conn-item-arrow { flex-shrink: 0; color: var(--x-n78); font-size: 18px; }
+
+.conn-chip {
+  font-size: 11px; font-weight: 700;
+  padding: 1px 7px; border-radius: var(--x-r-pill);
   border: 1px solid transparent;
 }
-.conn-badge.on  { color: var(--x-sky-30); background: var(--x-sky-96); border-color: var(--x-sky-90); }
-.conn-badge.off { color: var(--x-n50); background: var(--x-n96); border-color: var(--x-n88); }
-.conn-summary {
-  margin-top: 4px;
-  font-size: 13px;
-  color: var(--x-n41);
+.conn-chip.builtin { color: var(--x-n50);      background: var(--x-n96);       border-color: var(--x-n88); }
+.conn-chip.on      { color: var(--x-sky-30);   background: var(--x-sky-96);    border-color: var(--x-sky-90); }
+.conn-chip.off     { color: var(--x-cinnabar-30); background: var(--x-cinnabar-96); border-color: var(--x-cinnabar-90); }
+
+/* ---- 详情 ---- */
+.conn-detail-head { display: flex; align-items: center; gap: 12px; padding: 2px 0 4px; }
+.conn-detail-title {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 16px; font-weight: 800; color: var(--x-n20);
 }
-.conn-caps {
-  margin-top: 7px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+.conn-detail-sum { margin-top: 3px; font-size: 12px; color: var(--x-n60); }
+
+.conn-sec { margin-top: 18px; }
+.conn-sec h4 {
+  margin: 0 0 8px;
+  font-size: 12px; font-weight: 750; color: var(--x-n50);
 }
+.conn-sec h4 em { font-style: normal; color: var(--x-n68); font-weight: 700; }
+
+.conn-caps { display: flex; flex-wrap: wrap; gap: 6px; }
 .conn-cap {
-  font-size: 11px;
-  color: var(--x-n50);
-  background: var(--x-n96);
-  border-radius: var(--x-r-sm);
-  padding: 2px 7px;
+  font-size: 12px; color: var(--x-n41);
+  background: var(--x-n96); border-radius: var(--x-r-sm);
+  padding: 3px 9px;
 }
-/* 能力边界：本功能存在的主要理由之一，不能做得比 provides 还弱 */
-.conn-excludes {
-  margin-top: 7px;
+.conn-ops {
+  border: 1px solid var(--x-n88);
+  border-radius: var(--x-r-md);
+  overflow: hidden;
+}
+.conn-op {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 9px 11px;
   font-size: 12px;
-  font-weight: 600;
-  color: var(--x-n50);
-  padding-left: 9px;
-  border-left: 2px solid var(--x-n88);
+  border-bottom: 1px solid var(--x-n96);
+}
+.conn-op:last-child { border-bottom: 0; }
+.conn-op-label { color: var(--x-n30); }
+.conn-op-tool {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px; color: var(--x-n60);
+  background: var(--x-n96); border-radius: var(--x-r-sm);
+  padding: 1px 6px; white-space: nowrap;
+}
+.conn-excludes {
+  font-size: 12px; font-weight: 600; color: var(--x-n50);
+  padding: 8px 11px;
+  background: var(--x-n96); border-radius: var(--x-r-md);
+  border-left: 3px solid var(--x-n78);
 }
 .conn-note {
-  margin-top: 6px;
-  font-size: 12px;
-  color: var(--x-n60);
-  line-height: 1.55;
+  margin-top: 16px;
+  font-size: 12px; color: var(--x-n60); line-height: 1.6;
 }
-.conn-row-foot {
-  margin-top: 9px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  flex-wrap: wrap;
+
+.conn-detail-foot {
+  margin-top: 22px; padding-top: 14px;
+  border-top: 1px solid var(--x-n96);
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; flex-wrap: wrap;
 }
-.conn-time, .conn-hint {
-  font-size: 12px;
-  color: var(--x-n60);
+.conn-time { font-size: 12px; color: var(--x-n60); }
+.conn-connect {
+  margin-left: auto;
+  font-size: 13px; font-weight: 750;
+  color: var(--x-n100); background: var(--x-sky-44);
+  border: 0; border-radius: var(--x-r-sm);
+  padding: 7px 18px; cursor: pointer;
 }
+.conn-connect:hover:not(:disabled) { background: var(--x-sky-30); }
+.conn-connect:disabled { opacity: .6; cursor: default; }
 .conn-disconnect {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--x-danger);
-  background: transparent;
-  border: 1px solid var(--x-cinnabar-90);
-  border-radius: var(--x-r-sm);
-  padding: 4px 10px;
-  cursor: pointer;
+  margin-left: auto;
+  font-size: 12px; font-weight: 700;
+  color: var(--x-danger); background: transparent;
+  border: 1px solid var(--x-cinnabar-90); border-radius: var(--x-r-sm);
+  padding: 6px 13px; cursor: pointer;
 }
 .conn-disconnect:hover:not(:disabled) { background: var(--x-cinnabar-96); }
 .conn-disconnect:disabled { opacity: .55; cursor: default; }
 
-/* 连接器：包含的操作（折叠，默认收起——多数用户不关心工具名，关心的人能展开对账） */
-.conn-ops { margin-top: 7px; }
-.conn-ops > summary {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--x-n50);
-  cursor: pointer;
-  list-style: none;
-}
-.conn-ops > summary::-webkit-details-marker { display: none; }
-.conn-ops > summary::before { content: '▸ '; color: var(--x-n68); }
-.conn-ops[open] > summary::before { content: '▾ '; }
-.conn-op {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 4px 0 4px 12px;
-  font-size: 12px;
-}
-.conn-op-label { color: var(--x-n41); }
-.conn-op-tool {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11px;
-  color: var(--x-n60);
-  background: var(--x-n96);
-  border-radius: var(--x-r-sm);
-  padding: 1px 6px;
-  white-space: nowrap;
-}
-
-/* 扫码进行中 */
+/* ---- 扫码 ---- */
 .conn-scan {
-  margin-top: 10px;
-  padding: 12px;
-  border: 1px solid var(--x-sky-90);
-  background: var(--x-sky-96);
-  border-radius: var(--x-r-md);
-  text-align: center;
+  margin-top: 18px; padding: 14px;
+  border: 1px solid var(--x-sky-90); background: var(--x-sky-96);
+  border-radius: var(--x-r-md); text-align: center;
 }
-.conn-scan-msg {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--x-n30);
-}
+.conn-scan-msg { font-size: 12px; font-weight: 700; color: var(--x-n30); }
 .conn-scan-timer { font-weight: 600; color: var(--x-n60); }
 .conn-scan-img {
-  display: block;
-  width: 100%;
-  max-width: 260px;
-  margin: 10px auto;
-  border-radius: var(--x-r-sm);
-  border: 1px solid var(--x-n88);
+  display: block; width: 100%; max-width: 250px;
+  margin: 11px auto;
+  border-radius: var(--x-r-sm); border: 1px solid var(--x-n88);
   background: var(--x-n100);
 }
 .conn-scan-cancel {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--x-n50);
-  background: transparent;
-  border: 1px solid var(--x-n88);
-  border-radius: var(--x-r-sm);
-  padding: 4px 12px;
-  cursor: pointer;
+  font-size: 12px; font-weight: 700; color: var(--x-n50);
+  background: var(--x-n100); border: 1px solid var(--x-n88);
+  border-radius: var(--x-r-sm); padding: 5px 14px; cursor: pointer;
 }
-.conn-connect {
-  font-size: 12px;
-  font-weight: 750;
-  color: var(--x-n100);
-  background: var(--x-sky-44);
-  border: 0;
-  border-radius: var(--x-r-sm);
-  padding: 5px 14px;
-  cursor: pointer;
-}
-.conn-connect:disabled { opacity: .6; cursor: default; }

@@ -590,9 +590,10 @@ test('连接面板：能力边界与副作用必须渲染出来（Phase 109）',
   // 后端 connectors.py 里写了 excludes 但前端不渲染的话，等于没写——所以钉住。
   // ⚠️ 只断言 markup 文本存在是不够的：把渲染条件改成 `{false && (` 时那段文本
   // 仍在源码里，测试照样绿（写这条时实测过，变异没抓住）。**条件本身也要钉。**
-  assert.match(home, /\{c\.excludes\.length > 0 && \(/)
+  assert.match(home, /\{detail\.excludes\.length > 0 && \(/)
   assert.match(home, /className="conn-excludes"/)
-  assert.match(home, /不提供：\{c\.excludes\.join/)
+  assert.match(home, /<h4>不提供<\/h4>/)
+  assert.match(home, /\{detail\.excludes\.join/)
 
   // 断开是整个浏览器 profile 级的（cookie 在同一目录）。确认文案必须如实说明，
   // 否则用户以为只断了携程，实际其他站点登录也没了。
@@ -603,10 +604,20 @@ test('连接面板：能力边界与副作用必须渲染出来（Phase 109）',
   assert.match(home, /扫码连接/)
 
   // 二维码只在会话进行中渲染：结束后后端已删截图文件，继续拉只会 404。
-  assert.match(home, /session\.key === c\.key && active/)
+  assert.match(home, /session\.key === detail\.key && active/)
 
   // 轮询必须只在 active 时跑，否则面板开着就一直打接口
   assert.match(home, /if \(!active\) return/)
+})
+
+test('连接面板：两级渐进披露，列表不平铺细节（Phase 109）', () => {
+  // 第一版把 provides / operations / excludes / note 全塞进列表行里，密不透风。
+  // 现在列表只有图标+名字+一句话，细节进详情页。
+  assert.match(home, /className="conn-item"/)
+  assert.match(home, /className="conn-item-desc"/)
+  assert.match(home, /const detail = items\?\.find/)
+  // 列表行必须可点进详情，否则细节就没有入口了
+  assert.match(home, /onClick=\{\(\) => setOpen\(c\.key\)\}/)
 })
 
 test('连接面板：「包含的操作」列出真实工具名（Phase 109）', () => {
@@ -615,6 +626,6 @@ test('连接面板：「包含的操作」列出真实工具名（Phase 109）',
   // （test_connectors.py::test_xhs_operations_match_the_readonly_whitelist）。
   // 前端只要如实渲染，能力边界就是端到端可信的。
   assert.match(home, /className="conn-ops"/)
-  assert.match(home, /\{c\.operations\.length > 0 && \(/)
+  assert.match(home, /\{detail\.operations\.length > 0 && \(/)
   assert.match(home, /className="conn-op-tool"/)
 })

@@ -1826,6 +1826,10 @@ function MemoryPanel({ onClose }: { onClose: () => void }) {
 
 // ---------- 连接管理面板（Phase 109） ----------
 
+// 没有各站点的品牌 logo（也不该去抓别人的图标资源），用色块 + 字形代替。
+// 比放一个模糊的抓来的 logo 更克制，也不会有版权问题。
+const CONN_GLYPH: Record<string, string> = { amap: '地', xhs: '书', ctrip: '宿' }
+
 interface ConnectorItem {
   key: string
   name: string
@@ -1852,6 +1856,7 @@ function ConnectorPanel({ onClose }: { onClose: () => void }) {
   const [items, setItems] = useState<ConnectorItem[] | null>(null)
   const [busy, setBusy] = useState('')
   const [session, setSession] = useState<ConnectState>({ state: 'idle' })
+  const [open, setOpen] = useState('')   // 详情页选中的连接器 key，空=列表
   // 打开面板时定格「现在」：查看态里秒级跳动的相对时间只会干扰阅读（同记忆面板）
   const [nowMs] = useState(() => Date.now())
   const { notify } = useToast()
@@ -1931,84 +1936,134 @@ function ConnectorPanel({ onClose }: { onClose: () => void }) {
     }
   }
 
+  // 两级渐进披露（对齐豆包）：列表只给图标+名字+一句话，详情才展开能力与操作。
+  // 第一版把 provides / operations / excludes / note 全平铺在列表里，密不透风。
+  const detail = items?.find((c) => c.key === open) || null
+
+  const icon = (c: ConnectorItem) => (
+    <span className={`conn-icon conn-icon-${c.key}`} aria-hidden>{CONN_GLYPH[c.key] || '◇'}</span>
+  )
+
+  const statusChip = (c: ConnectorItem) => (
+    <span className={`conn-chip ${c.kind === 'builtin' ? 'builtin' : c.connected ? 'on' : 'off'}`}>
+      {c.kind === 'builtin' ? '内置' : c.connected ? '已连接' : '未连接'}
+    </span>
+  )
+
   return (
     <div className="modal-mask panel-mask" onClick={onClose}>
-      <div className="modal side-panel" onClick={(e) => e.stopPropagation()}>
+      <div className="modal side-panel conn-panel" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <strong>🔗 连接</strong>
+          {detail ? (
+            <button className="conn-back" onClick={() => setOpen('')} aria-label="返回">‹</button>
+          ) : null}
+          <strong>{detail ? detail.name : '连接'}</strong>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
-        <div className="modal-sub">
-          规划行程时会用到这些外部来源。标注「内置」的由平台提供，无需你配置。
-        </div>
-        <div className="modal-body">
-          {items === null && <div className="modal-empty">加载中…</div>}
-          {items?.map((c) => (
-            <div key={c.key} className="conn-row">
-              <div className="conn-row-head">
-                <span className="conn-name">{c.name}</span>
-                <span className={`conn-badge ${c.connected ? 'on' : 'off'}`}>
-                  {c.kind === 'builtin' ? '内置' : c.connected ? '已连接' : '未连接'}
-                </span>
+
+        {!detail && (
+          <>
+            <div className="modal-sub">
+              规划行程时会用到这些外部来源。标注「内置」的由平台提供，无需你配置。
+            </div>
+            <div className="modal-body">
+              {items === null && <div className="modal-empty">加载中…</div>}
+              {items?.map((c) => (
+                <button key={c.key} className="conn-item" onClick={() => setOpen(c.key)}>
+                  {icon(c)}
+                  <span className="conn-item-main">
+                    <span className="conn-item-title">
+                      {c.name}
+                      {statusChip(c)}
+                    </span>
+                    <span className="conn-item-desc">{c.summary}</span>
+                  </span>
+                  <span className="conn-item-arrow" aria-hidden>›</span>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
+        {detail && (
+          <div className="modal-body conn-detail">
+            <div className="conn-detail-head">
+              {icon(detail)}
+              <div>
+                <div className="conn-detail-title">{detail.name}{statusChip(detail)}</div>
+                <div className="conn-detail-sum">{detail.summary}</div>
               </div>
-              <div className="conn-summary">{c.summary}</div>
-              {c.provides.length > 0 && (
+            </div>
+
+            {detail.provides.length > 0 && (
+              <section className="conn-sec">
+                <h4>能提供</h4>
                 <div className="conn-caps">
-                  {c.provides.map((x) => <span key={x} className="conn-cap">{x}</span>)}
+                  {detail.provides.map((x) => <span key={x} className="conn-cap">{x}</span>)}
                 </div>
-              )}
-              {c.operations.length > 0 && (
-                <details className="conn-ops">
-                  <summary>包含的操作 {c.operations.length}</summary>
-                  {c.operations.map((o) => (
+              </section>
+            )}
+
+            {detail.operations.length > 0 && (
+              <section className="conn-sec">
+                <h4>包含的操作 <em>{detail.operations.length}</em></h4>
+                <div className="conn-ops">
+                  {detail.operations.map((o) => (
                     <div key={o.tool} className="conn-op">
                       <span className="conn-op-label">{o.label}</span>
                       <code className="conn-op-tool">{o.tool}</code>
                     </div>
                   ))}
-                </details>
-              )}
-              {c.excludes.length > 0 && (
-                <div className="conn-excludes">不提供：{c.excludes.join(' · ')}</div>
-              )}
-              {c.note && <div className="conn-note">{c.note}</div>}
-              {/* 扫码进行中：二维码直接内嵌在这张卡里，不另开弹窗 */}
-              {session.key === c.key && active && (
-                <div className="conn-scan">
-                  <div className="conn-scan-msg">
-                    {session.state === 'starting' ? '正在打开携程…' : session.message}
-                    {typeof session.elapsed_s === 'number' && session.state === 'waiting' && (
-                      <span className="conn-scan-timer"> · 已等待 {Math.round(session.elapsed_s)}s</span>
-                    )}
-                  </div>
-                  {session.screenshot && (
-                    // 4s 换一次 src 让浏览器重新拉图（后端每轮刷新截图文件）
-                    <img className="conn-scan-img" alt="携程登录页"
-                         src={`${session.screenshot}?t=${Math.floor((session.elapsed_s || 0) / 4)}`} />
-                  )}
-                  <button className="conn-scan-cancel" onClick={cancelConnect}>取消</button>
                 </div>
-              )}
-              <div className="conn-row-foot">
-                {c.connected && c.connected_at && (
-                  <span className="conn-time">上次连接 {formatMemoryAge(c.connected_at, nowMs)}</span>
+              </section>
+            )}
+
+            {detail.excludes.length > 0 && (
+              <section className="conn-sec">
+                <h4>不提供</h4>
+                <div className="conn-excludes">{detail.excludes.join(' · ')}</div>
+              </section>
+            )}
+
+            {detail.note && <div className="conn-note">{detail.note}</div>}
+
+            {/* 扫码进行中：二维码内嵌在详情里，不另开弹窗 */}
+            {session.key === detail.key && active && (
+              <div className="conn-scan">
+                <div className="conn-scan-msg">
+                  {session.state === 'starting' ? '正在打开携程…' : session.message}
+                  {typeof session.elapsed_s === 'number' && session.state === 'waiting' && (
+                    <span className="conn-scan-timer"> · 已等待 {Math.round(session.elapsed_s)}s</span>
+                  )}
+                </div>
+                {session.screenshot && (
+                  // 4s 换一次 src 让浏览器重新拉图（后端每轮刷新截图文件）
+                  <img className="conn-scan-img" alt="携程登录页"
+                       src={`${session.screenshot}?t=${Math.floor((session.elapsed_s || 0) / 4)}`} />
                 )}
-                {c.connectable && c.connected && (
-                  <button className="conn-disconnect" disabled={busy === c.key}
-                          onClick={() => disconnect(c)}>
-                    {busy === c.key ? '断开中…' : '断开并清除登录态'}
-                  </button>
-                )}
-                {c.connectable && !c.connected && !active && (
-                  <button className="conn-connect" disabled={busy === c.key}
-                          onClick={() => connect(c)}>
-                    {busy === c.key ? '发起中…' : '扫码连接'}
-                  </button>
-                )}
+                <button className="conn-scan-cancel" onClick={cancelConnect}>取消</button>
               </div>
+            )}
+
+            <div className="conn-detail-foot">
+              {detail.connected && detail.connected_at && (
+                <span className="conn-time">上次连接 {formatMemoryAge(detail.connected_at, nowMs)}</span>
+              )}
+              {detail.connectable && detail.connected && (
+                <button className="conn-disconnect" disabled={busy === detail.key}
+                        onClick={() => disconnect(detail)}>
+                  {busy === detail.key ? '断开中…' : '断开并清除登录态'}
+                </button>
+              )}
+              {detail.connectable && !detail.connected && !active && (
+                <button className="conn-connect" disabled={busy === detail.key}
+                        onClick={() => connect(detail)}>
+                  {busy === detail.key ? '发起中…' : '扫码连接'}
+                </button>
+              )}
             </div>
-          ))}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   )
