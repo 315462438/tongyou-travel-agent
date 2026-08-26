@@ -338,6 +338,9 @@ class Settings(BaseSettings):
     xhs_enabled: bool = False
     handoff_wait_s: int = 180  # 登录墙：等待用户登录的总时长
     handoff_poll_s: float = 6.0  # 登录状态轮询间隔
+    # 独立连接页的等待上限。比 handoff_wait_s(180) 短一半是有意的：轮次里的等待
+    # 砍短了整轮就废，独立流程失败只需用户点一下重试，所以可以更省池子。
+    connect_wait_s: int = 90
     price_login_wait_s: int = 90  # 拿实价的主动登录引导：等待时长（不登录也继续，只是无价）
     confirm_wait_s: int = 60  # 需登录来源的确认卡片：等用户点击的时长，超时按跳过
     # 站点登录态有效期（分钟，0=永不过期）。仅服务器模式生效：超时后清浏览器

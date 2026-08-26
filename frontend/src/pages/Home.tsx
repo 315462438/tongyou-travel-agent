@@ -379,6 +379,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
     }
   }, [notify])
   const [showSkills, setShowSkills] = useState(false)
+  const [showConnectors, setShowConnectors] = useState(false)
   const [traceFor, setTraceFor] = useState<string | null>(null)  // 打开调用链抽屉的 turn_id
   // 发送门闩（Phase 92）：同步生效，堵住 setRunning 提交前的那段窗口
   const sendingRef = useRef(false)
@@ -1029,6 +1030,12 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
             </svg>
             <span>技能</span>
           </button>
+          <button className="nav-item" onClick={() => setShowConnectors(true)}>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" />
+            </svg>
+            <span>连接</span>
+          </button>
           <button className="nav-item" onClick={() => setShowSupport(true)}>
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
@@ -1108,6 +1115,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
         </div>
       )}
       {showMemories && <MemoryPanel onClose={() => setShowMemories(false)} />}
+      {showConnectors && <ConnectorPanel onClose={() => setShowConnectors(false)} />}
       {showSkills && <SkillPanel onClose={() => setShowSkills(false)} />}
       {traceFor && cid && <TraceDrawer cid={cid} turnId={traceFor} onClose={() => setTraceFor(null)} />}
       {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
@@ -1808,6 +1816,196 @@ function MemoryPanel({ onClose }: { onClose: () => void }) {
               <button className="memory-row-del" onClick={() => remove(m.id)} aria-label="删除">
                 🗑
               </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ---------- 连接管理面板（Phase 109） ----------
+
+interface ConnectorItem {
+  key: string
+  name: string
+  kind: string
+  summary: string
+  provides: string[]
+  excludes: string[]
+  note: string
+  operations: { tool: string; label: string; write: boolean }[]
+  connectable: boolean
+  connected: boolean
+  connected_at: string | null
+}
+
+interface ConnectState {
+  state: string          // idle / starting / waiting / connected / failed / timeout / cancelled
+  key?: string
+  message?: string
+  screenshot?: string
+  elapsed_s?: number
+}
+
+function ConnectorPanel({ onClose }: { onClose: () => void }) {
+  const [items, setItems] = useState<ConnectorItem[] | null>(null)
+  const [busy, setBusy] = useState('')
+  const [session, setSession] = useState<ConnectState>({ state: 'idle' })
+  // 打开面板时定格「现在」：查看态里秒级跳动的相对时间只会干扰阅读（同记忆面板）
+  const [nowMs] = useState(() => Date.now())
+  const { notify } = useToast()
+
+  const load = useCallback(async () => {
+    try {
+      const res = await authFetch(`${API}/connectors`)
+      if (!res.ok) throw new Error()
+      setItems((await res.json()).connectors)
+    } catch {
+      notify('连接状态加载失败，请稍后重试', 'error')
+      setItems([])
+    }
+  }, [notify])
+
+  useEffect(() => { void load() }, [load])
+
+  // 会话进行中才轮询。结束态（connected/timeout/failed/cancelled）立刻停——
+  // 截图文件在后端已被删除，继续拉只会得到一串 404。
+  const active = session.state === 'starting' || session.state === 'waiting'
+  useEffect(() => {
+    if (!active) return
+    let stop = false
+    const tick = async () => {
+      try {
+        const res = await authFetch(`${API}/connectors/connect/status`)
+        if (!res.ok || stop) return
+        const next: ConnectState = await res.json()
+        setSession(next)
+        if (next.state === 'connected') {
+          notify('已连接携程', 'success')
+          void load()
+        } else if (next.state === 'timeout') {
+          notify('等待超时，没有检测到登录', 'error')
+        } else if (next.state === 'failed') {
+          notify(next.message || '连接失败', 'error')
+        }
+      } catch { /* 单次轮询失败不终止，下一轮继续 */ }
+    }
+    const id = setInterval(() => { void tick() }, 2000)
+    return () => { stop = true; clearInterval(id) }
+  }, [active, load, notify])
+
+  const connect = async (c: ConnectorItem) => {
+    setBusy(c.key)
+    try {
+      const res = await authFetch(`${API}/connectors/${c.key}/connect`, { method: 'POST' })
+      if (!res.ok) throw new Error()
+      setSession(await res.json())
+    } catch {
+      notify('发起连接失败，请稍后重试', 'error')
+    } finally {
+      setBusy('')
+    }
+  }
+
+  const cancelConnect = async () => {
+    try { await authFetch(`${API}/connectors/connect`, { method: 'DELETE' }) } catch { /* 忽略 */ }
+    setSession({ state: 'idle' })
+  }
+
+  const disconnect = async (c: ConnectorItem) => {
+    // 文案必须如实说明副作用：cookie 在同一个 profile 目录里，断开是整个浏览器的
+    if (!window.confirm(
+      `断开${c.name}？\n\n会清除该浏览器上的登录态，包括其他站点的登录。` +
+      `\n下次需要时可以重新扫码。`)) return
+    setBusy(c.key)
+    try {
+      const res = await authFetch(`${API}/connectors/${c.key}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error()
+      notify(`已断开${c.name}`, 'success')
+      await load()
+    } catch {
+      notify('断开失败，请稍后重试', 'error')
+    } finally {
+      setBusy('')
+    }
+  }
+
+  return (
+    <div className="modal-mask panel-mask" onClick={onClose}>
+      <div className="modal side-panel" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <strong>🔗 连接</strong>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-sub">
+          规划行程时会用到这些外部来源。标注「内置」的由平台提供，无需你配置。
+        </div>
+        <div className="modal-body">
+          {items === null && <div className="modal-empty">加载中…</div>}
+          {items?.map((c) => (
+            <div key={c.key} className="conn-row">
+              <div className="conn-row-head">
+                <span className="conn-name">{c.name}</span>
+                <span className={`conn-badge ${c.connected ? 'on' : 'off'}`}>
+                  {c.kind === 'builtin' ? '内置' : c.connected ? '已连接' : '未连接'}
+                </span>
+              </div>
+              <div className="conn-summary">{c.summary}</div>
+              {c.provides.length > 0 && (
+                <div className="conn-caps">
+                  {c.provides.map((x) => <span key={x} className="conn-cap">{x}</span>)}
+                </div>
+              )}
+              {c.operations.length > 0 && (
+                <details className="conn-ops">
+                  <summary>包含的操作 {c.operations.length}</summary>
+                  {c.operations.map((o) => (
+                    <div key={o.tool} className="conn-op">
+                      <span className="conn-op-label">{o.label}</span>
+                      <code className="conn-op-tool">{o.tool}</code>
+                    </div>
+                  ))}
+                </details>
+              )}
+              {c.excludes.length > 0 && (
+                <div className="conn-excludes">不提供：{c.excludes.join(' · ')}</div>
+              )}
+              {c.note && <div className="conn-note">{c.note}</div>}
+              {/* 扫码进行中：二维码直接内嵌在这张卡里，不另开弹窗 */}
+              {session.key === c.key && active && (
+                <div className="conn-scan">
+                  <div className="conn-scan-msg">
+                    {session.state === 'starting' ? '正在打开携程…' : session.message}
+                    {typeof session.elapsed_s === 'number' && session.state === 'waiting' && (
+                      <span className="conn-scan-timer"> · 已等待 {Math.round(session.elapsed_s)}s</span>
+                    )}
+                  </div>
+                  {session.screenshot && (
+                    // 4s 换一次 src 让浏览器重新拉图（后端每轮刷新截图文件）
+                    <img className="conn-scan-img" alt="携程登录页"
+                         src={`${session.screenshot}?t=${Math.floor((session.elapsed_s || 0) / 4)}`} />
+                  )}
+                  <button className="conn-scan-cancel" onClick={cancelConnect}>取消</button>
+                </div>
+              )}
+              <div className="conn-row-foot">
+                {c.connected && c.connected_at && (
+                  <span className="conn-time">上次连接 {formatMemoryAge(c.connected_at, nowMs)}</span>
+                )}
+                {c.connectable && c.connected && (
+                  <button className="conn-disconnect" disabled={busy === c.key}
+                          onClick={() => disconnect(c)}>
+                    {busy === c.key ? '断开中…' : '断开并清除登录态'}
+                  </button>
+                )}
+                {c.connectable && !c.connected && !active && (
+                  <button className="conn-connect" disabled={busy === c.key}
+                          onClick={() => connect(c)}>
+                    {busy === c.key ? '发起中…' : '扫码连接'}
+                  </button>
+                )}
+              </div>
             </div>
           ))}
         </div>

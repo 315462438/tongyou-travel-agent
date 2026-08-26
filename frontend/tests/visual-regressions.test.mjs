@@ -584,3 +584,37 @@ test('设计系统：底栏图标是线性 SVG，不混彩色 emoji', () => {
   assert.match(nav, /<NavIcon name="chat" \/>/)
   assert.match(nav, /<NavIcon name="social" \/>/)
 })
+
+test('连接面板：能力边界与副作用必须渲染出来（Phase 109）', () => {
+  // 这个面板存在的主要理由就是把「系统连了什么、各自不能做什么」摊开。
+  // 后端 connectors.py 里写了 excludes 但前端不渲染的话，等于没写——所以钉住。
+  // ⚠️ 只断言 markup 文本存在是不够的：把渲染条件改成 `{false && (` 时那段文本
+  // 仍在源码里，测试照样绿（写这条时实测过，变异没抓住）。**条件本身也要钉。**
+  assert.match(home, /\{c\.excludes\.length > 0 && \(/)
+  assert.match(home, /className="conn-excludes"/)
+  assert.match(home, /不提供：\{c\.excludes\.join/)
+
+  // 断开是整个浏览器 profile 级的（cookie 在同一目录）。确认文案必须如实说明，
+  // 否则用户以为只断了携程，实际其他站点登录也没了。
+  assert.match(home, /会清除该浏览器上的登录态，包括其他站点的登录/)
+
+  // 第二期加了独立扫码连接。未连接态给的是真能用的按钮，不是提示文案。
+  assert.match(home, /className="conn-connect"/)
+  assert.match(home, /扫码连接/)
+
+  // 二维码只在会话进行中渲染：结束后后端已删截图文件，继续拉只会 404。
+  assert.match(home, /session\.key === c\.key && active/)
+
+  // 轮询必须只在 active 时跑，否则面板开着就一直打接口
+  assert.match(home, /if \(!active\) return/)
+})
+
+test('连接面板：「包含的操作」列出真实工具名（Phase 109）', () => {
+  // 豆包连接器详情的三层结构里，「包含的操作」是最实的一层。这里展示的 tool 名
+  // 与后端 connectors.py 的声明同源，而后端那份有测试跟 xhs 只读白名单对账
+  // （test_connectors.py::test_xhs_operations_match_the_readonly_whitelist）。
+  // 前端只要如实渲染，能力边界就是端到端可信的。
+  assert.match(home, /className="conn-ops"/)
+  assert.match(home, /\{c\.operations\.length > 0 && \(/)
+  assert.match(home, /className="conn-op-tool"/)
+})

@@ -103,6 +103,8 @@ PUBLIC_ROUTES = {
     ("trip_api", "shared_preview"),       # 分享链接设计即公开，token 不可猜
     ("trip_api", "short_link"),           # 分享短链
     ("upload_api", "fetch_image"),        # <img> 不能带 header，id 是 uuid4 不可枚举
+    ("connectors_api", "connect_screenshot"),  # 同上；token 是每次会话新生成的 uuid4，
+                                               # 会话结束即删文件，窗口 ≤ connect_wait_s
 }
 
 

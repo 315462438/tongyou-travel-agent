@@ -10,6 +10,7 @@ from app.api.chat_api import router as chat_router
 from app.api.fx_api import router as fx_router
 from app.api.img_api import router as img_router
 from app.api.immersive_api import router as immersive_router
+from app.api.connectors_api import router as connectors_router
 from app.api.memory_api import router as memory_router
 from app.api.sandbox_artifacts_api import router as sandbox_artifacts_router
 from app.api.skill_api import router as skill_router
@@ -92,6 +93,7 @@ app.include_router(agent_router)
 app.include_router(chat_router)
 app.include_router(fx_router)
 app.include_router(memory_router)
+app.include_router(connectors_router)
 app.include_router(skill_router)
 app.include_router(sandbox_artifacts_router)
 app.include_router(img_router)
