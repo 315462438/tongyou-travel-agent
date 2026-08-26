@@ -249,11 +249,11 @@ def test_screenshot_url_only_exposed_while_waiting(sess_env):
     """非 waiting 态不给截图地址，前端就不会继续拉一个已删的文件。"""
     cs = sess_env["cs"]
     s = cs.start("ua", "ctrip")
-    assert s.view()["screenshot"] == ""      # starting
+    assert s.view()["screenshot_token"] == ""      # starting
     s.state = "waiting"
-    assert s.view()["screenshot"].endswith("/screenshot")
+    assert s.view()["screenshot_token"] == s.token
     s.state = "connected"
-    assert s.view()["screenshot"] == ""
+    assert s.view()["screenshot_token"] == ""
 
 
 def test_screenshot_token_is_not_the_user_id(sess_env):
@@ -330,3 +330,99 @@ def test_amap_operations_exist_in_code():
 
     for op in get_connector("amap").operations:
         assert hasattr(amap, op.tool), f"amap.py 里没有 {op.tool}"
+
+
+def test_lazy_imports_inside_connect_session_actually_resolve():
+    """`connect_session` 里所有函数体内的 `from app.x import y` 必须真的存在。
+
+    **这条是线上事故补的护栏。** 2026-08-26 首次真机点「扫码连接」直接报
+    「连接过程出错」，日志里是 `No module named 'app.tools.chrome_mcp'`
+    ——真实路径是 `app.tools.mcp_client`，我照着印象写错了。
+
+    为什么其余 24 条测试全绿却没拦住：fixture 把 `_run` 整个换成了假实现，
+    `_drive` 从来没被执行，函数体内的惰性 import 自然也没被解析。
+    **模块顶层的 import 写错了会在 import 期就炸，函数体内的要等真跑到才炸**
+    ——而"真跑到"意味着要拉起 Chrome，单测里做不到。
+
+    所以改成静态解析 + importlib 逐个核实：不执行函数，也能验证名字存在。
+    本仓库大量使用函数体内惰性导入（避免循环依赖 / 加快启动），这个失效模式
+    在别处同样成立。
+    """
+    import ast
+    import importlib
+    import inspect
+
+    from app.agent import connect_session as cs
+
+    problems = []
+    for node in ast.walk(ast.parse(inspect.getsource(cs))):
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        if not node.module or not node.module.startswith("app."):
+            continue
+        try:
+            mod = importlib.import_module(node.module)
+        except Exception as e:  # noqa: BLE001
+            problems.append(f"{node.module}: 模块不存在（{e}）")
+            continue
+        problems += [f"{node.module}.{a.name}: 名字不存在"
+                     for a in node.names if not hasattr(mod, a.name)]
+
+    assert not problems, "惰性导入指向了不存在的东西：\n" + "\n".join(problems)
+
+
+def test_backend_does_not_build_url_paths_for_the_frontend():
+    """`view()` 只给 token，不给路径。
+
+    **线上事故补的护栏**（2026-08-26）：原来返回 `/api/connectors/.../screenshot`，
+    而前端挂在 `/travel/api` 下 → 图片 404，界面显示成 alt 文字「携程登录页」。
+
+    仓库里确有在后端硬编码 `/travel/` 的写法（`auth_api` 的 avatar_url），
+    但那是把部署路径散进后端各处——换个挂载点就要全仓找。
+    正确的分工是：后端给标识，前端用自己的 API 常量拼路径。
+    """
+    from app.agent.connect_session import ConnectSession
+
+    s = ConnectSession(user_id="u", key="ctrip", token="a" * 32)
+    s.state = "waiting"
+    v = s.view()
+    assert v["screenshot_token"] == s.token
+    assert "/" not in v["screenshot_token"], "只给 token，不要拼路径"
+    assert not any(isinstance(x, str) and x.startswith("/") for x in v.values()), \
+        f"view() 不该返回任何 URL 路径：{v}"
+
+
+def test_connect_switches_to_qr_login_before_waiting():
+    """必须先点「扫码登录」再进等待。
+
+    携程登录页默认是账号密码表单，二维码在右侧竖排标签后面。不点这一下，
+    用户对着一个表单页干等 90 秒——CLAUDE.md Phase 5 的「纯短信表单登录页会等到
+    超时回退」记的就是这个现象，当时没往下追到「有个标签可以切」。
+
+    顺序也要钉：切换必须在 `sess.state = "waiting"`（开始给用户看截图）之前，
+    否则第一帧截到的是表单页。
+    """
+    import inspect
+
+    from app.agent import connect_session as cs
+
+    src = inspect.getsource(cs._drive)
+    # ⚠️ 断言**调用表达式**而不是裸字符串「扫码登录」——后者会匹配到上面那段注释，
+    #    把切换挪到 waiting 之后也照样绿（写这条时实测过，变异没抓住）。
+    call = 'find_and_click("扫码登录"'
+    assert call in src, "没有切到扫码登录"
+    assert src.index(call) < src.index('sess.state = "waiting"'), \
+        "切换必须在展示截图之前，否则第一帧是表单页"
+
+
+def test_qr_switch_failure_does_not_abort_the_session():
+    """站点改版导致找不到那个标签时，只记 warning 继续，不能让整个连接流程炸。"""
+    import inspect
+
+    from app.agent import connect_session as cs
+
+    src = inspect.getsource(cs._drive)
+    i = src.index("find_and_click")
+    tail = src[i:i + 400]
+    assert "logger.warning" in tail, "切换失败应降级为 warning"
+    assert "return" not in tail.split("sess.state")[0], "切换失败不该提前 return"

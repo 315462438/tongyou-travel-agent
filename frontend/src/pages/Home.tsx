@@ -1848,7 +1848,7 @@ interface ConnectState {
   state: string          // idle / starting / waiting / connected / failed / timeout / cancelled
   key?: string
   message?: string
-  screenshot?: string
+  screenshot_token?: string
   elapsed_s?: number
 }
 
@@ -2036,10 +2036,12 @@ function ConnectorPanel({ onClose }: { onClose: () => void }) {
                     <span className="conn-scan-timer"> · 已等待 {Math.round(session.elapsed_s)}s</span>
                   )}
                 </div>
-                {session.screenshot && (
+                {session.screenshot_token && (
+                  // 用 API 常量拼路径：后端不该知道自己挂在哪个前缀下。
                   // 4s 换一次 src 让浏览器重新拉图（后端每轮刷新截图文件）
                   <img className="conn-scan-img" alt="携程登录页"
-                       src={`${session.screenshot}?t=${Math.floor((session.elapsed_s || 0) / 4)}`} />
+                       src={`${API}/connectors/connect/${session.screenshot_token}/screenshot`
+                            + `?t=${Math.floor((session.elapsed_s || 0) / 4)}`} />
                 )}
                 <button className="conn-scan-cancel" onClick={cancelConnect}>取消</button>
               </div>

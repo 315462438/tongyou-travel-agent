@@ -9697,7 +9697,7 @@ body { color: var(--tx-ink); background: var(--tx-bg); }
 .conn-scan-msg { font-size: 12px; font-weight: 700; color: var(--x-n30); }
 .conn-scan-timer { font-weight: 600; color: var(--x-n60); }
 .conn-scan-img {
-  display: block; width: 100%; max-width: 250px;
+  display: block; width: 100%; max-width: 380px;
   margin: 11px auto;
   border-radius: var(--x-r-sm); border: 1px solid var(--x-n88);
   background: var(--x-n100);

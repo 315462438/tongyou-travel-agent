@@ -67,9 +67,12 @@ class ConnectSession:
             "state": self.state,
             "message": self.message,
             "elapsed_s": round(time.monotonic() - self.started_at, 1),
-            # 截图只在 waiting 态有意义；其余态前端不该继续轮询图片
-            "screenshot": f"/api/connectors/connect/{self.token}/screenshot"
-            if self.state == "waiting" else "",
+            # 截图只在 waiting 态有意义；其余态前端不该继续轮询图片。
+            # ⚠️ 只给 token，**不拼完整路径**：前端挂在 /travel/api 下，后端拼出来的
+            # /api/... 会 404（2026-08-26 线上踩到，图片显示成 alt 文字）。既有代码
+            # 有在后端硬编码 "/travel/" 的写法（auth_api 的 avatar_url），那等于把
+            # 部署路径散进后端各处，换个挂载点就要全仓找。让前端用自己的 API 常量拼。
+            "screenshot_token": self.token if self.state == "waiting" else "",
         }
 
 
@@ -139,7 +142,7 @@ async def _drive(sess: ConnectSession) -> None:
     from app.config import settings
     from app.db.session import get_session
     from app.tools.browser_tool import BrowserTool
-    from app.tools.chrome_mcp import ChromeMCP
+    from app.tools.mcp_client import ChromeMCP
 
     if sess.key != "ctrip":
         _finish(sess, "failed", "该连接器不支持扫码连接")
@@ -162,6 +165,15 @@ async def _drive(sess: ConnectSession) -> None:
         if page.status != "need_user_handoff":
             _finish(sess, "failed", "打不开携程页面，请稍后重试")
             return
+
+        # ⚠️ 携程登录页默认是**账号密码登录**，二维码藏在右侧竖排的「扫码登录」标签后面。
+        # 不点这一下，用户看到的就是一个表单页——CLAUDE.md Phase 5 记的
+        # 「纯短信表单登录页会等到超时回退」就是这个现象，当时没往下追。
+        # `_locate_uid` 先做精确文字匹配（匹配不到才用 LLM），所以这一步快且确定；
+        # 找不到就 blocked，不抛异常——站点改版时退化成显示表单页，不至于整个流程炸。
+        switched = await browser.find_and_click("扫码登录", url=target.url)
+        if switched.status != "ok":
+            logger.warning("switch to QR login failed: %s", switched.reason)
 
         sess.state = "waiting"
         sess.message = "请用携程 App 扫描二维码"
