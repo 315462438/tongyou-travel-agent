@@ -4,9 +4,14 @@
 （Chrome DevTools MCP）浏览小红书/携程/地图等页面，抽取结构化信息，
 生成带预算的完整攻略，并支持多人协同编辑行程。
 
-线上：<https://17tongyou.com>
+线上：<https://17tongyou.com>（服务器规模有限，目前邀请制）
 
 主要复杂度不在「调一次 LLM」，而在**编排、上下文治理、可观测与安全边界**。
+
+> **第一次来？** 如果你想看的是「一个真在跑的 Agent 系统长什么样」，建议这个顺序：
+> [技术亮点](#技术亮点)（5 分钟知道它解决了什么）→ `docs/pitfalls/`（84 篇踩坑，
+> 记的全是**不报错的 bug**，大概是这个仓库最有价值的部分）→ 想跑起来再看
+> [快速开始](#快速开始)。
 
 ---
 
@@ -15,14 +20,35 @@
 需要 Python 3.12 / Node 23 / Chrome / PostgreSQL 16。
 
 ```bash
-cp backend/.env.example backend/.env      # 填 DEEPSEEK_API_KEY / AMAP_KEY / DATABASE_URL，找管理员要
-cp frontend/.env.example frontend/.env.local   # 填高德 Web端(JS API) key + 安全密钥
+cp backend/.env.example backend/.env           # 见下方「你需要自己准备什么」
+cp frontend/.env.example frontend/.env.local   # 高德 Web端(JS API) key + 安全密钥
 cd backend && python3.12 -m venv .venv && .venv/bin/pip install -r requirements.txt
 cd ../frontend && npm install
 
-backend/scripts/dev.sh                    # 一键：隧道 + 调试 Chrome + uvicorn
-cd frontend && npm run dev                # → http://localhost:5173
+backend/scripts/start_chrome.sh                          # Agent 专用调试 Chrome（:9223）
+cd backend && .venv/bin/uvicorn app.main:app --reload --port 8000
+cd frontend && npm run dev                               # → http://localhost:5173
 ```
+
+> ⚠️ `backend/scripts/dev.sh` 是**本项目自己部署环境**的一键脚本，它会先开一条到生产库的
+> SSH 隧道。你自己跑请用上面的分步命令 + 本地 PostgreSQL。
+
+### 你需要自己准备什么
+
+**仓库里一个真密钥都没有**（`.env` / `.env.local` 均已 gitignore，且有测试钉住不许把 key
+写回源码）。下面这些要你自己申请：
+
+| 项 | 必需 | 从哪来 |
+| --- | --- | --- |
+| `DEEPSEEK_API_KEY` | ✅ | [platform.deepseek.com](https://platform.deepseek.com)，按量付费 |
+| `DATABASE_URL` | ✅ | 本地起一个 PostgreSQL 16 就行，表在启动时自动建 |
+| `ADMIN_PASSWORD` | ✅ | 你自己定。**留空会拒绝启动**——本项目刻意不提供默认管理员口令 |
+| `AMAP_KEY` / `AMAP_SECRET` | ✅ | [高德开放平台](https://console.amap.com/dev/key/app)，服务平台选 **Web服务**，开启数字签名 |
+| `VITE_AMAP_JS_KEY` + 安全密钥 | ✅ | 同上，但服务平台选 **Web端(JS API)**，是**另一对**，别混用 |
+| 小红书来源 | ❌ | 需自建 [xiaohongshu-mcp](https://github.com/xpzouying/xiaohongshu-mcp) 容器并用**自己的**账号扫码；不配则该来源自动跳过 |
+| Langfuse | ❌ | 不填则埋点整体 no-op，不影响功能 |
+
+携程不需要 key —— 它是在浏览器里扫码登录，登录态只存在你自己机器的 Chrome profile 里。
 
 > **`.env` / `.env.local` 都不进版本库**，任何密钥都不要写进代码或文档。
 > 前端有测试钉住这条（`frontend/tests/no-inline-keys.test.mjs`）——因为把 key 写回源码
@@ -41,7 +67,7 @@ cd frontend && npm run dev                # → http://localhost:5173
 分步启动、断点调试（不能用 `dev.sh`，shell 套子进程挂不上断点）见 `CLAUDE.md`。
 
 ```bash
-cd backend && .venv/bin/python -m pytest tests/ -q      # 1370+ 全离线单测
+cd backend && .venv/bin/python -m pytest tests/ -q      # 1400+ 全离线单测（前端另有 99 条：cd frontend && npm test）
 ```
 
 > 本地无外网 DNS 时 `test_research_context.py` / `test_context_security.py` 有几个失败——
@@ -268,12 +294,16 @@ docs/
 2. **`CLAUDE.md`** — 各 Phase 的架构决策与关键不变式（最全，但很长）
 3. **`docs/pitfalls/`** — 挑与你要改的模块相关的看
 
-## 开发流程规范（必须遵守）
+## 开发流程规范
+
+本项目自己遵守的约定，也是 `docs/` 下那三百多篇文档的来源：
 
 1. **开发前**：在 `docs/task_plans/` 写 task plan（目标、方案、涉及模块、验收标准）
 2. **踩坑时**：在 `docs/pitfalls/` 记录（现象、原因、解决办法）
 3. **完成后**：在 `docs/test_cases/` 写验收用例，并落地为可运行的自动化测试。
    **测试全绿才算完成。**
+
+（给外部贡献者：提 PR 不强求走完这一套，但**改动要带测试**。）
 
 ## 几条关键不变式（改代码前务必知道）
 
@@ -293,20 +323,32 @@ docs/
 
 ## 部署
 
+> ⚠️ 下面是**本项目自己的部署流程**，脚本里的目标机器读 `.env` 的 `DEPLOY_HOST`
+> （不在仓库里）。fork 之后请换成你自己的部署方式——这一节留着是因为里面几条
+> 教训对任何「前后端同仓、前端构建产物由后端托管」的项目都通用。
+
+后端是 FastAPI（`uvicorn`），同时托管前端构建产物；前面一层 nginx 做反代与 HTTPS。
+
 ```bash
 cd frontend && npm run build && cp -r dist/. ../backend/static/   # 末尾 /. 不能省
 bash backend/deploy/deploy.sh                                     # rsync + 装依赖 + 重启
 ```
 
-⚠️ **构建前确认 `frontend/.env.local` 存在**：`VITE_AMAP_JS_KEY` 是**构建期**注入的，
-漏了既不报错也不会让构建失败，只会让行程板的互动地图静默回退成静态图
-（TripMap 会在浏览器控制台打一条 error）。换机器构建时最容易漏这一步。
+**三条踩出来的教训**（都真踩过，见 `docs/pitfalls/`）：
 
-部署后**必须去线上核对**（曾连踩三次「部署成功但没生效」）：
+1. `cp -r dist/. ../backend/static/` **末尾的 `/.` 不能省**。写成 `cp -r dist ../backend/static`
+   会在 static/ 已存在时把整个 dist 拷成子目录 `static/dist/`，index.html 还是旧的
+   ——前端改动看起来「没生效」。
+2. **构建前确认 `frontend/.env.local` 存在**。`VITE_AMAP_JS_KEY` 是**构建期**注入的，
+   漏了既不报错也不会让构建失败，只会让互动地图静默回退成静态图。换机器构建时最容易漏。
+3. `rsync --delete` 会删掉「本地没有的」文件——评估样本、历史产出这类**只存在于服务器**
+   的东西必须显式 `--exclude`，否则每次部署都在清空它们，而报错信息看起来跟「模型失败」
+   一模一样。
+
+部署后**去线上核对**，别信脚本的退出码（曾连踩三次「部署成功但没生效」）：
 
 ```bash
-curl -s https://17tongyou.com/travel/ | grep -o 'assets/index-[^"]*\.js'   # 比对 chunk hash
-ssh <server> "sudo -u postgres psql -d travel_agent -c '\d 表名'"          # 加过列的话
+curl -s <你的站点>/ | grep -o 'assets/index-[^"]*\.js'    # 比对 chunk hash 是否是刚构建的
 ```
 
 ---
