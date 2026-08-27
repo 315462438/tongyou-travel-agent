@@ -232,6 +232,16 @@ class Settings(BaseSettings):
     vision_max_images_per_note: int = 2  # 每篇笔记最多看几张
     vision_max_user_images: int = 4      # 用户单条消息最多带几张图
     vision_desc_thin_chars: int = 120    # desc 短于此视为「信息薄」，才值得看图
+    # ---- 长截图切片（Phase 111）----
+    # 视觉端硬上限实测为单边 8192px（8192 过、8500 挂），这里留出余量。
+    # 越界返回的 400 报文写的是「格式不支持」，会把人带偏——真正越界的是尺寸。
+    vision_max_image_side: int = 8000
+    vision_max_tiles: int = 4            # 一张长图最多切几片（都在同一次调用里送）
+    vision_tile_overlap_px: int = 80     # 相邻片重叠，免得卡在切口上的那行字两片都残
+    vision_jpeg_quality: int = 85        # 切片重编码质量；实测 85 读行程单文字无压力
+    # 用户图抽出的每类条目最多渲染几条进 prompt。原来写死 15，一张 8 天行程截图
+    # 会被砍在 Day 2——「路线合不合适」这类问题下游只看得到前两天。
+    vision_user_text_items: int = 80
     # ---- 协议层思考控制（Phase 108）----
     # DeepSeek 支持用请求字段直接定思考档位，而不是在 prompt 里劝模型「少想点」。
     # 这是撞了四次过度推理（Phase 11/101/102/105）之后找到的对症手段——前四次分别靠写

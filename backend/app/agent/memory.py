@@ -174,7 +174,10 @@ def _first_guide_reply(db: Session, cid: str) -> TravelMessage | None:
                 meta = json.loads(m.meta_json)
             except Exception:  # noqa: BLE001
                 meta = {}
-        if meta.get("streaming") or meta.get("poster") or meta.get("budget"):  # 流式占位/海报/预算面板不是攻略
+        # clarify 是「反问」，任何长度下都不是攻略。原来只靠 `_MIN_GUIDE_LEN` 拦，
+        # 那是按**形状**判断；现在有 meta 这个事实可读，就别再赌反问一定够短。
+        if (meta.get("streaming") or meta.get("poster") or meta.get("budget")
+                or meta.get("clarify")):
             continue
         content = (m.content or "").strip()
         if len(content) < _MIN_GUIDE_LEN or content.startswith(_JUNK_PREFIXES):

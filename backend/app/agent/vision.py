@@ -27,8 +27,8 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import logging
+from typing import Callable
 
 from pydantic import BaseModel, Field
 
@@ -161,6 +161,11 @@ class UserImageInfo(BaseModel):
     texts: list[str] = Field(default_factory=list)   # 其他关键文字
 
 
+USER_IMAGE_TILED_PREFIX = (
+    "下面 {n} 张图是**同一张长截图**按从上到下的顺序切开的，合起来是一整页，"
+    "相邻两片有一点重叠。请把它们当作一份连续的文档来读，不要当成互不相干的几张图。\n"
+)
+
 USER_IMAGE_PROMPT = (
     "这是用户在旅行助手里上传的一张图片。判断它是什么，并提取图里**实际写着的**信息，"
     "不要推测、不要补常识。\n"
@@ -171,13 +176,21 @@ USER_IMAGE_PROMPT = (
 )
 
 
-def describe_user_images(image_ids: list[str], *, cid: str | None = None) -> str:
+def describe_user_images(
+    image_ids: list[str], *, cid: str | None = None,
+    on_note: "Callable[[str], None] | None" = None,
+) -> str:
     """用户上传的图 → 一段供下游链路使用的文本。任何失败返回空串。
+
+    `on_note` 是给调用方播进度用的：长截图要切片多读几段，实测能到 40s+，而这段时间里
+    界面上只有一句「正在看你发的 N 张图…」——Phase 71 的结论是**静默空隙**才是流失主因，
+    所以切了片就说一声。
 
     ⚠️ 返回值是**外部内容**，调用方必须过 `wrap_external` 再进 prompt。
     图片输入绕过了 Phase 69 的全部文本防线——一张图里印着「忽略之前的指令」是直接进
     模型的；schema 约束只挡住「模型只能往固定字段填」，标签包裹才是那道熟悉的防线。
     """
+    from app.agent.image_prep import prepare_for_vision
     from app.api.upload_api import stored_path
     from app.db.models import TravelUpload
     from app.db.session import get_session
@@ -196,20 +209,37 @@ def describe_user_images(image_ids: list[str], *, cid: str | None = None) -> str
             path = stored_path(iid, mime)
             if not path.exists():
                 continue
-            data_uri = ("data:" + mime + ";base64,"
-                        + base64.b64encode(path.read_bytes()).decode())
+            # Phase 111：长截图（实测 1800x25242）超视觉端单边 8192px 上限会被 400 拒。
+            # 规格化会按需切片，多片按上下顺序放进**同一次**调用——同一份文档拆成多次
+            # 调用会把上下文割裂（第 3 天的「续住」在片 2、酒店名在片 1）。
+            uris = prepare_for_vision(path.read_bytes(), mime)
+            prompt = USER_IMAGE_PROMPT
+            if len(uris) > 1:
+                prompt = USER_IMAGE_TILED_PREFIX.format(n=len(uris)) + prompt
+                if on_note is not None:
+                    try:
+                        on_note(f"这是张长截图，分 {len(uris)} 段读，稍慢一点…")
+                    except Exception:  # noqa: BLE001 — 播进度失败不能影响读图
+                        logger.warning("vision progress note failed", exc_info=True)
             info = get_llm().parse_image(
-                USER_IMAGE_PROMPT, UserImageInfo, images=[data_uri], cid=cid,
+                prompt, UserImageInfo, images=uris, cid=cid,
             )
         except Exception:  # noqa: BLE001 — 看不了就当没有这张图
             logger.warning("vision user image failed id=%s", iid, exc_info=True)
             continue
-        lines = ["类型：" + info.kind, "说明：" + info.summary[:120]]
+        # ⚠️ 这里的上限是**渲染上限**，不是模型的产出上限。原来写死 15 条，
+        # 一张 8 天行程截图抽出来的逐日安排会被砍在 Day 2——用户问「路线合不合适」，
+        # 而下游只看得到前两天。跟切片丢尾部是同一类静默失效（Phase 111）。
+        lines = ["类型：" + info.kind, "说明：" + info.summary[:200]]
+        cap = max(1, settings.vision_user_text_items)
         for label, vals in (("地点", info.places), ("日期", info.dates),
                             ("价格", info.prices), ("其他文字", info.texts)):
             uniq = list(dict.fromkeys(v.strip() for v in vals if (v or "").strip()))
             if uniq:
-                lines.append(label + "：" + "；".join(uniq[:15]))
+                if len(uniq) > cap:  # 真砍了就说一声，别让下游以为这就是全部
+                    logger.info("用户图 %s 的「%s」有 %d 条，超过渲染上限 %d",
+                                iid, label, len(uniq), cap)
+                lines.append(label + "：" + "；".join(uniq[:cap]))
         blocks.append("\n".join(lines))
     return "\n\n---\n\n".join(blocks)
 
@@ -227,9 +257,13 @@ def judge_page_image(image_bytes: bytes, mime: str = "image/jpeg",
     if not enabled() or not settings.vision_page_type_enabled or not image_bytes:
         return None
     try:
-        data_uri = f"data:{mime};base64,{base64.b64encode(image_bytes).decode()}"
+        from app.agent.image_prep import prepare_for_vision
+
+        # 整页截图同样可能超高（Phase 111）。这里只判页面类型，看第一片就够——
+        # 登录墙/验证码/报错都出现在首屏，不需要把整页都送过去。
+        uris = prepare_for_vision(image_bytes, mime)
         return get_llm().parse_image(
-            PAGE_JUDGE_PROMPT, PageJudgement, images=[data_uri], cid=cid, max_tokens=1200,
+            PAGE_JUDGE_PROMPT, PageJudgement, images=uris[:1], cid=cid, max_tokens=1200,
         )
     except Exception:  # noqa: BLE001
         logger.warning("vision page judge failed", exc_info=True)

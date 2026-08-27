@@ -491,9 +491,36 @@ def _web_search_mode(xhs_count: int) -> str:
 
 
 def _is_clarify_text(text: str | None) -> bool:
-    """是否为澄清式短问句（≤60 字、问号结尾）。纯函数，供延续判定与追问计数共用。"""
+    """是否**看起来像**澄清式短问句（≤60 字、问号结尾）。
+
+    ⚠️ 这是**兜底启发式，不是判据**。2026-08-27 线上：模型在问句后面顺手接了一句
+    「我好帮您推荐周边美食和检查路线。」——句尾变成「。」，长度也过了 60，于是
+    `_recent_clarify_rounds` 恒为 0，**Phase 68 的追问熔断从来没生效过**，用户连问两轮
+    拿到的是同一个反问。发消息的时候我们**明明知道**这是一次澄清，却回过头去猜自己的文案。
+    现在澄清一律写进 `meta.clarify`，这个函数只用来认改造之前的老消息。
+    """
     t = (text or "").strip()
     return 0 < len(t) <= 60 and t.endswith(("？", "?"))
+
+
+def _msg_meta(m) -> dict:
+    if not getattr(m, "meta_json", None):
+        return {}
+    try:
+        return json.loads(m.meta_json) or {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _is_clarify_message(m) -> bool:
+    """这条 assistant 消息是不是一次「没给结果、把球踢回去」。
+
+    先认事实（meta），认不出再退回文案启发式（改造前留下的老消息没有 meta）。
+    """
+    meta = _msg_meta(m)
+    if meta.get("clarify") or meta.get("candidates"):
+        return True
+    return _is_clarify_text(getattr(m, "content", None))
 
 
 def _recent_clarify_rounds(cid: str) -> int:
@@ -513,20 +540,12 @@ def _recent_clarify_rounds(cid: str) -> int:
             ).scalars().all()
         n = 0
         for m in rows:
-            meta = {}
-            if m.meta_json:
-                try:
-                    meta = json.loads(m.meta_json) or {}
-                except Exception:  # noqa: BLE001
-                    meta = {}
+            meta = _msg_meta(m)
             if meta.get("streaming") or meta.get("poster") or meta.get("budget"):
                 continue  # 占位/面板类消息不算一轮对话
             # 候选卡（Phase 76）也是一次「没给结果、把球踢回去」，必须计入熔断。
             # 否则连续给候选永远不触发强制代选，就是换了张皮的无限追问。
-            if meta.get("candidates"):
-                n += 1
-                continue
-            if not _is_clarify_text(m.content):
+            if not _is_clarify_message(m):
                 break
             n += 1
         return n
@@ -534,6 +553,46 @@ def _recent_clarify_rounds(cid: str) -> int:
         logger.warning("clarify rounds count failed", exc_info=True)
         return 0
 
+
+def _image_unreadable_this_turn(cid: str) -> bool:
+    """本轮有没有「图读不出来」这件事发生过。
+
+    读的是 `_image_unreadable` 落的那条 progress（meta.hint=image_unreadable），
+    轮次边界与 `clear_plain_progress` 同一套：本轮 user 消息之后的才算。
+
+    为什么要它：目的地拿不到的原因不止一种，而**反问的措辞必须对得上原因**。
+    用户明明发了行程截图，回一句「请问目的地是哪里」，在他看来就是没听见。
+    """
+    try:
+        with get_session() as db:
+            rows = db.execute(
+                select(TravelMessage)
+                .where(TravelMessage.conversation_id == cid)
+                .order_by(TravelMessage.created_at.desc())
+                .limit(30)
+            ).scalars().all()
+        for m in rows:
+            if m.role == "user":
+                return False          # 走到本轮的用户消息还没遇到标记 → 本轮没失败
+            if m.role == "progress" and _msg_meta(m).get("hint") == "image_unreadable":
+                return True
+        return False
+    except Exception:  # noqa: BLE001
+        logger.warning("image-unreadable check failed", exc_info=True)
+        return False
+
+
+# 图读不出来时的逐轮升级文案。**每一轮都必须换一种说法且给出新的出路**——
+# 用户投诉的原句是「而不是一直反问同一个问题」。
+_BLIND_ASKS = (
+    "你发的图我没能读出来（长截图尺寸过大时会这样）。直接把目的地城市名打给我就行，"
+    "比如「吉隆坡、仙本那」，你问的路线、晚饭、小吃我一并回答。",
+    "还是没能从图里拿到目的地。三条路随便选：① 直接打城市名；"
+    "② 把长截图分成几张单页重发；③ 说「你定」，我来挑。",
+    "这张图我确实读不了，目的地也还没拿到。**这轮我不猜**——猜错就是给你排一份"
+    "完全不相干的行程，白等几分钟。给我一行城市名就够了（比如「吉隆坡」），"
+    "或者说「你定」我来挑。",
+)
 
 class _DestPick(BaseModel):
     """追问熔断时让模型代选的目的地。"""
@@ -639,7 +698,7 @@ def _is_clarify_continuation(cid: str) -> bool:
         prev = next((m for m in last if m.role == "assistant"), None)
         if prev is None:
             return False
-        return _is_clarify_text(prev.content)
+        return _is_clarify_message(prev)
     except Exception:  # noqa: BLE001
         logger.warning("clarify-continuation check failed", exc_info=True)
         return False
@@ -1237,7 +1296,14 @@ def parse_request(cid: str, user_text: str, user_id: str) -> dict:
     pref.destination = _normalize_destination(pref.destination)
     if not pref.destination:
         rounds = _recent_clarify_rounds(cid)
-        forced = pref.let_agent_decide or rounds >= settings.clarify_max_rounds
+        blind = _image_unreadable_this_turn(cid)
+        # ⚠️ 图读不出来时**不代选**（除非用户明确授权）。Phase 68 的熔断是为
+        # 「用户没想好去哪」设计的，那时候替他挑是帮忙；而这里我们有**正面证据**
+        # 说明用户手上有确定的目的地——只是我们没读出来。此时替他挑一个城市，
+        # 是拿几分钟的生成去产出一份必然不相干的行程。代价不对称：再问一句是一次
+        # 往返，猜错是整轮作废且用户觉得没被听见。
+        forced = pref.let_agent_decide or (
+            rounds >= settings.clarify_max_rounds and not blind)
         picked = _decide_destination(llm, history, user_text) if forced else ""
         if picked:
             pref.destination = picked
@@ -1249,6 +1315,15 @@ def parse_request(cid: str, user_text: str, user_id: str) -> dict:
             logger.info("clarify fallback picked destination=%s (rounds=%d, explicit=%s)",
                         picked, rounds, pref.let_agent_decide)
         else:
+            if blind:
+                # 图没读出来 → 别给候选（我们对他想去哪一无所知，猜出来的方向只会
+                # 让他更确信「它没看我的图」），直接说清楚发生了什么 + 给出路。
+                ask = _BLIND_ASKS[min(rounds, len(_BLIND_ASKS) - 1)]
+                _add_message(cid, "assistant", ask, meta={"clarify": True,
+                                                          "reason": "image_unreadable"})
+                logger.info("clarify(blind) round=%d cid=%s", rounds, cid)
+                return {"route": "clarify"}
+
             # Phase 76：先给候选，别反问。
             # 08-04 真实数据：3/8 的首问是「合肥周边」「皖南」这种区域型表达——这恰恰是
             # 「我想出去玩但不知道去哪」，是产品最该发挥价值的场景，原来却被打回去要求
@@ -1256,7 +1331,8 @@ def parse_request(cid: str, user_text: str, user_id: str) -> dict:
             cands = _suggest_destinations(llm, history, user_text)
             if len(cands) >= 2:
                 lead = "帮你圈了几个合适的方向，点一个我就开始排行程："
-                _add_message(cid, "assistant", lead, meta={"candidates": cands})
+                _add_message(cid, "assistant", lead,
+                             meta={"candidates": cands, "clarify": True})
                 logger.info("clarify -> candidates=%s", [c["name"] for c in cands])
                 return {"route": "clarify"}
 
@@ -1266,7 +1342,9 @@ def parse_request(cid: str, user_text: str, user_id: str) -> dict:
             # 已问过一次还没定 → 明确给出「交给我」这条出路，避免用户不知道可以授权
             if rounds >= 1 and "你定" not in ask:
                 ask += "　也可以直接说「你定」，我来挑一个。"
-            _add_message(cid, "assistant", ask)
+            # meta.clarify 是熔断的**唯一判据**：不写的话这一轮不计数，
+            # 下一轮又从「第 0 轮」开始，就是线上那个无限反问。
+            _add_message(cid, "assistant", ask, meta={"clarify": True})
             return {"route": "clarify"}
 
     intent = resolve_intent(pref.intent, user_text)
@@ -2312,14 +2390,18 @@ def run_conversation_turn(
             from app.agent.context_security import wrap_external
 
             _progress(cid, f"正在看你发的 {len(image_ids)} 张图…")
-            desc = vision.describe_user_images(image_ids, cid=cid)
+            desc = vision.describe_user_images(
+                image_ids, cid=cid, on_note=lambda t: _progress(cid, t))
             if desc:
                 # 用户上传的图，内容本身仍是**外部的**（可能是别人的聊天截图、网页截图），
                 # 必须走与网页正文同一条防线。
                 user_text = (user_text + "\n\n" if user_text else "") + wrap_external(
                     desc, source="user_image", title="用户上传的图片")
+            else:
+                _image_unreadable(cid)
         except Exception:  # noqa: BLE001 — 看不了图不该让整轮失败
             logger.warning("user image analysis failed cid=%s", cid, exc_info=True)
+            _image_unreadable(cid)
     try:
         # Langfuse turn trace（Phase 24）：本轮所有 LLM 调用/工具 span 都嵌套在其下
         with obs.turn_trace(
@@ -2365,6 +2447,22 @@ def run_conversation_turn(
         clear_cancel(cid)
         _clear_inflight(cid)
         obs.flush()  # 在后台线程冲刷埋点缓冲，不挡请求
+
+
+def _image_unreadable(cid: str) -> None:
+    """图一个字都没读出来时，明说。
+
+    Phase 111 的教训：此前每一处失败都是 `logger.warning` + 返回空串，对用户完全隐形
+    ——而前面刚播过一条「正在看你发的 N 张图…」。**进度说读了、实际没读**，接下来
+    的反问在用户眼里就成了「它很蠢」（线上真实反馈）。带 meta 才不会被
+    `clear_plain_progress` 清掉。
+    """
+    _progress(
+        cid,
+        "这张图我没能读出来（可能是尺寸特殊或内容无法识别）。"
+        "你可以把关键信息用文字说一下，我照样能接着做。",
+        meta={"hint": "image_unreadable"},
+    )
 
 
 def _mark_inflight(cid: str, turn_id: str, user_id: str) -> None:

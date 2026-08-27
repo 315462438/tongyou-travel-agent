@@ -23,3 +23,6 @@ langchain-deepseek>=1.0
 langchain-core==1.4.9
 langfuse>=4.14
 pyyaml>=6.0  # evals 评估集读 queries.yaml
+# Phase 111：长截图必须切片后才能进视觉模型（单边上限 8192px），切片要解码，
+# stdlib 没有图像编解码器。
+Pillow>=10.4
