@@ -70,24 +70,29 @@ test('topbar switches between persisted modern and ink-wash themes', () => {
   assert.match(css, /\.view-mobile \.theme-toggle span\s*\{\s*display:\s*none/)
 })
 
-test('new conversation uses one automatically-routed inspiration entry', () => {
+test('首页单入口：以用户原话为准，前端不重写请求（Phase 110）', () => {
   assert.match(home, /想去哪儿，就从这里出发/)
   assert.match(home, /function InspirationLaunchpad\(/)
-  assert.match(home, /extractPublicInspirationUrls\(idea\)/)
-  assert.match(home, /const routeKind = urls\.length[\s\S]*\? 'import'/)
-  assert.match(home, /!idea\.trim\(\) && origin\.trim\(\) && budget\.trim\(\)/)
-  assert.match(home, /isCompactDestinationIdea\(idea\) \? 'preview' : 'question'/)
-  assert.match(home, /routeKind === 'question'[\s\S]*\? idea\.trim\(\)/)
-  assert.match(home, /buildJourneyPreviewPrompt\(\{ destination: idea, origin, days, pace, budget \}\)/)
-  assert.match(home, /buildInspirationImportPrompt\(\{ urls, origin, days \}\)/)
-  assert.match(home, /buildBudgetRoulettePrompt\(\{ origin, budget, days, vibe: pace \}\)/)
+
+  // 只剩两条路：有公开链接 → 补一句「炼成行程」；其余一律原样送后端。
+  assert.match(home, /const routeKind = urls\.length \? 'import' : 'question'/)
+  assert.match(home, /const prompt = idea\.trim\(\)/)
+
+  // ⚠️ 撤掉的东西不许回来。「旅行预演」模板会把用户输入当目的地塞进一段 200 字格式
+  // 要求——「分析一下这个行程」被判成一个叫那名字的目的地，且完全没看用户传没传图。
+  // 判据不是不够严，是方向反了：前端不该替用户重写请求。
+  // ⚠️ 禁的是**调用**不是字面量——上面那段注释里就提到了这些名字。本轮第二次栽在
+  // 「源码文本断言看不见注释与代码的区别」上了，所以一律匹配调用形式 `name(`。
+  assert.doesNotMatch(home, /buildJourneyPreviewPrompt\(/)
+  assert.doesNotMatch(home, /isCompactDestinationIdea\(/)
+  assert.doesNotMatch(home, /buildBudgetRoulettePrompt\(/)
+
+  // 四个结构化字段（出发地/天数/预算/节奏）一并撤掉：它们唯一的消费者就是那些模板。
+  assert.doesNotMatch(home, /className="unified-constraints"/)
+
   assert.match(home, /onLaunch\(\{ prompt, deepReasoning: true \}\)/)
   assert.doesNotMatch(home, /className="inspiration-tabs"/)
   assert.match(css, /\.inspiration-launchpad\.simple\s*\{[\s\S]*backdrop-filter:\s*blur/)
-  assert.match(css, /\.view-mobile \.unified-constraints\s*\{\s*grid-template-columns:\s*repeat\(2/)
-  // 通用问题走同一个 textarea，不再展开第二个 Composer。
-  assert.doesNotMatch(home, /className="direct-ask-toggle"/)
-  assert.match(home, /直接问“第一次去日本怎么准备？”/)
 })
 
 test('trip actions menu owns the top layer above the map', () => {
@@ -401,7 +406,11 @@ test('邀请码：可复制、显示配额、用完标记失效', () => {
 test('聊天输入：表情插到光标处、截图可粘贴、图片单独成条消息', () => {
   assert.match(chatInput, /el\.selectionStart \?\? text\.length/)
   assert.match(chatInput, /onPaste=/)
-  assert.match(chatInput, /f\.type\.startsWith\('image\/'\)/)
+  // Phase 110：图片类型判断挪进 extractClipboardImages（同时读 files 与 items）。
+  // 原来这里直接 Array.from(clipboardData.files) —— 从网页右键「复制图片」时
+  // files 是空的，粘贴静默失效。
+  assert.match(chatInput, /extractClipboardImages\(e\.clipboardData/)
+  assert.doesNotMatch(chatInput, /Array\.from\(e\.clipboardData\.files\)/)
   assert.match(chatInput, /!\[图片\]\(\$\{API\}\/uploads\/\$\{data\.id\}\)/)
 })
 

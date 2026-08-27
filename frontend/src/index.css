@@ -2619,21 +2619,6 @@ body { color: var(--tx-ink); background: var(--tx-bg); }
   color: var(--x-n12); background: transparent; font: inherit; font-size: 16px; line-height: 1.48;
 }
 .unified-idea textarea::placeholder { color: var(--x-n68); }
-.unified-constraints {
-  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0;
-  border-top: 1px solid var(--x-n96); border-bottom: 1px solid var(--x-n96);
-  background: var(--x-n100);
-}
-.unified-constraints > label { display: grid; gap: 4px; min-width: 0; padding: 8px 12px; text-align: left; }
-.unified-constraints > label + label { border-left: 1px solid var(--x-n96); }
-.unified-constraints label > span:first-child { color: var(--x-n60); font-size: 11px; font-weight: 680; letter-spacing: .02em; }
-.unified-constraints input, .unified-constraints select {
-  width: 100%; min-width: 0; padding: 0; border: 0; outline: 0; color: var(--x-n20);
-  background: transparent; font: inherit; font-size: 11px; font-weight: 520;
-}
-.unified-constraints .money-input { display: block; }
-.unified-constraints .money-input i { left: 0; font-size: 11px; }
-.unified-constraints .money-input input { padding-left: 14px; }
 .unified-footer { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 9px 12px 9px 16px; }
 .unified-footer > div { min-width: 0; }
 .unified-footer .inspiration-status { margin: 0; }
@@ -4132,9 +4117,6 @@ body { color: var(--tx-ink); background: var(--tx-bg); }
 .view-mobile .inspiration-launchpad.simple { padding: 0; border-radius: var(--x-r-lg); }
 .view-mobile .unified-idea { padding: 15px 14px 12px; }
 .view-mobile .unified-idea textarea { min-height: 82px; font-size: 14px; }
-.view-mobile .unified-constraints { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.view-mobile .unified-constraints > label:nth-child(3) { border-left: 0; border-top: 1px solid var(--x-n96); }
-.view-mobile .unified-constraints > label:nth-child(4) { border-top: 1px solid var(--x-n96); }
 .view-mobile .unified-footer { align-items: stretch; flex-direction: column; padding: 11px 12px 12px; }
 .view-mobile .unified-submit { width: 100%; }
 .view-mobile .trending-destinations { margin-top: 20px; }
@@ -9083,7 +9065,6 @@ body { color: var(--tx-ink); background: var(--tx-bg); }
   box-shadow: 0 0 0 3px rgba(169, 75, 60, .1), 0 22px 52px rgba(48, 40, 29, .17), inset 0 1px 0 rgba(255,255,255,.72);
 }
 .theme-ink .unified-idea { background: radial-gradient(circle at 92% 12%, rgba(141, 52, 43, .055), transparent 33%), transparent; }
-.theme-ink .unified-constraints { background: rgba(252, 250, 244, .72); }
 .theme-ink .unified-submit {
   border: 1px solid rgba(24, 23, 20, .72); border-radius: var(--x-r-sm);
   color: var(--x-n100); background: linear-gradient(145deg, var(--x-n30), var(--x-n12));

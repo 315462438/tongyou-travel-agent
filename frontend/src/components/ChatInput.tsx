@@ -8,7 +8,7 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import { API, authFetch } from '../api'
-import { shouldSubmitComposer } from '../interaction'
+import { extractClipboardImages, shouldSubmitComposer } from '../interaction'
 
 const EMOJI_GROUPS: { label: string; items: string[] }[] = [
   {
@@ -158,7 +158,8 @@ export function ChatInput({ onSend, placeholder = '说点什么…', onError, di
           disabled={disabled}
           onChange={(e) => setText(e.target.value)}
           onPaste={(e) => {
-            const img = Array.from(e.clipboardData.files).find((f) => f.type.startsWith('image/'))
+            // 同时读 files 与 items：从网页右键「复制图片」时 files 可能为空
+            const img = extractClipboardImages(e.clipboardData, 1)[0]
             if (img) {
               e.preventDefault()   // 截图直接粘贴——报 UI 问题的主要方式
               uploadImage(img)

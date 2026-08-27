@@ -251,14 +251,6 @@ test('热门示例用平台真实目的地，并在已知常驻城市时带上�
   assert.deepEqual(buildTrendingChips([], '合肥'), [])
 })
 
-test('单入口只把纯短地名包装成预演，完整问题留给后端自动路由', async () => {
-  const { isCompactDestinationIdea } = await import('../src/interaction.ts')
-  assert.equal(isCompactDestinationIdea('阿勒泰'), true)
-  assert.equal(isCompactDestinationIdea('马来西亚'), true)
-  assert.equal(isCompactDestinationIdea('日本签证怎么办'), false)
-  assert.equal(isCompactDestinationIdea('帮我比较成都和重庆'), false)
-  assert.equal(isCompactDestinationIdea('第一次出国要准备什么？'), false)
-})
 
 test('三下起步：只点一项也要能成句，不强制填满', async () => {
   const { buildQuickPrompt } = await import('../src/interaction.ts')
@@ -275,24 +267,6 @@ test('三下起步：只点一项也要能成句，不强制填满', async () =>
 
 // ---------- Phase 77：旅行预演与灵感入口 ----------
 
-test('旅行预演把少量选择构造成可执行任务，不编造缺失字段', async () => {
-  const { buildJourneyPreviewPrompt } = await import('../src/interaction.ts')
-  assert.equal(buildJourneyPreviewPrompt({ destination: '   ' }), '')
-  const prompt = buildJourneyPreviewPrompt({
-    destination: '阿勒泰', origin: '合肥', days: '4-5 天', pace: '松弛一点',
-    companion: '和朋友', budget: '6000', wish: '雪山和日落',
-  })
-  assert.match(prompt, /阿勒泰旅行预演/)
-  assert.match(prompt, /从合肥出发/)
-  assert.match(prompt, /总预算约6000元/)
-  assert.match(prompt, /预计步行\/交通/)
-  assert.match(prompt, /下雨\/闭馆时的替代方案/)
-
-  const sparse = buildJourneyPreviewPrompt({ destination: '泉州' })
-  assert.match(sparse, /天数请给出合理假设并明确标注/)
-  assert.match(sparse, /预算尚未确定/)
-  assert.doesNotMatch(sparse, /从合肥出发|总预算约3000/)
-})
 
 test('收藏炼金从分享文本提取、去重并限制公开 HTTP(S) 链接', async () => {
   const { extractPublicInspirationUrls, isPublicInspirationUrl, buildInspirationImportPrompt } =
@@ -310,17 +284,6 @@ test('收藏炼金从分享文本提取、去重并限制公开 HTTP(S) 链接',
   assert.equal(buildInspirationImportPrompt({ urls: ['file:///etc/passwd'] }), '')
 })
 
-test('预算盲盒必须有出发地和预算，并要求把大交通算完整', async () => {
-  const { buildBudgetRoulettePrompt } = await import('../src/interaction.ts')
-  assert.equal(buildBudgetRoulettePrompt({ origin: '', budget: '3000' }), '')
-  assert.equal(buildBudgetRoulettePrompt({ origin: '合肥', budget: '' }), '')
-  const prompt = buildBudgetRoulettePrompt({
-    origin: '合肥', budget: '3000', days: '3-4 天', companion: '两个人', vibe: '山野和美食',
-  })
-  assert.match(prompt, /3个差异明显的目的地/)
-  assert.match(prompt, /不能为了卡预算而漏掉往返大交通/)
-  assert.match(prompt, /预算超支时的降级方案/)
-})
 
 test('打字机：无积压立即完成，终稿/隐藏直接追平全量', async () => {
   const { typewriterStep } = await import('../src/interaction.ts')
@@ -562,4 +525,63 @@ test('formatMemoryAge 把无时区时间串按本地时间解析（勿加 Z）',
   // 当成 UTC 解读会让所有时间凭空「新 8 小时」——2026-07-31 在后端踩过同一个坑。
   const now = Date.parse('2026-08-24T12:00:00')
   assert.equal(formatMemoryAge('2026-08-24T10:00:00', now), '2 小时前')
+})
+
+// ---------- Phase 110：剪贴板取图必须同时读 files 与 items ----------
+
+const mkFile = (name, type = 'image/png', size = 10) => ({
+  name, type, size, lastModified: 1,
+})
+
+test('剪贴板取图：files 为空时必须能从 items 拿到（原来只读 files，这条路静默失效）', async () => {
+  const { extractClipboardImages } = await import('../src/interaction.ts')
+  const img = mkFile('web.png')
+  // 从网页右键「复制图片」的形态：files 空，图片只在 items 里
+  const got = extractClipboardImages({
+    files: [],
+    items: [{ kind: 'file', getAsFile: () => img }],
+  }, 4)
+  assert.equal(got.length, 1)
+  assert.equal(got[0].name, 'web.png')
+})
+
+test('剪贴板取图：files 有内容时照常работ（截图/Finder 复制）', async () => {
+  const { extractClipboardImages } = await import('../src/interaction.ts')
+  const got = extractClipboardImages({ files: [mkFile('shot.png')], items: [] }, 4)
+  assert.equal(got.length, 1)
+})
+
+test('剪贴板取图：同一张图在两个通道里各出现一次时只取一份', async () => {
+  const { extractClipboardImages } = await import('../src/interaction.ts')
+  const img = mkFile('dup.png')
+  const got = extractClipboardImages({
+    files: [img],
+    items: [{ kind: 'file', getAsFile: () => img }],
+  }, 4)
+  assert.equal(got.length, 1, '去重失败会导致同一张图被上传两次')
+})
+
+test('剪贴板取图：非图片与非 file 类型一律忽略', async () => {
+  const { extractClipboardImages } = await import('../src/interaction.ts')
+  const got = extractClipboardImages({
+    files: [mkFile('a.pdf', 'application/pdf')],
+    items: [
+      { kind: 'string', getAsFile: () => null },
+      { kind: 'file', getAsFile: () => mkFile('b.txt', 'text/plain') },
+    ],
+  }, 4)
+  assert.deepEqual(got, [])
+})
+
+test('剪贴板取图：按剩余额度截断，额度为 0 时不返回', async () => {
+  const { extractClipboardImages } = await import('../src/interaction.ts')
+  const files = [mkFile('1.png'), mkFile('2.png'), mkFile('3.png')]
+  assert.equal(extractClipboardImages({ files, items: [] }, 2).length, 2)
+  assert.equal(extractClipboardImages({ files, items: [] }, 0).length, 0)
+})
+
+test('剪贴板取图：clipboardData 为 null 不抛异常', async () => {
+  const { extractClipboardImages } = await import('../src/interaction.ts')
+  assert.deepEqual(extractClipboardImages(null, 4), [])
+  assert.deepEqual(extractClipboardImages(undefined, 4), [])
 })

@@ -25,12 +25,9 @@ import {
   initialThemeMode,
   MAX_PROMPT_LENGTH,
   mergeMessages,
-  buildBudgetRoulettePrompt,
   buildInspirationImportPrompt,
-  buildJourneyPreviewPrompt,
   buildTrendingChips,
   extractPublicInspirationUrls,
-  isCompactDestinationIdea,
   type StarterChip,
   formatLastSeen,
   formatMemoryAge,
@@ -43,6 +40,7 @@ import {
   waitReassurance,
   canSendComposer,
   MAX_COMPOSER_IMAGES,
+  extractClipboardImages,
   addPendingImages,
   removePendingImage,
   pickImageFiles,
@@ -1204,7 +1202,6 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
               <h1 className="hero-title">想去哪儿，就从这里出发</h1>
               <p className="hero-sub">说一个目的地、贴一篇攻略，或者直接问我旅行问题。</p>
               <InspirationLaunchpad
-                homeCity={onboarding?.home_city || ''}
                 running={running}
                 suggestions={starterChips.slice(0, 4)}
                 covers={destinationCovers}
@@ -1359,7 +1356,6 @@ function NavIcon({ name }: { name: 'chat' | 'trip' | 'history' | 'social' }) {
  * 产品内部分类不再暴露成三个等权 tab。
  */
 function InspirationLaunchpad({
-  homeCity,
   running,
   suggestions,
   covers,
@@ -1370,7 +1366,6 @@ function InspirationLaunchpad({
   onRemoveImage,
   uploading,
 }: {
-  homeCity: string
   running: boolean
   suggestions: StarterChip[]
   covers: Record<string, string>
@@ -1383,53 +1378,56 @@ function InspirationLaunchpad({
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
   const remaining = MAX_COMPOSER_IMAGES - images.length
+
+  // 页面级兜底：paste 只绑在 textarea 上时，用户没点进输入框直接 Cmd+V 就完全没反应
+  // （事件到不了那个 handler）。这里在 document 上补一层——但**只在焦点不在可编辑元素上
+  // 时才接管**，否则会和 textarea 自己的 handler 重复处理同一次粘贴。
+  useEffect(() => {
+    if (!onAddImages) return
+    const onPaste = (e: ClipboardEvent) => {
+      const el = document.activeElement as HTMLElement | null
+      const editable = el && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT' || el.isContentEditable)
+      if (editable) return
+      const files = extractClipboardImages(e.clipboardData, MAX_COMPOSER_IMAGES - images.length)
+      if (files.length) { e.preventDefault(); onAddImages(files) }
+    }
+    document.addEventListener('paste', onPaste)
+    return () => document.removeEventListener('paste', onPaste)
+  }, [onAddImages, images.length])
   const [error, setError] = useState('')
   const [idea, setIdea] = useState('')
-  const [origin, setOrigin] = useState(homeCity)
-  const [days, setDays] = useState('3 天')
-  const [budget, setBudget] = useState('')
-  const [pace, setPace] = useState('松弛一点')
   const ideaRef = useRef<HTMLTextAreaElement>(null)
 
-  // onboarding 比首屏组件晚返回；只补空的出发地，绝不覆盖用户已经输入的城市。
-  useEffect(() => {
-    if (!homeCity) return
-    setOrigin((current) => current || homeCity)
-  }, [homeCity])
 
+  // Phase 110：撤掉「旅行预演」模板与四个结构化字段，以用户原话为准。
+  //
+  // 原来这里有四条路，其中 preview 路会把用户输入当成目的地塞进一段 200 字的格式要求
+  // （`请为我制作一份「${destination}旅行预演」…`）。判据 `isCompactDestinationIdea`
+  // 只看「≤12 字 + 无标点 + 不含黑名单词」——于是「分析一下这个行程」这种明确表达了
+  // 意图的输入被判成一个叫"分析一下这个行程"的目的地，而且**完全没看用户传没传图**。
+  //
+  // 根因不是判据不够严，是方向反了：前端不该替用户重写请求。黑名单永远补不完，
+  // 而后端的 resolve_route 三路分类 + 视觉模型本来就比前端有信息得多。
+  // 现在只保留一条前端必须做的判断——有公开链接时补一句「把它们炼成行程」，
+  // 因为那确实是用户表达不出来的指令。其余一律原样送后端。
   const urls = extractPublicInspirationUrls(idea)
-  const routeKind = urls.length
-    ? 'import'
-    : (!idea.trim() && origin.trim() && budget.trim()
-        ? 'budget'
-        : (isCompactDestinationIdea(idea) ? 'preview' : 'question'))
+  const routeKind = urls.length ? 'import' : 'question'
   const actionLabel = routeKind === 'import'
     ? '整理成行程'
-    : routeKind === 'budget'
-      ? '按预算推荐'
-      : routeKind === 'question' && idea.trim()
-        ? '发送问题'
-        : '开始规划'
+    : idea.trim() ? '发送' : '开始'
 
   const launch = () => {
     setError('')
     if (urls.length) {
-      const prompt = buildInspirationImportPrompt({ urls, origin, days })
+      const prompt = buildInspirationImportPrompt({ urls })
       onLaunch({ prompt, deepReasoning: true })
       return
     }
-    if (!idea.trim() && origin.trim() && budget.trim()) {
-      const prompt = buildBudgetRoulettePrompt({ origin, budget, days, vibe: pace })
-      onLaunch({ prompt, deepReasoning: true })
-      return
-    }
-    const prompt = routeKind === 'question'
-      ? idea.trim()
-      : buildJourneyPreviewPrompt({ destination: idea, origin, days, pace, budget })
+    const prompt = idea.trim()
     // Phase 105：只传图、不打字也是有效输入（「这是我朋友发的行程，帮我安排」）。
     // 图片在 send() 里从 pendingImages 取，这里只需要放行空 prompt。
     if (!prompt && !images.length) {
-      setError('输入一个目的地或攻略链接、上传一张图；如果还没想好，就填写出发地和预算。')
+      setError('说一个目的地、粘贴一个链接、上传一张图，或者直接问我任何旅行问题。')
       return
     }
     onLaunch({ prompt })
@@ -1456,7 +1454,7 @@ function InspirationLaunchpad({
             autoFocus
             onPaste={(e) => {
               if (!onAddImages) return
-              const files = pickImageFiles(Array.from(e.clipboardData?.files || []), remaining)
+              const files = extractClipboardImages(e.clipboardData, remaining)
               if (files.length) { e.preventDefault(); onAddImages(files) }
             }}
           />
@@ -1511,25 +1509,16 @@ function InspirationLaunchpad({
           </div>
         )}
 
-        <div className="unified-constraints">
-          <label><span>出发地</span><input value={origin} onChange={(event) => setOrigin(event.target.value)} placeholder="可不填" /></label>
-          <label><span>天数</span><select value={days} onChange={(event) => setDays(event.target.value)}><option>周末 2 天</option><option>3 天</option><option>4-5 天</option><option>一周左右</option><option>还没确定</option></select></label>
-          <label><span>预算</span><span className="money-input"><i>¥</i><input inputMode="numeric" value={budget} onChange={(event) => setBudget(event.target.value.replace(/[^0-9]/g, ''))} placeholder="可不填" /></span></label>
-          <label><span>节奏</span><select value={pace} onChange={(event) => setPace(event.target.value)}><option>松弛一点</option><option>张弛有度</option><option>尽量多玩</option><option>早上不要赶</option></select></label>
-        </div>
-
         <div className="unified-footer">
           <div>
             <p className={`inspiration-status${error ? ' error' : ''}`} aria-live="polite">
               {error || (routeKind === 'import'
                 ? `已识别 ${urls.length} 条链接，将自动整理`
-                : routeKind === 'budget'
-                  ? '没选目的地，将根据预算推荐'
-                  : images.length && !idea.trim()
-                    ? `会先看这 ${images.length} 张图，再据此规划`
-                    : routeKind === 'question' && idea.trim()
-                      ? '会自动判断快速回答还是深度规划'
-                      : '会检查路线、节奏、预算和备选方案')}
+                : images.length && !idea.trim()
+                  ? `会先看这 ${images.length} 张图，再据此规划`
+                  : idea.trim()
+                    ? '会自动判断快速回答还是深度规划'
+                    : '说什么都行，我来判断怎么帮你')}
             </p>
           </div>
           <button className="unified-submit" type="submit" disabled={running || uploading}>{actionLabel}<span aria-hidden>→</span></button>
@@ -2873,8 +2862,7 @@ function Composer({
           onChange={(e) => onChange(e.target.value)}
           onPaste={(e) => {
             if (!onAddImages) return
-            const files = pickImageFiles(
-              Array.from(e.clipboardData?.files || []), remaining)
+            const files = extractClipboardImages(e.clipboardData, remaining)
             if (files.length) { e.preventDefault(); onAddImages(files) }
           }}
           onKeyDown={(e) => {

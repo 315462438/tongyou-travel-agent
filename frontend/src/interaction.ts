@@ -333,18 +333,6 @@ export function buildTrendingChips(
   }))
 }
 
-/**
- * 是否像「只有一个目的地」的短输入。
- *
- * 只有这种输入才套旅行预演模板；完整问题直接交给后端 direct/guide/research 路由，避免把
- * 「日本签证怎么办」误当成一个叫“日本签证怎么办”的目的地。
- */
-export function isCompactDestinationIdea(value: string): boolean {
-  const text = (value || '').trim()
-  if (!text || text.length > 12 || /[？?！!。；;，,\n]/.test(text)) return false
-  if (/(怎么|如何|是否|能不能|要不要|多少钱|签证|酒店|机票|天气|推荐|帮我|想去|攻略|路线|预算)/.test(text)) return false
-  return /^[\p{L}\p{N}·\-—\s]+$/u.test(text)
-}
 
 export interface QuickPick {
   from: string
@@ -370,15 +358,6 @@ export function buildQuickPrompt(pick: Partial<QuickPick>): string {
   return `${parts.join('，')}，还没想好去哪，帮我推荐几个合适的目的地并说明理由`
 }
 
-export interface JourneyPreviewInput {
-  destination: string
-  origin?: string
-  days?: string
-  pace?: string
-  companion?: string
-  budget?: string
-  wish?: string
-}
 
 export interface InspirationImportInput {
   urls: readonly string[]
@@ -387,13 +366,6 @@ export interface InspirationImportInput {
   note?: string
 }
 
-export interface BudgetRouletteInput {
-  origin: string
-  budget: string
-  days?: string
-  companion?: string
-  vibe?: string
-}
 
 function cleanPromptPart(value?: string): string {
   return (value || '').trim().replace(/\s+/g, ' ')
@@ -421,29 +393,6 @@ export function extractPublicInspirationUrls(value: string, limit = 5): string[]
 }
 
 /** 把少量选择翻译成强调“可执行 + 可预演”的真实规划请求。 */
-export function buildJourneyPreviewPrompt(input: JourneyPreviewInput): string {
-  const destination = cleanPromptPart(input.destination)
-  if (!destination) return ''
-  const origin = cleanPromptPart(input.origin)
-  const days = cleanPromptPart(input.days)
-  const pace = cleanPromptPart(input.pace)
-  const companion = cleanPromptPart(input.companion)
-  const budget = cleanPromptPart(input.budget)
-  const wish = cleanPromptPart(input.wish)
-  const facts = [
-    origin ? `从${origin}出发` : '',
-    days ? `行程${days}` : '天数请给出合理假设并明确标注',
-    companion || '',
-    pace ? `希望${pace}` : '',
-    budget ? `总预算约${budget}元` : '预算尚未确定',
-    wish ? `最期待：${wish}` : '',
-  ].filter(Boolean).join('，')
-  return `请为我制作一份「${destination}旅行预演」。${facts}。\n` +
-    '不要只写传统攻略：先给一个10秒速览，再按天给出可执行时间轴；每一天标出预计步行/交通、' +
-    '最值得期待的瞬间、容易疲劳或赶路的地方、花费区间，以及下雨/闭馆时的替代方案。' +
-    '路线按地理位置就近安排，价格和营业信息注明数据时间与不确定性。最后像行程体检一样指出' +
-    '这趟旅行最可能后悔的一个安排，并给出更松弛的改法。'
-}
 
 /** 把收藏链接变成浏览器 Agent 可执行的“提取 → 校验 → 排路”任务。 */
 export function buildInspirationImportPrompt(input: InspirationImportInput): string {
@@ -466,23 +415,6 @@ export function buildInspirationImportPrompt(input: InspirationImportInput): str
 }
 
 /** 在硬预算内反推目的地；该 prompt 应由调用方以 deep_reasoning=true 发送。 */
-export function buildBudgetRoulettePrompt(input: BudgetRouletteInput): string {
-  const origin = cleanPromptPart(input.origin)
-  const budget = cleanPromptPart(input.budget)
-  if (!origin || !budget) return ''
-  const days = cleanPromptPart(input.days)
-  const companion = cleanPromptPart(input.companion)
-  const vibe = cleanPromptPart(input.vibe)
-  const extras = [
-    days ? `玩${days}` : '天数可以在推荐中给出',
-    companion || '',
-    vibe ? `偏爱${vibe}` : '',
-  ].filter(Boolean).join('，')
-  return `我从${origin}出发，总预算上限${budget}元，${extras}。请做一次「预算旅行盲盒」：` +
-    '基于现实交通成本和当地消费给我3个差异明显的目的地，分别说明适配度、预算拆分、最值体验和' +
-    '主要妥协；不能为了卡预算而漏掉往返大交通。最后选出一个首选，给出可执行的每日路线和至少' +
-    '一个预算超支时的降级方案。所有价格注明查询时间或估算口径。'
-}
 
 // ---------- 流式丝滑（2026-08-13）：打字机平滑 + 消息增量合并 ----------
 
@@ -659,4 +591,35 @@ export function removePendingImage(list: PendingImage[], id: string): PendingIma
 /** 从粘贴/拖拽事件里挑出图片文件，按剩余额度截断。 */
 export function pickImageFiles(files: File[], remaining: number): File[] {
   return files.filter((f) => f && f.type.startsWith('image/')).slice(0, Math.max(0, remaining))
+}
+
+/**
+ * 从剪贴板取图片。**必须同时读 `files` 和 `items`**。
+ *
+ * 原来只读 `clipboardData.files`，于是这些情况下粘贴静默失效：
+ *   - 从网页右键「复制图片」——部分浏览器只把它放进 `items`，`files` 是空的
+ *   - Safari 历来只填 `items`
+ * 而 `files` 覆盖的是「截图到剪贴板」「在 Finder 里复制文件」这类。两边都要读。
+ *
+ * 按 name+size+lastModified 去重：同一张图可能在两个通道里各出现一次。
+ */
+export function extractClipboardImages(
+  data: { files?: FileList | File[] | null; items?: DataTransferItemList | null } | null | undefined,
+  remaining: number,
+): File[] {
+  if (!data) return []
+  const out: File[] = []
+  const seen = new Set<string>()
+  const push = (f: File | null) => {
+    if (!f || !f.type.startsWith('image/')) return
+    const key = `${f.name}|${f.size}|${f.lastModified}`
+    if (seen.has(key)) return
+    seen.add(key)
+    out.push(f)
+  }
+  for (const f of Array.from(data.files || [])) push(f)
+  for (const item of Array.from(data.items || [])) {
+    if (item.kind === 'file') push(item.getAsFile())
+  }
+  return out.slice(0, Math.max(0, remaining))
 }
