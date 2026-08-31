@@ -12,8 +12,9 @@ import { useToast } from '../components/toast-context'
 import { API, authFetch } from '../api'
 import { formatTripTimeRange, pickNavUrl, prepareMarkdown } from '../interaction'
 import { composeShareGuide } from '../lib/guideComposer'
-import { renderShareGuideDocx } from '../lib/docxRenderer'
 import { renderShareGuideHtml } from '../lib/htmlRenderer'
+import { DEFAULT_EXPORT_OPTIONS, type ExportOptions } from '../lib/travelGuideExport/schema'
+import { exportTravelGuideDocx } from '../lib/travelGuideExport/pipeline'
 
 interface TripSummary {
   id: string
@@ -1818,6 +1819,7 @@ function TripBoard({
   // 滚回顶部再展开。也可点标题栏的 ▴/▾ 手动切换。
   const [headerCollapsed, setHeaderCollapsed] = useState(false)
   const [exportingDoc, setExportingDoc] = useState(false)
+  const [guideExportOptions, setGuideExportOptions] = useState<ExportOptions>(DEFAULT_EXPORT_OPTIONS)
   const [dateEditorOpen, setDateEditorOpen] = useState(false)
   const [dateInput, setDateInput] = useState('')
   const [savingDate, setSavingDate] = useState(false)
@@ -2399,46 +2401,57 @@ function TripBoard({
     }
   }
 
-  const exportToWord = async () => {
+  const downloadDocxBlob = (blob: Blob, suffix: string) => {
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = safeDocFilename(trip?.title || '协同行程', suffix)
+    a.style.display = 'none'
+    document.body.appendChild(a)
+    a.click()
+    window.setTimeout(() => {
+      URL.revokeObjectURL(url)
+      a.remove()
+    }, 0)
+  }
+
+  const exportPolishedGuide = async () => {
     if (!trip) return
-    notify('正在生成 Word 文档…')
+    notify(guideExportOptions.polished ? '正在润色并排版精致攻略…' : '正在排版精致攻略…')
     const data = await loadShareDocumentData()
     if (!data) return
 
-    // Phase 1+2: 使用新架构（Schema + Renderer）
     try {
-      const schema = composeShareGuide(trip, data.foods, data.tips, data.packing, expenses, {
-        includePacking: true,
-        includeBudget: true,
-        memberCount: undefined,
-      })
-      console.log('✓ ShareGuideSchema 生成成功')
-      console.log('  - Days:', schema.days.length)
-      console.log('  - Food cities:', schema.foods.cityGroups.length)
-      console.log('  - Hotels:', schema.stays.hotels.length)
-      console.log('  - Tip categories:', schema.tips.categories.length)
-
-      const blob = renderShareGuideDocx(schema)
-      console.log('✓ DOCX 渲染完成，大小:', blob.size, 'bytes')
-
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = safeDocFilename(trip.title, '好友分享版.docx')
-      a.click()
-      URL.revokeObjectURL(url)
-      notify('Word 文档已下载（新版）', 'success')
+      const result = await exportTravelGuideDocx(trip, data.foods, data.tips, data.packing, expenses, guideExportOptions)
+      downloadDocxBlob(result.blob, '精致攻略.docx')
+      if (result.usedLLM) {
+        notify('精致攻略已下载', 'success')
+      } else {
+        notify('精致攻略已下载（已使用原始数据兜底）', 'success')
+      }
+      if (result.issues.some((issue) => issue.severity === 'critical')) {
+        notify('导出完成，但有硬信息冲突需要人工核对', 'error')
+      }
     } catch (error) {
-      console.error('新架构导出失败，回退到旧逻辑:', error)
-      notify('生成失败，使用兜底逻辑')
-      const blob = buildTripDocxBlob(trip, data.foods, data.tips, data.packing, expenses)
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = safeDocFilename(trip.title, '好友分享版.docx')
-      a.click()
-      URL.revokeObjectURL(url)
-      notify('Word 文档已下载（经典版）', 'success')
+      console.error('精致攻略导出失败:', error)
+      try {
+        notify('AI 精致攻略生成失败，正在使用本地排版兜底…', 'error')
+        const result = await exportTravelGuideDocx(
+          trip,
+          data.foods,
+          data.tips,
+          data.packing,
+          expenses,
+          { ...guideExportOptions, polished: false },
+        )
+        downloadDocxBlob(result.blob, '精致攻略.docx')
+        notify('精致攻略已下载（本地排版兜底）', 'success')
+      } catch (fallbackError) {
+        console.error('精致攻略兜底导出失败，回退到原始 Word:', fallbackError)
+        const blob = buildTripDocxBlob(trip, data.foods, data.tips, data.packing, expenses)
+        downloadDocxBlob(blob, '精致攻略.docx')
+        notify('精致攻略已下载（经典版兜底）', 'success')
+      }
     }
   }
 
@@ -2741,11 +2754,51 @@ function TripBoard({
         </button>
         <button className="trip-btn" onClick={onBack}>← 返回</button>
         <details className="trip-export-menu">
-          <summary className="trip-btn">导出</summary>
+          <summary className="trip-btn">导出攻略</summary>
           <div className="trip-export-popover">
-            <button onClick={exportToImage}>📸 长图</button>
-            <button onClick={exportToWord} disabled={exportingDoc}>📄 Word</button>
-            <button onClick={exportToPdf} disabled={exportingDoc}>🖨️ PDF</button>
+            <button type="button" onClick={exportToImage}>📸 长图</button>
+            <button type="button" onClick={exportPolishedGuide} disabled={exportingDoc}>📄 精致攻略</button>
+            <button type="button" onClick={exportToPdf} disabled={exportingDoc}>🖨️ PDF</button>
+            <label className="trip-export-option">
+              <input
+                type="checkbox"
+                checked={guideExportOptions.polished}
+                onChange={(e) => setGuideExportOptions((prev) => ({ ...prev, polished: e.target.checked }))}
+              />
+              AI 润色
+            </label>
+            <label className="trip-export-option">
+              <input
+                type="checkbox"
+                checked={guideExportOptions.includePacking}
+                onChange={(e) => setGuideExportOptions((prev) => ({ ...prev, includePacking: e.target.checked }))}
+              />
+              行李清单
+            </label>
+            <label className="trip-export-option">
+              <input
+                type="checkbox"
+                checked={guideExportOptions.includeHotels}
+                onChange={(e) => setGuideExportOptions((prev) => ({ ...prev, includeHotels: e.target.checked }))}
+              />
+              住宿信息
+            </label>
+            <label className="trip-export-option">
+              <input
+                type="checkbox"
+                checked={guideExportOptions.includeFoods}
+                onChange={(e) => setGuideExportOptions((prev) => ({ ...prev, includeFoods: e.target.checked }))}
+              />
+              美食收藏
+            </label>
+            <label className="trip-export-option">
+              <input
+                type="checkbox"
+                checked={guideExportOptions.includeChecklist}
+                onChange={(e) => setGuideExportOptions((prev) => ({ ...prev, includeChecklist: e.target.checked }))}
+              />
+              出发前 Checklist
+            </label>
           </div>
         </details>
         <span className="trip-title-stack">

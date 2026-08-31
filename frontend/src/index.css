@@ -3249,6 +3249,20 @@ body { color: var(--tx-ink); background: var(--tx-bg); }
   opacity: .55;
   cursor: default;
 }
+.trip-export-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  color: var(--tx-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.trip-export-option input {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--tx-brand);
+}
 .trip-col-timeline { width: 360px; background: rgba(248,249,252,.65); }
 .trip-day-section { border-radius: var(--tx-radius-md); }
 .trip-day-section.active { border-color: rgba(82,104,221,.36); box-shadow: var(--tx-shadow-sm); }

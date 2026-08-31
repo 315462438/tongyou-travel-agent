@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.config import settings
+from app.agent.travel_guide_export import ExportGuideEditRequest, edit_travel_guide
 from app.llm.client import EXTRACT_THINKING_DISCIPLINE
 from app.db.models import (
     TravelNotification, TravelTrip, TravelTripChatMessage, TravelTripComment, TravelTripEvent,
@@ -287,6 +288,23 @@ def get_source_guide(
         "can_open_conversation": is_owner,
         "conversation_id": trip.source_conversation_id if is_owner else "",
     }
+
+
+@router.post("/{trip_id}/export-guide/edit")
+def edit_export_guide(
+    trip_id: str,
+    body: ExportGuideEditRequest,
+    db: Session = Depends(get_db),
+    user: TravelUser = Depends(get_current_user),
+):
+    """AI 润色导出攻略：只返回 TravelGuideSchema JSON，不生成 DOCX。"""
+    _member(db, trip_id, user)
+    normalized = dict(body.normalized or {})
+    meta = normalized.get("meta") if isinstance(normalized.get("meta"), dict) else {}
+    if meta.get("travelPlanId") != trip_id:
+        raise HTTPException(400, "导出数据与行程不一致")
+    guide = edit_travel_guide(normalized)
+    return {"guide": guide.model_dump(mode="json")}
 
 
 @router.delete("/{trip_id}")
