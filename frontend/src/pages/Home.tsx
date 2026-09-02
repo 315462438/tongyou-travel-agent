@@ -3679,47 +3679,80 @@ function TripImportButton({
   )
 }
 
-function MemoriesUsed({ items }: { items: MemoryRef[] }) {
+/**
+ * 助手消息上方那一族「喂进去了什么」的折叠行：记忆 / 技能 / 已深度思考。
+ *
+ * 它们本来就是同一类东西，此前却是两套样式（`.reasoning-toggle` 的 ▸ 与思考行的 ›），
+ * 挨在一起时观感不齐。**答案下方**那族（复制 / 调用链 / 参考来源）是胶囊按钮，
+ * 与这里刻意不同——那是动作与出处，不是输入。
+ */
+function ThinkRowToggle({ icon, label, summary, children }: {
+  icon: string
+  label: string
+  summary?: string
+  children: ReactNode
+}) {
   const [open, setOpen] = useState(false)
   return (
-    <div className="memories-used">
-      <button className="reasoning-toggle" onClick={() => setOpen((o) => !o)}>
-        🧠 记忆 · {items.length} <span>{open ? '▾' : '▸'}</span>
-      </button>
-      {open && (
-        <div className="memory-cards">
-          {items.map((m, i) => (
-            <div key={i} className="memory-card">
-              <div className="memory-card-tag">
-                {m.kind === 'past_chat' ? '历史对话' : MEM_TYPE_LABEL[m.type ?? ''] || '记忆'}
-              </div>
-              {m.kind === 'past_chat' && <div className="memory-card-title">{m.title}</div>}
-              <div className="memory-card-body">{m.content}</div>
+    <section className="think-row">
+      <div
+        className="think-row-line"
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        onKeyDown={(e) => {
+          if (e.key !== 'Enter' && e.key !== ' ') return
+          e.preventDefault()
+          setOpen((o) => !o)
+        }}
+      >
+        <span className="think-row-icon" aria-hidden>{icon}</span>
+        <span className="think-row-label">{label}</span>
+        {!open && summary && <span className="think-row-sep" aria-hidden />}
+        {!open && summary
+          ? <span className="think-row-summary">{summary}</span>
+          : <span className="think-row-spacer" aria-hidden />}
+        <span className={`think-row-chevron${open ? ' open' : ''}`} aria-hidden>›</span>
+      </div>
+      {open && children}
+    </section>
+  )
+}
+
+function MemoriesUsed({ items }: { items: MemoryRef[] }) {
+  return (
+    <ThinkRowToggle
+      icon="🧠"
+      label={`记忆 · ${items.length}`}
+      summary={items.map((m) => m.content).join('；')}
+    >
+      <div className="memory-cards">
+        {items.map((m, i) => (
+          <div key={i} className="memory-card">
+            <div className="memory-card-tag">
+              {m.kind === 'past_chat' ? '历史对话' : MEM_TYPE_LABEL[m.type ?? ''] || '记忆'}
             </div>
-          ))}
-        </div>
-      )}
-    </div>
+            {m.kind === 'past_chat' && <div className="memory-card-title">{m.title}</div>}
+            <div className="memory-card-body">{m.content}</div>
+          </div>
+        ))}
+      </div>
+    </ThinkRowToggle>
   )
 }
 
 function SkillsUsed({ names }: { names: string[] }) {
-  const [open, setOpen] = useState(false)
   return (
-    <div className="memories-used">
-      <button className="reasoning-toggle" onClick={() => setOpen((o) => !o)}>
-        🧩 技能 · {names.length} <span>{open ? '▾' : '▸'}</span>
-      </button>
-      {open && (
-        <div className="memory-cards">
-          {names.map((name) => (
-            <div key={name} className="memory-card">
-              <div className="memory-card-body">{name}</div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+    <ThinkRowToggle icon="🧩" label={`技能 · ${names.length}`} summary={names.join('、')}>
+      <div className="memory-cards">
+        {names.map((name) => (
+          <div key={name} className="memory-card">
+            <div className="memory-card-body">{name}</div>
+          </div>
+        ))}
+      </div>
+    </ThinkRowToggle>
   )
 }
 

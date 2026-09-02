@@ -426,17 +426,6 @@ textarea { font-family: inherit; }
 }
 .msg-assistant { margin: 18px 0; font-size: 14px; line-height: 1.7; }
 
-/* 折叠开关（记忆 / 技能）。思维链已改用 .think-row，见下方 Phase 112。 */
-.reasoning-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--x-n60);
-  font-size: 14px;
-  padding: 0;
-  margin-bottom: 8px;
-}
-.reasoning-toggle:hover { color: var(--x-n41); }
 
 /* progress 状态行 */
 .progress-line {
@@ -568,6 +557,9 @@ textarea { font-family: inherit; }
   font-size: 13px;
   line-height: 22px;
   overflow-wrap: anywhere;
+}
+.think-row .memory-cards {
+  padding: 4px 0 2px 22px;
 }
 .think-row-body {
   padding: 2px 0 2px 14px;
@@ -944,7 +936,6 @@ textarea { font-family: inherit; }
 .user-plan { font-size: 11px; color: var(--x-n68); }
 .user-logout { color: var(--x-n68); padding: 4px; border-radius: var(--x-r-sm); line-height: 0; flex-shrink: 0; }
 .user-logout:hover { color: var(--x-cinnabar-51); background: var(--x-n88); }
-.memories-used { margin-bottom: 4px; }
 .memory-cards { display: flex; flex-direction: column; gap: 8px; margin: 6px 0 12px; }
 .memory-card {
   border: 1px solid var(--x-n96);

@@ -250,6 +250,21 @@ test('compressing the thinking UI did not drop the Phase 71 wait information', (
   assert.doesNotMatch(home, /秒没有新消息/)                      // 旧的「像卡死」文案
 })
 
+test('the three "fed into this answer" rows share one shape (Phase 112.1)', () => {
+  // 记忆 / 技能 / 已深度思考 是同一类东西（喂进去了什么），此前记忆和技能用
+  // .reasoning-toggle 的 ▸、思考行用 ›，挨在一起观感不齐。
+  assert.match(home, /function ThinkRowToggle/)
+  assert.match(home, /<ThinkRowToggle[\s\S]*?icon="🧠"/)
+  assert.match(home, /<ThinkRowToggle icon="🧩"/)
+  assert.doesNotMatch(home, /className="reasoning-toggle"/)
+  assert.doesNotMatch(css, /\.reasoning-toggle/)
+  assert.doesNotMatch(css, /\.memories-used/)   // 外层容器随之作废，别留死 CSS
+  // 答案**下方**那族是胶囊按钮（动作与出处），刻意不跟着一起改——
+  // 把它改成行会让它跟旁边的复制/调用链按钮不一致。
+  assert.match(home, /className="sources-toggle"/)
+  assert.match(css, /\.sources-toggle\s*\{[^}]*border-radius:\s*var\(--x-r-pill\)/s)
+})
+
 test('thinking row and the reasoning disclosure share one shape', () => {
   // 「正在思考的那一行」和「思考完折叠起来的那一行」本来就是同一个东西，
   // 长得不一样只会让人以为是两回事。
