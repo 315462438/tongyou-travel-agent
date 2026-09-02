@@ -439,6 +439,56 @@ React Bits `Aurora`（低透明、pointer-events none、低动态偏好不挂载
 好友页，接力通知直达对应目的地；未读数每 30 秒及窗口聚焦时刷新。坑见
 `docs/pitfalls/事件通知必须与业务同事务且按事件去重.md`。
 
+**Phase 112 — 降级必须走到模型面前 + 思考区改一行**（复核 `openai/codex` 上游后的两处改造）：
+① **图片降级此前只对用户可见、对模型不可见**。Phase 111 ⑤ 立的「失败必须可见」做了一半：
+progress 气泡和 `_BLIND_ASKS` 反问都对着用户，而**模型那侧一个字都没收到**。三个口子：
+`prepare_for_vision` 两处 `resize`（太宽等比缩 / 片数不够先缩后切）**只写 logger**，返回值里
+只有 data URI——1800×25242 的行程单缩到能切下时字会糊，**模型不知道自己在看一张被压过的图**，
+照样自信地念价格和日期；`describe_user_images` 逐图 `except: continue`，**传 3 张读出 1 张时
+`desc` 非空 → 走 `if desc:` 分支完全不吭声**，而前面刚播过「正在看你发的 3 张图…」——
+那是同一个漏洞在单图粒度上的复现；`uniq[:cap]` 那行注释写着「真砍了就说一声」，实际**只对
+logger 说了**。修法照搬 codex 的 `ImageResizeNotice` / `UNSUPPORTED_MEDIA` 占位符：
+`PreparedImages(uris, notices, tiled)` + `UserImageReading(text, note, total, ok, failures)`，
+**内容与说明分两路装**——`.text` 是外部不可信内容必须过 `wrap_external`，`.note` 是**我们
+自己的话**必须留在标签外（同 Phase 31 对来源编号的处理，审计时要分得清哪句是模型「看」出来的）。
+判据从「产出空不空」改成 `any_unread`（**筛选前的逐图统计**），`_image_unreadable` 相应从
+「一张都没读出来」放宽到「有图没读出来」且部分失败换一种文案（用户的下一步动作不同：
+补发那几张 vs 改用文字）。⚠️ **代选规则不变**：Phase 111 ④ 的 `forced and not blind` 照旧。
+⚠️ **「没事就别说话」是这套机制能用的前提**——每张图都贴一句「一切正常」会让真正的降级淹没在
+噪声里，`_reading_note` 全正常时返回空串，有回归测试钉住。
+**一般化：凡链路对输入做了有损处理，处理结果必须自带一段说明，与内容一起进模型。**
+② **思考区从整屏卡片压成一行**（用户原话「这个加载的太重了」）。Phase 60 那版是毛玻璃卡片 +
+三层轨道球 + 进度条 + 五阶段步骤条 + 波形 + 常驻足迹，`index.css` 里 111 行、9 个 keyframes。
+形状改抄 deepseek-harness 的 `ReasoningRow`：24px 一行（16px 图标 + 6px 间距 + 14/24 标题 +
+2px 分隔点 + 尾随摘要），运行态一道 300px 渐变**扫光**表示「还活着」，
+`useThrottledVisualUpdate`（rAF 隔 3 帧合并）让摘要 `scrollLeft = scrollWidth - clientWidth`
+**跟随尾部**，且跟随时 `text-overflow: clip`——**保留省略号的话每来一段增量就闪一次「…」，
+比不跟随还烦**。摘要取法随状态变：**跑动取最新一行**（用户要知道它现在想到哪了）、
+**结束取第一行**（要知道这段思考讲的是什么）；展开时摘要让位给正文，否则和正文第一行一模一样。
+`Reasoning`（「已深度思考」）改用同一套 `.think-row`——**它和「正在思考的那一行」本来就是同一个
+东西**。⚠️ **压缩的是呈现不是信息**：Phase 71 的已用时间 / 预期时长 / 足迹 / 45s 后的
+「可以关掉页面」四样一件没少（前两样收进 `thinkingRowLabel` 一个字符串，足迹收进展开区），
+有一组专门的回归测试钉住——**视觉压缩最容易顺手把实测得来的功能一起删掉**。
+明确放弃五阶段步骤条与进度条：占像素最多、携带信息最少（阶段是从进度文案**猜**的，
+进度条是按预期时长线性逼近的，都不反映真实完成度）；行内停止按钮也不再重复放
+（composer 的发送键在 running 时本来就是停止方块）。
+**连带删掉 `THINKING_STAGES`/`inferThinkingStage`/`inferThinkingProgress`/`stageSignal`/
+`thinkingProgressRatio` 及其单测**——步骤条没了它们就没有生产调用方，
+**留着没人调的函数比少一个功能更糟**（Phase 96 的 `truncate.py` 就是这么变成死代码的）。
+计划 `docs/task_plans/图片降级必须告知模型-2026-09-02.md`、
+`docs/task_plans/思考区改为轻量单行-2026-09-02.md`，用例
+`docs/test_cases/图片降级必须告知模型-验收用例.md`、`docs/test_cases/思考区改为轻量单行-验收用例.md`
+（后端 1451 passed，前端 98 passed）。
+**另立计划未落地**：`docs/task_plans/深度研究中间产物持久化-2026-09-02.md` —— deep_research
+**不挂 checkpointer**，重启后 `resume_turn` 在该 turn_id 下找不到 checkpoint、优雅降级成
+「请重发」（不是挂死，quick take 已落库仍在）；真正的代价是 `research_tools.source_store` 是
+**闭包里的内存字典**，一整轮的网页全文随进程消失。⚠️ **不能直接挂 checkpointer**：
+`BrowserSession` 恢复不了，且 `source_store` 不在 state 里 → 续跑后模型手里的
+`[来源 s3]` 引用凭空作废而**它不知道**，仍在基于 s3 的摘要往下推理（正是 codex
+`ensure_call_outputs_present` 防的那类事）。**半截恢复比干净重来更危险，除非被恢复的那一半
+自己能说清「我少了什么」。** 顺序是：先把 `source_store` 落进 Phase 103 ④ 已建的
+`travel_source_page`（单独就成立：重发不用重抓），再谈部分结论，最后才谈续跑。
+
 **Phase 111 — 长截图读不了 + 反问不看原因**（两个线上 bug，一条链）：
 用户上传行程长截图问了四件事（晚饭、小吃、路线是否合适、注意事项），连试两轮都只拿到
 同一句「请问您这次行程的目的地是哪里？」。用户的判断是「逻辑限定得太死板」——
