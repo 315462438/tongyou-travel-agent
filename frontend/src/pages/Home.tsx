@@ -12,17 +12,17 @@ import { useToast } from '../components/toast-context'
 import { API, authFetch, setToken } from '../api'
 import { useAttentionBadge } from '../hooks/useAttentionBadge'
 import { useNotificationUnread } from '../hooks/useNotificationUnread'
+import { useThrottledVisualUpdate } from '../hooks/useThrottledVisualUpdate'
 import { useTypewriter } from '../hooks/useTypewriter'
 import {
-  expectedHintFor,
-  expectedSecondsFor,
   extractGuideHeadings,
-  formatThinkingElapsed,
+  firstLine,
   headingAnchor,
   inferThinkingMode,
-  inferThinkingProgress,
   initialLayoutMode,
   initialThemeMode,
+  latestLine,
+  expectedSecondsFor,
   MAX_PROMPT_LENGTH,
   mergeMessages,
   buildInspirationImportPrompt,
@@ -35,8 +35,7 @@ import {
   prepareMarkdown,
   shouldFollowBottom,
   shouldSubmitComposer,
-  THINKING_STAGES,
-  thinkingProgressRatio,
+  thinkingRowLabel,
   waitReassurance,
   canSendComposer,
   MAX_COMPOSER_IMAGES,
@@ -885,15 +884,6 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
   })
   const thinkingText = latestPlainProgress?.content
     || (currentStreaming ? '正在生成你的旅行方案…' : '正在理解你的旅行需求…')
-  const thinkingStage = inferThinkingProgress(
-    currentTurnMessages
-      .filter((m) => m.role === 'progress' && !m.meta?.confirm && !m.meta?.handoff && !m.meta?.hint)
-      .map((m) => m.content),
-    {
-    streaming: !!currentStreaming,
-    reasoning: !!currentStreaming?.reasoning,
-    },
-  )
   // Phase 71.1：按实际路由判定模式（开关只表达意愿）——开着深度推理问明确规划问题时，
   // 后端按设计仍走攻略流水线，此时不该显示「通常 4-6 分钟」。
   const thinkingMode = inferThinkingMode(
@@ -1267,14 +1257,12 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
                 ))}
                 {subagentRuns.length > 0 && cid && <SubagentPanel runs={subagentRuns} cid={cid} />}
                 {showThinkingWorkspace && (
-                  <ThinkingWorkspace
-                    stage={thinkingStage}
+                  <ThinkingRow
                     activity={thinkingText}
                     trail={thinkingTrail}
                     elapsedSec={runElapsedSec}
                     staleSec={staleSec}
                     mode={thinkingMode}
-                    onStop={stop}
                   />
                 )}
                 <div ref={bottomRef} />
@@ -3036,116 +3024,88 @@ function SubagentPanel({ runs, cid }: { runs: SubagentRun[]; cid: string }) {
   )
 }
 
-function ThinkingWorkspace({
-  stage,
+/**
+ * 一行式思考指示（Phase 112，形状取自 deepseek-harness 的 `ReasoningRow`）。
+ *
+ * 取代 Phase 60 那块整屏工作台（毛玻璃卡片 + 轨道球 + 进度条 + 五阶段步骤条 + 波形）。
+ * 用户的原话是「这个加载的太重了」。
+ *
+ * ⚠️ **压缩的是呈现，不是信息。** Phase 71 实测：长任务流失的原因不是「久」，是
+ * 「不知道还要多久」+「静默空隙」。所以已用时间、预期时长、足迹、45s 后的
+ * 「可以关掉页面」四样一件不少，只是从一整块卡片收进一行 + 一个展开区。
+ *
+ * 明确放弃的是**五阶段步骤条与进度条**：它们占了最多像素却携带最少信息——阶段是从
+ * 进度文案里猜出来的，进度条是按预期时长线性逼近的，两者都不反映真实完成度。
+ * 停止按钮也不再重复放这里：composer 的发送键在 running 时本来就是停止方块。
+ */
+function ThinkingRow({
   activity,
   trail,
   elapsedSec,
   staleSec,
   mode,
-  onStop,
 }: {
-  stage: number
   activity: string
   trail: string[]
   elapsedSec: number
   staleSec: number
   mode: string
-  onStop: () => void
 }) {
-  const isPoster = mode === '手账生成'
-  const title = isPoster ? '正在绘制你的旅行手账' : mode === '深度推理'
-    ? '正在进行深度旅行研究'
-    : '正在为你规划这段旅程'
-  // Phase 71 预期管理：给出「预计多久」并按预期推进进度条——不确定性比时长更劝退
-  const expectedSec = expectedSecondsFor(mode)
-  const ratio = thinkingProgressRatio(elapsedSec, expectedSec)
-  const overtime = elapsedSec > expectedSec
+  const [expanded, setExpanded] = useState(false)
+  const summaryRef = useRef<HTMLSpanElement>(null)
+  // 跑动时摘要跟随尾部：最新的动作在右端，长文案不会把「刚发生的事」推到看不见的地方。
+  const scheduleScroll = useThrottledVisualUpdate(() => {
+    const el = summaryRef.current
+    if (!el) return
+    el.scrollLeft = el.scrollWidth - el.clientWidth
+  })
+  useEffect(() => { scheduleScroll() }, [activity, scheduleScroll])
 
   return (
-    <section className="thinking-workspace" role="status" aria-live="polite" aria-label="智能体工作进度">
-      <div className="thinking-glow" aria-hidden />
-      <div className="thinking-head">
-        <div className="thinking-orb" aria-hidden>
-          <span className="thinking-orb-core">✦</span>
-          <span className="thinking-orbit orbit-one"><i /></span>
-          <span className="thinking-orbit orbit-two"><i /></span>
-        </div>
-        <div className="thinking-heading">
-          <div className="thinking-kicker">
-            <span>{mode}</span>
-            <i />
-            <time>{formatThinkingElapsed(elapsedSec)}</time>
-            <i />
-            <span className="thinking-expect">{expectedHintFor(mode)}</span>
-          </div>
-          <h2>{title}</h2>
-          <p>{waitReassurance(elapsedSec, mode)}</p>
-        </div>
-        <button className="thinking-stop" onClick={onStop} aria-label="停止当前任务">
-          <span aria-hidden />
-          停止
-        </button>
-      </div>
-
+    <section className="think-row" role="status" aria-live="polite" aria-label="智能体工作进度">
       <div
-        className={`thinking-progress${overtime ? ' overtime' : ''}`}
-        role="progressbar"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={Math.round(ratio * 100)}
-        aria-label="预计完成进度"
+        className="think-row-line"
+        role="button"
+        tabIndex={0}
+        aria-expanded={expanded}
+        onClick={() => setExpanded((v) => !v)}
+        onKeyDown={(e) => {
+          if (e.key !== 'Enter' && e.key !== ' ') return
+          e.preventDefault()
+          setExpanded((v) => !v)
+        }}
       >
-        <span className="thinking-progress-fill" style={{ width: `${(ratio * 100).toFixed(1)}%` }} />
+        <span className="think-row-icon" aria-hidden>✦</span>
+        <span className="think-row-label">{thinkingRowLabel(mode, elapsedSec)}</span>
+        <span className="think-row-sep" aria-hidden />
+        <span ref={summaryRef} className="think-row-summary" data-follow-end>{activity}</span>
+        {trail.length > 0 && (
+          <span className={`think-row-chevron${expanded ? ' open' : ''}`} aria-hidden>›</span>
+        )}
       </div>
 
-      <div className="thinking-stages" aria-label="任务阶段">
-        {THINKING_STAGES.map((item, index) => {
-          const state = index < stage ? 'done' : index === stage ? 'active' : 'waiting'
-          return (
-            <div className={`thinking-stage ${state}`} key={item.id} aria-current={state === 'active' ? 'step' : undefined}>
-              <span className="thinking-stage-mark" aria-hidden>
-                {state === 'done' ? '✓' : index + 1}
-              </span>
-              <span className="thinking-stage-label">{item.label}</span>
-              {index < THINKING_STAGES.length - 1 && <i className="thinking-stage-line" aria-hidden />}
-            </div>
-          )
-        })}
-      </div>
-
-      <div className="thinking-activity" key={activity}>
-        <span className="thinking-activity-spark" aria-hidden>✦</span>
-        <span className="thinking-activity-copy">
-          <small>当前动作</small>
-          <strong>{activity}</strong>
-        </span>
-        <span className="thinking-activity-wave" aria-hidden><i /><i /><i /></span>
-      </div>
-
-      {trail.length > 0 && (
-        <ul className="thinking-trail" aria-label="已完成的步骤">
+      {expanded && trail.length > 0 && (
+        <ul className="think-row-trail" aria-label="已完成的步骤">
           {trail.map((item, i) => (
-            <li key={`${i}-${item}`}>
-              <span className="thinking-trail-dot" aria-hidden />
-              <span className="thinking-trail-text">{item}</span>
-            </li>
+            <li key={`${i}-${item}`}>{item}</li>
           ))}
         </ul>
       )}
 
-      {/* Phase 71：静默期是正常现象（模型在长推理/写终稿），文案不再暗示「可能卡死」，
+      {/* Phase 71：静默期是正常现象（模型在长推理/写终稿），文案不暗示「可能卡死」，
           并明确告诉用户可以离开——很多人不是没耐心，是怕关了页面白等。 */}
       {staleSec >= 45 && (
-        <div className="thinking-stale">
-          <span className="thinking-stale-pulse" aria-hidden />
-          正在深入思考中（这一步没有中间进度，属正常）。
-          <b>可以关掉页面</b>，任务在服务器继续跑，完成后回来在这条会话里就能看到。
+        <div className="think-row-stale">
+          正在深入思考中（这一步没有中间进度，属正常）。<b>可以关掉页面</b>，任务在服务器继续跑。
+          {elapsedSec > expectedSecondsFor(mode) && (
+            <span className="think-row-stale-more">{waitReassurance(elapsedSec, mode)}</span>
+          )}
         </div>
       )}
     </section>
   )
 }
+
 
 function Message({
   msg,
@@ -3935,15 +3895,53 @@ function HandoffCard({
   )
 }
 
+/**
+ * 思维链折叠行。与 `ThinkingRow` 共用同一套 `.think-row` 形状——「正在思考的那一行」
+ * 和「思考完折叠起来的那一行」本来就是同一个东西，长得不一样只会让人以为是两回事。
+ *
+ * 摘要的取法跟着状态走（deepseek-harness 的判断）：**跑动时取最新一行**（用户要知道
+ * 它现在想到哪了），**结束后取第一行**（用户要知道这段思考讲的是什么）。
+ */
 function Reasoning({ text, streaming }: { text: string; streaming?: boolean }) {
   const [open, setOpen] = useState(false)
+  const summaryRef = useRef<HTMLSpanElement>(null)
+  const summary = streaming ? latestLine(text) : firstLine(text)
+  const scheduleScroll = useThrottledVisualUpdate(() => {
+    const el = summaryRef.current
+    if (!el) return
+    el.scrollLeft = streaming ? el.scrollWidth - el.clientWidth : 0
+  })
+  useEffect(() => { scheduleScroll() }, [summary, streaming, scheduleScroll])
+
   return (
-    <div>
-      <button className="reasoning-toggle" onClick={() => setOpen((o) => !o)}>
-        {streaming ? '思考中…' : '已深度思考'} <span>{open ? '▾' : '▸'}</span>
-      </button>
-      {open && <div className="reasoning-body">{text}</div>}
-    </div>
+    <section className={`think-row${streaming ? ' running' : ''}`}>
+      <div
+        className="think-row-line"
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        onKeyDown={(e) => {
+          if (e.key !== 'Enter' && e.key !== ' ') return
+          e.preventDefault()
+          setOpen((o) => !o)
+        }}
+      >
+        <span className="think-row-icon" aria-hidden>✦</span>
+        <span className="think-row-label">{streaming ? '思考中' : '已深度思考'}</span>
+        {!open && summary && <span className="think-row-sep" aria-hidden />}
+        {!open && (
+          <span
+            ref={summaryRef}
+            className="think-row-summary"
+            data-follow-end={streaming || undefined}
+          >{summary}</span>
+        )}
+        {open && <span className="think-row-spacer" aria-hidden />}
+        <span className={`think-row-chevron${open ? ' open' : ''}`} aria-hidden>›</span>
+      </div>
+      {open && <div className="think-row-body">{text}</div>}
+    </section>
   )
 }
 

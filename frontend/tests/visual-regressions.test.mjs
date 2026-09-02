@@ -221,28 +221,43 @@ test('polished guide renderer owns deterministic layout instead of asking the LL
   assert.doesNotMatch(travelGuideRenderer, /⭐ 🤿 🏝️ 🍽️ ✈️/)
 })
 
-test('thinking workspace keeps staged motion, stop control, and reduced-motion fallback', () => {
-  assert.match(home, /className="thinking-workspace"/)
-  assert.match(home, /THINKING_STAGES\.map/)
-  assert.match(home, /className="thinking-stop"/)
-  // Phase 71：静默文案改为「正常现象 + 可以关掉页面」，不再暗示卡死
-  assert.match(home, /正在深入思考中/)
-  assert.match(home, /可以关掉页面/)
-  assert.doesNotMatch(home, /秒没有新消息/)  // 旧的「像卡死」文案已移除
-  assert.match(css, /\.thinking-workspace\s*\{/)
-  assert.match(css, /@keyframes thinking-spin/)
-  assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.thinking-workspace[\s\S]*animation:\s*none !important/)
+test('thinking row is one line, animated, and honours reduced motion (Phase 112)', () => {
+  // 用户的原话是「这个加载的太重了」。收起态必须只占一行——没有步骤条、没有进度条、
+  // 没有轨道球。这三样是旧工作台里占像素最多、携带信息最少的部分。
+  assert.match(home, /className="think-row-line"/)
+  assert.doesNotMatch(home, /thinking-workspace/)
+  assert.doesNotMatch(home, /role="progressbar"/)
+  assert.doesNotMatch(home, /THINKING_STAGES/)
+  assert.doesNotMatch(css, /\.thinking-/)
+  // 运行中的唯一动态指示：扫光 + 图标脉动。两者都要能被 reduced-motion 关掉。
+  assert.match(css, /@keyframes think-row-sweep/)
+  assert.match(css, /@keyframes think-row-pulse/)
+  assert.match(
+    css,
+    /@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?\.think-row \.think-row-line::after,[\s\S]*?animation:\s*none !important/,
+  )
 })
 
-test('thinking workspace shows expected duration and a determinate progress bar (Phase 71)', () => {
-  assert.match(home, /className="thinking-progress/)
-  assert.match(home, /role="progressbar"/)
-  assert.match(home, /expectedHintFor\(mode\)/)
-  assert.match(home, /waitReassurance\(elapsedSec, mode\)/)
-  assert.match(css, /\.thinking-progress\s*\{/)
-  assert.match(css, /\.thinking-progress-fill\s*\{/)
-  // 进度条动效也要尊重 reduced-motion
-  assert.match(css, /prefers-reduced-motion: reduce\)\s*\{[\s\S]*\.thinking-progress-fill\s*\{\s*transition:\s*none/)
+test('compressing the thinking UI did not drop the Phase 71 wait information', () => {
+  // ⚠️ 压缩的是呈现，不是信息。实测结论是「流失的原因不是久，是不知道还要多久」——
+  // 已用时间 / 预期时长 / 足迹 / 45s 后的「可以关掉页面」四样一件不能少。
+  assert.match(home, /thinkingRowLabel\(mode, elapsedSec\)/)   // 时间 + 预期都在这里面
+  assert.match(home, /className="think-row-trail"/)            // 足迹
+  assert.match(home, /staleSec >= 45/)
+  assert.match(home, /正在深入思考中/)
+  assert.match(home, /可以关掉页面/)
+  assert.match(home, /waitReassurance\(elapsedSec, mode\)/)     // 超时的分段文案
+  assert.doesNotMatch(home, /秒没有新消息/)                      // 旧的「像卡死」文案
+})
+
+test('thinking row and the reasoning disclosure share one shape', () => {
+  // 「正在思考的那一行」和「思考完折叠起来的那一行」本来就是同一个东西，
+  // 长得不一样只会让人以为是两回事。
+  const reasoning = home.slice(home.indexOf('function Reasoning('))
+  assert.match(reasoning, /className={`think-row/)
+  assert.match(reasoning, /latestLine\(text\) : firstLine\(text\)/)
+  // 跟随尾部时不要省略号：每来一段增量就闪一次「…」比不跟随还烦
+  assert.match(css, /\.think-row-summary\[data-follow-end\]\s*\{\s*text-overflow:\s*clip/)
 })
 
 test('guide reading view has semantic title, day cards, responsive tables, and large images', () => {

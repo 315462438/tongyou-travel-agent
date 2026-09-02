@@ -11,16 +11,16 @@ import {
   badgedTitle,
   extractGuideHeadings,
   formatTripTimeRange,
+  firstLine,
   formatThinkingElapsed,
   headingAnchor,
-  inferThinkingProgress,
-  inferThinkingStage,
   initialLayoutMode,
   initialThemeMode,
   MAX_PROMPT_LENGTH,
   normalizePrompt,
+  latestLine,
   shouldSubmitComposer,
-  THINKING_STAGES,
+  thinkingRowLabel,
 } from '../src/interaction.ts'
 
 test('trip event time is a range derived from duration or the next event', () => {
@@ -71,46 +71,42 @@ test('guide outline extracts h2/h3 headings with stable anchors', () => {
   assert.equal(headingAnchor('  **预算 / 交通** '), 'guide-预算-交通')
 })
 
-test('thinking progress maps backend messages onto stable stages', () => {
-  assert.deepEqual(THINKING_STAGES.map((stage) => stage.label), [
-    '理解需求',
-    '搜集资料',
-    '整理方案',
-    '生成内容',
-    '检查优化',
-  ])
-  assert.equal(inferThinkingStage('正在理解你的旅行需求…'), 0)
-  assert.equal(inferThinkingStage('🧭 进入深度研究模式（规划 → 搜集 → 汇总）…'), 0)
-  assert.equal(inferThinkingStage('📕 正在小红书搜索：成都美食'), 1)
-  assert.equal(inferThinkingStage('正在综合多个来源，整理每日路线…'), 2)
-  assert.equal(inferThinkingStage('正在生成你的旅行攻略…'), 3)
-  assert.equal(inferThinkingStage('发现可优化：路线绕路，正在重排…'), 4)
-})
-
-test('thinking progress falls back to stream state and formats elapsed time', () => {
-  assert.equal(inferThinkingStage('', { streaming: true }), 3)
-  assert.equal(inferThinkingStage('', { reasoning: true }), 2)
-  assert.equal(inferThinkingStage(''), 0)
+test('elapsed time formats across minute and hour boundaries', () => {
   assert.equal(formatThinkingElapsed(-1), '00:00')
   assert.equal(formatThinkingElapsed(38), '00:38')
   assert.equal(formatThinkingElapsed(252), '04:12')
   assert.equal(formatThinkingElapsed(3723), '1:02:03')
 })
 
-test('thinking progress never moves backward when a reflection loop researches again', () => {
-  assert.equal(inferThinkingProgress([
-    '正在理解你的旅行需求…',
-    '正在搜索：成都三日游',
-    '正在综合多个来源，生成攻略…',
-    '发现可优化：路线绕路，正在重排…',
-    '正在补充资料：成都地铁运营时间…',
-  ]), 4)
-  assert.equal(inferThinkingProgress([], { streaming: true }), 3)
+test('thinking row summary follows the tail while running, the head when done', () => {
+  // 两种取法不同是有原因的：跑动时用户要知道「它现在想到哪了」，
+  // 读完之后要知道「这段思考讲的是什么」。取反了两种状态都会变得没用。
+  const chain = '先确定目的地\n再看天数和预算\n最后排每天的路线'
+  assert.equal(latestLine(chain), '最后排每天的路线')
+  assert.equal(firstLine(chain), '先确定目的地')
+  // 流式尾部常带一个还没写完的换行，不能因此显示成空行
+  assert.equal(latestLine('第一步\n第二步\n'), '第二步')
+  assert.equal(latestLine(''), '')
+  assert.equal(firstLine(''), '')
+  assert.equal(latestLine('只有一行'), '只有一行')
+  assert.equal(firstLine('只有一行'), '只有一行')
+})
+
+test('thinking row label keeps the elapsed time and the expected duration together', () => {
+  // ⚠️ Phase 71 的实测结论：流失的原因是「不知道还要多久」。把工作台压成一行时，
+  // 这两个数是唯一不能丢的东西——它们在这一个字符串里，丢了就是整条线索没了。
+  const label = thinkingRowLabel('智能规划', 47)
+  assert.match(label, /智能规划/)
+  assert.match(label, /00:47/)
+  assert.match(label, /通常 3-4 分钟/)
+  // 未知模式回落到智能规划的预期，而不是显示一个空档
+  assert.match(thinkingRowLabel('未知模式', 5), /通常 3-4 分钟/)
+  assert.match(thinkingRowLabel('深度推理', 5), /通常 4-6 分钟/)
 })
 
 // ---------- Phase 71：等待预期管理 ----------
 
-const { expectedSecondsFor, expectedHintFor, thinkingProgressRatio, waitReassurance } =
+const { expectedSecondsFor, expectedHintFor, waitReassurance } =
   await import('../src/interaction.ts')
 
 test('每种任务有各自的预计时长与提示', () => {
@@ -120,22 +116,6 @@ test('每种任务有各自的预计时长与提示', () => {
   // 未知模式回落到默认，不能是 undefined/NaN
   assert.ok(expectedSecondsFor('未知模式') > 0)
   assert.ok(expectedHintFor('未知模式').length > 0)
-})
-
-test('进度条单调递增、永不满格、超时也继续动', () => {
-  const exp = 300
-  const at = (s) => thinkingProgressRatio(s, exp)
-  assert.equal(at(0), 0)
-  assert.ok(at(150) > at(60))
-  assert.ok(at(299) <= 0.92)
-  // 超出预期后仍在推进（还在动 = 还活着），但永远不到 1
-  assert.ok(at(600) > at(300))
-  assert.ok(at(6000) < 1)
-})
-
-test('进度条对异常输入稳健', () => {
-  assert.equal(thinkingProgressRatio(-10, 300), 0)
-  assert.ok(Number.isFinite(thinkingProgressRatio(100, 0)))
 })
 
 test('等待文案随时长升级，且超时后不暗示卡死', () => {
@@ -149,36 +129,13 @@ test('等待文案随时长升级，且超时后不暗示卡死', () => {
   assert.match(veryLate, /仍在服务器上跑|停止重来/)
 })
 
-// ---------- Phase 71.1：阶段/模式不能被用户内容污染 ----------
+// ---------- Phase 71.1：模式不能被用户内容污染 ----------
+// Phase 112 注：同一节原来还钉着「阶段推断不被搜索词污染」的三条用例
+// （stageSignal / 「攻略」误判 / 序列单调）。五阶段步骤条随本次改造删除，
+// 那三个纯函数一并删掉——留着没有生产调用方的函数比少一个功能更糟
+// （Phase 96 的 truncate.py 就是这么变成死代码的）。模式推断仍在用，故保留。
 
-const { stageSignal, inferThinkingMode } = await import('../src/interaction.ts')
-
-test('stageSignal 只保留动作词，丢掉查询词和抓取内容', () => {
-  assert.equal(stageSignal('📕 正在小红书搜索：六安 旅游攻略 美食 自然'), '📕 正在小红书搜索')
-  assert.equal(stageSignal('已获取高德实时数据（天气 + 景点）'), '已获取高德实时数据')
-  assert.equal(stageSignal('正在综合多个来源，生成攻略…'), '正在综合多个来源，生成攻略…')
-  assert.equal(stageSignal(''), '')
-})
-
-test('搜索词里的「攻略」不再把阶段推到「生成内容」（线上真实回归）', () => {
-  // 现场：当前动作还在小红书搜索，阶段却显示 4/5「生成内容」
-  assert.equal(inferThinkingStage('📕 正在小红书搜索：六安 旅游攻略 美食 自然'), 1)
-  // 笔记标题里带「攻略」同样不能污染
-  assert.equal(inferThinkingStage('已获取 5 篇小红书笔记（📍六安极限24小时🔥逛吃攻略！）'), 1)
-  // 我们自己写的「生成攻略」仍应判为生成内容
-  assert.equal(inferThinkingStage('正在综合多个来源，生成攻略…'), 3)
-})
-
-test('阶段推断整体仍单调：真实一轮的进度序列不会倒退', () => {
-  const seq = [
-    '正在理解你的旅行需求…',
-    '已获取高德实时数据（天气 + 景点）',
-    '📕 正在小红书搜索：六安 旅游攻略 美食 自然',
-    '小红书资料充足，跳过网页搜索',
-  ]
-  assert.equal(inferThinkingProgress(seq), 1)  // 仍在搜集资料，不该到生成
-  assert.equal(inferThinkingProgress([...seq, '正在综合多个来源，生成攻略…']), 3)
-})
+const { inferThinkingMode } = await import('../src/interaction.ts')
 
 test('模式按实际路由判定，而不是前端开关', () => {
   assert.equal(inferThinkingMode(['正在理解你的旅行需求…', '已获取高德实时数据（天气 + 景点）']), '智能规划')

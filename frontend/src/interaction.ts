@@ -100,63 +100,6 @@ export function prepareMarkdown(markdown: string): string {
   return markdown.replace(/\*\*([^*\n]+?)\*\*/g, '**\u200b$1\u200b**')
 }
 
-export const THINKING_STAGES = [
-  { id: 'understand', label: '理解需求' },
-  { id: 'research', label: '搜集资料' },
-  { id: 'organize', label: '整理方案' },
-  { id: 'generate', label: '生成内容' },
-  { id: 'review', label: '检查优化' },
-] as const
-
-const THINKING_STAGE_PATTERNS: ReadonlyArray<RegExp> = [
-  /理解|解析|需求|偏好|记忆|判断|分类|正在处理/,
-  /搜索|搜集|检索|浏览|读取|抓取|来源|网页|高德|小红书|携程|酒店|天气|实时|排队|浏览器|补充资料|打开/,
-  /整理|汇总|综合|路线|规划|提取|定位|排序|结构化|计算|准备/,
-  /生成|撰写|输出|回答|成稿|终稿|攻略|报告/,
-  /自检|反思|检查|优化|重排|修订|重写|复核|校验/,
-]
-
-/**
- * 只保留进度文案里「描述动作」的那部分，丢掉冒号后的查询词和括号里的抓取内容。
- *
- * 踩坑（Phase 71.1）：进度改成携带发现内容后，「📕 正在小红书搜索：六安 旅游攻略 美食」
- * 里的「攻略」命中了「生成内容」的正则，阶段直接跳到 4/5，而实际还在搜集资料。
- * 阶段推断只能看**我们自己写的动作词**，绝不能被用户输入/抓回来的内容左右。
- */
-export function stageSignal(progressText: string): string {
-  let t = progressText || ''
-  const cut = t.search(/[：:]/)
-  if (cut > 0) t = t.slice(0, cut)
-  const paren = t.search(/[（(]/)
-  if (paren > 0) t = t.slice(0, paren)
-  return t.trim()
-}
-
-export function inferThinkingStage(
-  rawText: string,
-  options: { streaming?: boolean; reasoning?: boolean } = {},
-): number {
-  const progressText = stageSignal(rawText)
-  if (/进入深度研究模式|理解你的旅行需求/.test(progressText)) return 0
-  // 后面的阶段优先，避免「正在检查并重新生成」被较早的“生成”误判。
-  for (let index = THINKING_STAGE_PATTERNS.length - 1; index >= 0; index -= 1) {
-    if (THINKING_STAGE_PATTERNS[index].test(progressText)) return index
-  }
-  if (options.streaming) return 3
-  if (options.reasoning) return 2
-  return 0
-}
-
-export function inferThinkingProgress(
-  progressTexts: readonly string[],
-  options: { streaming?: boolean; reasoning?: boolean } = {},
-): number {
-  return progressTexts.reduce(
-    (furthest, text) => Math.max(furthest, inferThinkingStage(text)),
-    inferThinkingStage('', options),
-  )
-}
-
 export function formatThinkingElapsed(totalSeconds: number): string {
   const safe = Math.max(0, Math.floor(totalSeconds))
   const seconds = safe % 60
@@ -193,14 +136,33 @@ export function expectedHintFor(mode: string): string {
   return THINKING_EXPECTED_HINT[mode] ?? THINKING_EXPECTED_HINT.智能规划
 }
 
-/** 进度比例 0-1。超出预期后不回退也不满格，缓慢逼近 1（还在动=还活着）。 */
-export function thinkingProgressRatio(elapsedSec: number, expectedSec: number): number {
-  const e = Math.max(0, elapsedSec)
-  const exp = Math.max(1, expectedSec)
-  if (e <= exp) return Math.min(0.92, e / exp)
-  // 超时后每多等一个预期时长，把剩下的差距吃掉一半，永远不到 100%
-  const over = (e - exp) / exp
-  return Math.min(0.99, 0.92 + 0.07 * (1 - Math.exp(-over)))
+// ---------- 思考行（Phase 112） ----------
+// 参照 deepseek-harness 的 ReasoningRow：收起态只占一行，跑动时显示**最新一行**并跟随
+// 尾部；结束后显示**第一行**当标签。两种取法不同是有原因的——跑动时用户要的是「它现在
+// 在干什么」，读完之后要的是「这段思考讲的是什么」。
+
+/** 取最后一行非空文本（流式思考链的「当前进展」）。 */
+export function latestLine(text: string): string {
+  const visible = (text || '').trimEnd()
+  const newline = visible.lastIndexOf('\n')
+  return newline === -1 ? visible : visible.slice(newline + 1)
+}
+
+/** 取第一行（思考结束后当标签用）。 */
+export function firstLine(text: string): string {
+  const t = text || ''
+  const newline = t.indexOf('\n')
+  return (newline === -1 ? t : t.slice(0, newline)).trim()
+}
+
+/**
+ * 思考行收起态的标签：模式 + 已用时间 + 预期时长。
+ *
+ * ⚠️ 这三样是 Phase 71 的**功能**不是装饰——实测长任务流失的原因是「不知道还要多久」，
+ * 所以压缩视觉时它们必须原样保留，只是从一整块卡片挪进一行里。
+ */
+export function thinkingRowLabel(mode: string, elapsedSec: number): string {
+  return `${mode} · ${formatThinkingElapsed(elapsedSec)} · ${expectedHintFor(mode)}`
 }
 
 /** 等待期的安抚文案：正常区间给预期，超时给「比平时久」而不是「可能卡死」。 */

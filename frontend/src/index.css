@@ -426,7 +426,7 @@ textarea { font-family: inherit; }
 }
 .msg-assistant { margin: 18px 0; font-size: 14px; line-height: 1.7; }
 
-/* 思考过程（GPT「已深度思考」样式） */
+/* 折叠开关（记忆 / 技能）。思维链已改用 .think-row，见下方 Phase 112。 */
 .reasoning-toggle {
   display: inline-flex;
   align-items: center;
@@ -437,15 +437,6 @@ textarea { font-family: inherit; }
   margin-bottom: 8px;
 }
 .reasoning-toggle:hover { color: var(--x-n41); }
-.reasoning-body {
-  border-left: 2px solid var(--x-n88);
-  padding: 2px 0 2px 14px;
-  margin: 4px 0 14px;
-  color: var(--x-n60);
-  font-size: 14px;
-  line-height: 1.7;
-  white-space: pre-wrap;
-}
 
 /* progress 状态行 */
 .progress-line {
@@ -467,443 +458,150 @@ textarea { font-family: inherit; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .progress-dot { width: 6px; height: 6px; border-radius: var(--x-r-pill); background: var(--x-n78); flex-shrink: 0; }
 
-/* Phase 60：长任务统一思考工作台 */
-.thinking-workspace {
+/* Phase 112：一行式思考指示（形状取自 deepseek-harness 的 ReasoningRow）
+   取代 Phase 60 那块整屏工作台。压缩的是呈现不是信息——已用时间/预期时长仍在 label 里，
+   足迹收进展开区，45s 静默后的「可以关掉页面」仍在。
+   同一套类名同时给「正在思考」和「已深度思考」用：它们本来就是同一个东西。 */
+.think-row {
   position: relative;
-  isolation: isolate;
-  overflow: hidden;
-  margin: 16px 0 22px;
-  padding: 18px;
-  border: 1px solid rgba(118, 112, 232, 0.18);
-  border-radius: var(--x-r-lg);
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(248, 249, 255, 0.94)),
-    radial-gradient(circle at 12% 0%, rgba(91, 196, 255, 0.16), transparent 42%);
-  box-shadow: 0 16px 44px rgba(67, 72, 128, 0.09), inset 0 1px 0 rgba(255, 255, 255, 0.8);
-  animation: thinking-enter 0.44s cubic-bezier(.22, .9, .32, 1) both;
+  margin: 10px 0 14px;
+  min-width: 0;
 }
-.thinking-workspace::after {
+.think-row-line {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  height: 24px;
+  min-width: 0;
+  cursor: pointer;
+  border-radius: var(--x-r-sm, 6px);
+}
+/* 运行中的唯一动态指示：一道扫光。比一整块卡片的呼吸/轨道/波形加起来更省，
+   而它要传达的信息是一样的——「它还活着」。 */
+.think-row.running .think-row-line::after,
+.think-row[role='status'] .think-row-line::after {
   content: '';
   position: absolute;
-  z-index: -1;
-  inset: 0;
-  background: linear-gradient(105deg, transparent 25%, rgba(255, 255, 255, 0.68) 45%, transparent 66%);
-  transform: translateX(-110%);
-  animation: thinking-sheen 4.8s ease-in-out infinite;
+  inset-block: 0;
+  left: 0;
+  width: 220px;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--x-pine-40, #2563EB) 9%, transparent) 55%,
+    transparent 100%);
+  animation: think-row-sweep 2.6s ease-out infinite;
   pointer-events: none;
 }
-.thinking-glow {
-  position: absolute;
-  z-index: -2;
-  width: 230px;
-  height: 230px;
-  left: -90px;
-  top: -135px;
-  border-radius: var(--x-r-pill);
-  background: radial-gradient(circle, rgba(111, 123, 255, 0.23), rgba(104, 204, 255, 0.11) 42%, transparent 70%);
-  filter: blur(4px);
-  animation: thinking-glow 3.2s ease-in-out infinite;
+@keyframes think-row-sweep {
+  0% { left: -220px; }
+  90%, 100% { left: 100%; }
 }
-.thinking-head {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-.thinking-heading {
-  flex: 1;
-  min-width: 0;
-}
-.thinking-heading h2 {
-  margin: 3px 0 2px;
-  color: var(--x-n12);
-  font-size: 16px;
-  line-height: 1.35;
-  letter-spacing: -.01em;
-}
-.thinking-heading p {
-  margin: 0;
-  color: var(--x-n60);
-  font-size: 12px;
-  line-height: 1.5;
-}
-.thinking-kicker {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--x-n50);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: .08em;
-  text-transform: uppercase;
-}
-.thinking-kicker > i {
-  width: 3px;
-  height: 3px;
-  border-radius: var(--x-r-pill);
-  background: var(--x-n68);
-}
-.thinking-kicker time {
-  color: var(--x-n60);
-  font-variant-numeric: tabular-nums;
-  letter-spacing: .04em;
-}
-/* Phase 71：预计耗时 + 对照预期的进度条（不确定性比时长更劝退） */
-.thinking-expect {
-  color: var(--x-n68);
-  font-weight: 600;
-  letter-spacing: .02em;
-  text-transform: none;
-}
-.thinking-progress {
-  position: relative;
-  height: 4px;
-  margin: 14px 0 2px;
-  border-radius: var(--x-r-pill);
-  background: rgba(124, 122, 160, 0.16);
-  overflow: hidden;
-}
-.thinking-progress-fill {
-  display: block;
-  height: 100%;
-  border-radius: var(--x-r-pill);
-  background: linear-gradient(90deg, var(--x-pine-51), #4aa8ff);
-  transition: width .9s cubic-bezier(.22, .8, .3, 1);
-}
-.thinking-progress.overtime .thinking-progress-fill {
-  background: linear-gradient(90deg, var(--x-warn-74), var(--x-cinnabar-58));
-}
-@media (prefers-reduced-motion: reduce) {
-  .thinking-progress-fill { transition: none; }
-}
-.thinking-orb {
-  position: relative;
-  width: 54px;
-  height: 54px;
-  flex: 0 0 54px;
-  border-radius: var(--x-r-lg);
-  display: grid;
-  place-items: center;
-  background: linear-gradient(145deg, var(--x-pine-96) 4%, var(--x-pine-90) 48%, var(--x-pine-90));
-  box-shadow: 0 10px 24px rgba(91, 91, 190, 0.18), inset 0 1px 2px rgba(255, 255, 255, 0.85);
-  animation: thinking-float 2.8s ease-in-out infinite;
-}
-.thinking-orb-core {
-  position: relative;
-  z-index: 2;
-  display: grid;
-  place-items: center;
-  width: 27px;
-  height: 27px;
-  border-radius: var(--x-r-pill);
-  color: var(--x-n100);
-  font-size: 12px;
-  background: linear-gradient(145deg, var(--x-pine-74), var(--x-pine-51) 54%, var(--x-pine-58));
-  box-shadow: 0 0 0 5px rgba(255, 255, 255, 0.46), 0 5px 14px rgba(84, 79, 184, 0.25);
-  animation: thinking-core 1.9s ease-in-out infinite;
-}
-.thinking-orbit {
-  position: absolute;
-  inset: 6px;
-  border: 1px solid rgba(108, 104, 198, 0.25);
-  border-radius: var(--x-r-pill);
-  animation: thinking-spin 3.2s linear infinite;
-}
-.thinking-orbit.orbit-two {
-  inset: 11px 3px;
-  border-color: rgba(55, 176, 222, 0.2);
-  animation-duration: 4.8s;
-  animation-direction: reverse;
-}
-.thinking-orbit i {
-  position: absolute;
-  width: 5px;
-  height: 5px;
-  top: -3px;
-  left: 50%;
-  border-radius: var(--x-r-pill);
-  background: var(--x-pine-51);
-  box-shadow: 0 0 8px rgba(107, 103, 235, 0.8);
-}
-.thinking-orbit.orbit-two i {
-  top: auto;
-  bottom: -3px;
-  background: var(--x-pine-74);
-}
-.thinking-stop {
+.think-row-icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-right: 6px;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 7px 11px;
-  border: 1px solid rgba(68, 66, 93, 0.12);
-  border-radius: var(--x-r-pill);
-  color: var(--x-n50);
-  background: rgba(255, 255, 255, 0.76);
-  font-size: 12px;
-  transition: color .18s ease, border-color .18s ease, background .18s ease, transform .18s ease;
-}
-.thinking-stop span {
-  width: 7px;
-  height: 7px;
-  border-radius: var(--x-r-sm);
-  background: currentColor;
-}
-.thinking-stop:hover {
-  color: var(--x-cinnabar-51);
-  border-color: rgba(196, 73, 88, 0.24);
-  background: var(--x-cinnabar-96);
-  transform: translateY(-1px);
-}
-.thinking-stages {
-  display: flex;
-  margin: 18px 4px 15px;
-}
-.thinking-stage {
-  position: relative;
-  display: flex;
-  flex: 1 1 0;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  color: var(--x-n68);
-}
-.thinking-stage-mark {
-  position: relative;
-  z-index: 2;
-  display: grid;
-  place-items: center;
-  width: 26px;
-  height: 26px;
-  border: 1px solid var(--x-n88);
-  border-radius: var(--x-r-pill);
-  color: var(--x-n68);
-  background: var(--x-n100);
+  justify-content: center;
   font-size: 11px;
-  font-weight: 750;
-  transition: color .28s ease, border-color .28s ease, background .28s ease, box-shadow .28s ease, transform .28s ease;
+  color: var(--x-pine-40, #2563EB);
 }
-.thinking-stage-label {
-  overflow: hidden;
-  width: 100%;
-  font-size: 11px;
-  line-height: 1.3;
-  text-align: center;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  transition: color .28s ease;
+.think-row[role='status'] .think-row-icon,
+.think-row.running .think-row-icon {
+  animation: think-row-pulse 1.9s ease-in-out infinite;
 }
-.thinking-stage-line {
-  position: absolute;
-  z-index: 0;
-  width: calc(100% - 34px);
-  height: 1px;
-  left: calc(50% + 17px);
-  top: 13px;
-  overflow: hidden;
-  background: var(--x-n88);
+@keyframes think-row-pulse {
+  0%, 100% { opacity: .45; transform: scale(.9); }
+  50% { opacity: 1; transform: scale(1.12); }
 }
-.thinking-stage.done .thinking-stage-mark {
-  color: var(--x-n100);
-  border-color: var(--x-pine-51);
-  background: linear-gradient(145deg, var(--x-pine-74), var(--x-pine-51));
-  box-shadow: 0 4px 12px rgba(101, 99, 210, 0.2);
-}
-.thinking-stage.done .thinking-stage-label,
-.thinking-stage.active .thinking-stage-label {
-  color: var(--x-n41);
-  font-weight: 650;
-}
-.thinking-stage.done .thinking-stage-line {
-  background: linear-gradient(90deg, var(--x-pine-51), var(--x-pine-74));
-}
-.thinking-stage.active .thinking-stage-mark {
-  color: var(--x-pine-44);
-  border-color: rgba(103, 99, 216, 0.42);
-  background: var(--x-pine-96);
-  box-shadow: 0 0 0 5px rgba(108, 103, 225, 0.1);
-  transform: scale(1.06);
-  animation: thinking-step 1.7s ease-in-out infinite;
-}
-.thinking-activity {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  overflow: hidden;
-  min-height: 46px;
-  padding: 9px 12px;
-  border: 1px solid rgba(122, 121, 166, 0.11);
-  border-radius: var(--x-r-lg);
-  background: rgba(255, 255, 255, 0.68);
-  animation: thinking-activity-in .32s ease both;
-}
-.thinking-activity::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(100deg, transparent 20%, rgba(122, 113, 232, 0.07), transparent 78%);
-  transform: translateX(-100%);
-  animation: thinking-activity-scan 2.7s ease-in-out infinite;
-}
-.thinking-activity-spark {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  place-items: center;
-  width: 26px;
-  height: 26px;
-  flex: 0 0 26px;
-  border-radius: var(--x-r-md);
-  color: var(--x-pine-51);
-  background: var(--x-pine-96);
-  font-size: 11px;
-}
-.thinking-activity-copy {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-width: 0;
-}
-.thinking-activity-copy small {
-  color: var(--x-n68);
-  font-size: 11px;
-  line-height: 1.25;
-}
-.thinking-activity-copy strong {
-  overflow: hidden;
-  color: var(--x-n41);
-  font-size: 12px;
-  font-weight: 590;
-  line-height: 1.45;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.thinking-activity-wave {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  height: 18px;
-  padding: 0 3px;
-}
-.thinking-activity-wave i {
-  width: 3px;
-  height: 7px;
-  border-radius: var(--x-r-sm);
-  background: var(--x-pine-58);
-  animation: thinking-wave 1s ease-in-out infinite;
-}
-.thinking-activity-wave i:nth-child(2) { animation-delay: .14s; }
-.thinking-activity-wave i:nth-child(3) { animation-delay: .28s; }
-.thinking-stale {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin: 10px 2px 0;
+.think-row-label {
+  flex: none;
+  font-size: 13px;
+  line-height: 24px;
   color: var(--x-n60);
-  font-size: 11px;
-  line-height: 1.45;
-  animation: thinking-activity-in .28s ease both;
+  white-space: nowrap;
 }
-.thinking-stale-pulse {
-  width: 6px;
-  height: 6px;
-  flex: 0 0 6px;
-  border-radius: var(--x-r-pill);
-  background: var(--x-pine-74);
-  box-shadow: 0 0 0 4px rgba(101, 183, 216, 0.12);
-  animation: thinking-core 1.8s ease-in-out infinite;
+.think-row-sep {
+  flex: none;
+  width: 2px;
+  height: 2px;
+  margin: 0 8px;
+  border-radius: 1px;
+  background: var(--x-n78);
 }
-@keyframes thinking-enter {
-  from { opacity: 0; transform: translateY(8px) scale(.985); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+.think-row-summary {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: var(--x-n60);
+  font-size: 13px;
+  line-height: 24px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-@keyframes thinking-sheen {
-  0%, 58% { transform: translateX(-110%); }
-  82%, 100% { transform: translateX(110%); }
+/* 跟随尾部时不能要省略号：每来一段增量就闪一次「…」，比不跟随还烦。 */
+.think-row-summary[data-follow-end] { text-overflow: clip; }
+/* 展开时摘要让位给正文，用这个占位把 chevron 推到行尾 */
+.think-row-spacer { flex: 1 1 auto; }
+.think-row-chevron {
+  flex: none;
+  margin-left: 8px;
+  color: var(--x-n60);
+  font-size: 13px;
+  line-height: 1;
+  transition: transform .15s ease;
+  transform: rotate(0deg);
 }
-@keyframes thinking-glow {
-  0%, 100% { opacity: .65; transform: scale(.96); }
-  50% { opacity: 1; transform: scale(1.08); }
+.think-row-chevron.open { transform: rotate(90deg); }
+.think-row-line:hover .think-row-chevron { color: var(--x-n41); }
+.think-row-trail {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 2px 0 2px 22px;
+  border-left: 2px solid var(--x-n88);
+  margin-left: 7px;
 }
-@keyframes thinking-float {
-  0%, 100% { transform: translateY(0) rotate(-1deg); }
-  50% { transform: translateY(-3px) rotate(1deg); }
+.think-row-trail li {
+  color: var(--x-n60);
+  font-size: 13px;
+  line-height: 22px;
+  overflow-wrap: anywhere;
 }
-@keyframes thinking-core {
-  0%, 100% { transform: scale(.92); opacity: .82; }
-  50% { transform: scale(1.08); opacity: 1; }
+.think-row-body {
+  padding: 2px 0 2px 14px;
+  margin: 4px 0 6px 7px;
+  border-left: 2px solid var(--x-n88);
+  color: var(--x-n60);
+  font-size: 14px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
-@keyframes thinking-spin { to { transform: rotate(360deg); } }
-@keyframes thinking-step {
-  0%, 100% { box-shadow: 0 0 0 4px rgba(108, 103, 225, 0.08); }
-  50% { box-shadow: 0 0 0 7px rgba(108, 103, 225, 0.14); }
+.think-row-stale {
+  margin: 4px 0 0 22px;
+  color: var(--x-n60);
+  font-size: 12px;
+  line-height: 1.6;
 }
-@keyframes thinking-activity-in {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-@keyframes thinking-activity-scan {
-  0% { transform: translateX(-100%); }
-  55%, 100% { transform: translateX(100%); }
-}
-@keyframes thinking-wave {
-  0%, 100% { height: 5px; opacity: .45; }
-  50% { height: 15px; opacity: 1; }
-}
+.think-row-stale b { color: var(--x-n41); }
+.think-row-stale-more { display: block; margin-top: 2px; }
 
 @media (max-width: 600px) {
-  .thinking-workspace {
-    margin: 12px 0 18px;
-    padding: 15px;
-    border-radius: var(--x-r-lg);
-  }
-  .thinking-head { align-items: flex-start; gap: 11px; }
-  .thinking-orb { width: 46px; height: 46px; flex-basis: 46px; border-radius: var(--x-r-lg); }
-  .thinking-heading h2 { margin-top: 2px; font-size: 14px; }
-  .thinking-heading p { display: none; }
-  .thinking-stop { padding: 6px 8px; }
-  .thinking-stages {
-    flex-direction: column;
-    gap: 8px;
-    margin: 16px 4px 14px;
-  }
-  .thinking-stage {
-    flex: none;
-    flex-direction: row;
-    gap: 9px;
-  }
-  .thinking-stage-mark { width: 22px; height: 22px; flex: 0 0 22px; }
-  .thinking-stage-label { width: auto; font-size: 11px; text-align: left; }
-  .thinking-stage-line {
-    width: 1px;
-    height: 9px;
-    left: 10.5px;
-    top: 22px;
-  }
-  .thinking-stage.waiting:not(.active) { display: none; }
-  .thinking-activity-copy strong { white-space: normal; }
+  /* 窄屏藏掉「模式 · 时间 · 预期」里最不紧要的一段之前，先让摘要有地方待。
+     label 保持可见——它承载的正是 Phase 71 那份「还要多久」的预期。 */
+  .think-row-label { font-size: 12px; }
+  .think-row-summary { font-size: 12px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .thinking-workspace,
-  .thinking-workspace::after,
-  .thinking-glow,
-  .thinking-orb,
-  .thinking-orb-core,
-  .thinking-orbit,
-  .thinking-stage.active .thinking-stage-mark,
-  .thinking-activity,
-  .thinking-activity::before,
-  .thinking-activity-wave i,
-  .thinking-stale,
-  .thinking-stale-pulse {
+  .think-row .think-row-line::after,
+  .think-row .think-row-icon {
     animation: none !important;
   }
 }
+
 
 /* 站点登录 handoff 卡片 */
 .handoff-card {
@@ -4274,32 +3972,8 @@ body { color: var(--tx-ink); background: var(--tx-bg); }
 .view-mobile .sources-hosts,
 .view-mobile .source-host { display: none; }
 .view-mobile .source-title { white-space: normal; line-height: 1.45; }
-.view-mobile .thinking-workspace {
-  margin: 12px 0 16px;
-  padding: 14px 12px;
-  border-radius: var(--x-r-lg);
-}
-.view-mobile .thinking-head {
-  display: grid;
-  grid-template-columns: 46px minmax(0, 1fr);
-  gap: 10px;
-}
-.view-mobile .thinking-orb {
-  width: 46px;
-  height: 46px;
-  flex-basis: 46px;
-  border-radius: var(--x-r-lg);
-}
-.view-mobile .thinking-heading h2 { font-size: 14px; }
-.view-mobile .thinking-heading p { display: none; }
-.view-mobile .thinking-stop {
-  grid-column: 1 / -1;
-  justify-self: end;
-  margin-top: -2px;
-}
-.view-mobile .thinking-stages { margin-inline: -2px; }
-.view-mobile .thinking-stage-label { font-size: 11px; }
-.view-mobile .thinking-activity { padding: 10px; }
+.view-mobile .think-row-label,
+.view-mobile .think-row-summary { font-size: 12px; }
 .view-mobile .composer-wrap {
   flex: 0 0 auto;
   padding: 7px 10px 6px;
@@ -4496,39 +4170,6 @@ body { color: var(--tx-ink); background: var(--tx-bg); }
   .view-mobile .chips { grid-template-columns: 1fr; }
   .view-mobile .chip { min-height: 84px; }
   .view-mobile .chip-copy em { display: none; }
-}
-
-/* Phase 71：思考足迹——长任务等待期给用户可读的推进轨迹 */
-.thinking-trail {
-  margin: 10px 0 0;
-  padding: 0;
-  list-style: none;
-  display: grid;
-  gap: 6px;
-}
-.thinking-trail li {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  font-size: 12px;
-  color: var(--x-n60);
-  line-height: 1.5;
-  animation: thinking-trail-in .35s ease both;
-}
-.thinking-trail li:nth-child(n+3) { opacity: .72; }
-.thinking-trail li:nth-child(n+5) { opacity: .5; }
-.thinking-trail-dot {
-  width: 5px; height: 5px; flex-shrink: 0; border-radius: var(--x-r-pill);
-  background: var(--x-n78); transform: translateY(-2px);
-}
-.thinking-trail-text {
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-@keyframes thinking-trail-in {
-  from { opacity: 0; transform: translateY(-3px); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .thinking-trail li { animation: none; }
 }
 
 /* Phase 71：深度研究的初步回答——先给用户垫场，完整版随后到达 */
