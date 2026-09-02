@@ -2390,15 +2390,21 @@ def run_conversation_turn(
             from app.agent.context_security import wrap_external
 
             _progress(cid, f"正在看你发的 {len(image_ids)} 张图…")
-            desc = vision.describe_user_images(
+            reading = vision.describe_user_images(
                 image_ids, cid=cid, on_note=lambda t: _progress(cid, t))
-            if desc:
+            if reading.text:
                 # 用户上传的图，内容本身仍是**外部的**（可能是别人的聊天截图、网页截图），
                 # 必须走与网页正文同一条防线。
                 user_text = (user_text + "\n\n" if user_text else "") + wrap_external(
-                    desc, source="user_image", title="用户上传的图片")
-            else:
-                _image_unreadable(cid)
+                    reading.text, source="user_image", title="用户上传的图片")
+            # Phase 112：读图说明是**我们自己的话**，必须留在 wrap_external 之外——
+            # 混进去审计时就分不清哪句是模型「看」出来的、哪句是我们说的。
+            # 它也必须真的进 prompt：模型不知道自己看的是一张缩糊了的图，就会把
+            # 缩糊了的价格和日期当成看清楚了的。
+            if reading.note:
+                user_text = (user_text + "\n\n" if user_text else "") + reading.note
+            if reading.any_unread:
+                _image_unreadable(cid, total=reading.total, ok=reading.ok)
         except Exception:  # noqa: BLE001 — 看不了图不该让整轮失败
             logger.warning("user image analysis failed cid=%s", cid, exc_info=True)
             _image_unreadable(cid)
@@ -2449,20 +2455,26 @@ def run_conversation_turn(
         obs.flush()  # 在后台线程冲刷埋点缓冲，不挡请求
 
 
-def _image_unreadable(cid: str) -> None:
-    """图一个字都没读出来时，明说。
+def _image_unreadable(cid: str, *, total: int = 0, ok: int = 0) -> None:
+    """有图没读出来时，明说。**部分失败也算**（Phase 112）。
 
     Phase 111 的教训：此前每一处失败都是 `logger.warning` + 返回空串，对用户完全隐形
     ——而前面刚播过一条「正在看你发的 N 张图…」。**进度说读了、实际没读**，接下来
     的反问在用户眼里就成了「它很蠢」（线上真实反馈）。带 meta 才不会被
     `clear_plain_progress` 清掉。
+
+    Phase 112 把它从「一张都没读出来」放宽到「有图没读出来」：传 3 张读出 1 张时，
+    旧逻辑因为 `desc` 非空而完全不吭声，用户和模型都不知道另外两张丢了——那是同一个
+    漏洞在单图粒度上的复现。文案也随之分两种，因为**部分失败时用户的下一步动作不同**
+    （补发那两张 vs 改用文字描述）。
     """
-    _progress(
-        cid,
-        "这张图我没能读出来（可能是尺寸特殊或内容无法识别）。"
-        "你可以把关键信息用文字说一下，我照样能接着做。",
-        meta={"hint": "image_unreadable"},
-    )
+    if total > 1 and ok:
+        text = (f"你发的 {total} 张图里，我只读出了 {ok} 张，其余没能读出来。"
+                "可以把没读到的那几张单独重发一次，或者把关键信息用文字说一下。")
+    else:
+        text = ("这张图我没能读出来（可能是尺寸特殊或内容无法识别）。"
+                "你可以把关键信息用文字说一下，我照样能接着做。")
+    _progress(cid, text, meta={"hint": "image_unreadable"})
 
 
 def _mark_inflight(cid: str, turn_id: str, user_id: str) -> None:

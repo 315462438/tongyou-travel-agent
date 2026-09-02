@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import dataclass, field
 from typing import Callable
 
 from pydantic import BaseModel, Field
@@ -35,6 +36,36 @@ from pydantic import BaseModel, Field
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class UserImageReading:
+    """读用户上传图的结果：内容与「这批图发生了什么」分开装。
+
+    `text` 是**外部不可信内容**（模型从图里看出来的），调用方必须过 `wrap_external`。
+    `note` 是**我们自己的话**（读成功几张、哪张被缩过、哪张没读出来），必须留在
+    `wrap_external` **之外**——同 Phase 31 对来源编号的处理：审计时要分得清哪句是模型
+    「看」出来的、哪句是我们说的。
+
+    Phase 112：此前这个函数只返回一个字符串，逐图失败就 `continue`。传 3 张读出 1 张时
+    `desc` 非空 → 调用方判定「读到了」，**模型和用户都不知道另外 2 张没读出来**，
+    而前面刚播过「正在看你发的 3 张图…」。那是 Phase 111 ⑤「失败必须可见」在单图粒度上
+    的漏网。
+    """
+
+    text: str = ""
+    note: str = ""
+    total: int = 0
+    ok: int = 0
+    failures: list[str] = field(default_factory=list)
+
+    @property
+    def any_unread(self) -> bool:
+        """有图没读出来（含全失败）。反问要不要走 `_BLIND_ASKS` 看这个，不是看 `text` 空不空。"""
+        return self.ok < self.total
+
+    def __bool__(self) -> bool:  # 让 `if reading:` 仍然表达「有内容可用」
+        return bool(self.text)
 
 
 class NoteImageInfo(BaseModel):
@@ -179,14 +210,14 @@ USER_IMAGE_PROMPT = (
 def describe_user_images(
     image_ids: list[str], *, cid: str | None = None,
     on_note: "Callable[[str], None] | None" = None,
-) -> str:
-    """用户上传的图 → 一段供下游链路使用的文本。任何失败返回空串。
+) -> UserImageReading:
+    """用户上传的图 → 供下游链路使用的文本 + 这批图发生了什么。
 
     `on_note` 是给调用方播进度用的：长截图要切片多读几段，实测能到 40s+，而这段时间里
     界面上只有一句「正在看你发的 N 张图…」——Phase 71 的结论是**静默空隙**才是流失主因，
     所以切了片就说一声。
 
-    ⚠️ 返回值是**外部内容**，调用方必须过 `wrap_external` 再进 prompt。
+    ⚠️ `.text` 是**外部内容**，调用方必须过 `wrap_external` 再进 prompt；`.note` 不能进。
     图片输入绕过了 Phase 69 的全部文本防线——一张图里印着「忽略之前的指令」是直接进
     模型的；schema 约束只挡住「模型只能往固定字段填」，标签包裹才是那道熟悉的防线。
     """
@@ -197,36 +228,59 @@ def describe_user_images(
     from app.llm.client import get_llm
 
     if not enabled() or not image_ids:
-        return ""
+        return UserImageReading()
+    picked = image_ids[: settings.vision_max_user_images]
+    reading = UserImageReading(total=len(picked))
     blocks: list[str] = []
-    for iid in image_ids[: settings.vision_max_user_images]:
+    # 超出单条上限的图**也要说**。前端与后端上限都是 4，正常路径下这里恒为空；
+    # 但接口可以被直接调用，而「多出来的悄悄丢掉」正是本 Phase 在修的那类失效。
+    dropped = len(image_ids) - len(picked)
+    # 逐图三种结局：读到了 / 读不到（带原因）/ 读到了但内容被我们动过（带说明）。
+    # 三种都要能走到模型面前——只记 logger 等于只对我们自己可见。
+    remarks: list[str] = []
+    if dropped > 0:
+        remarks.append(f"另有 {dropped} 张超出单条消息的图片数量上限"
+                       f"（最多 {settings.vision_max_user_images} 张），未读取。")
+    def _failed(idx: int, reason: str) -> None:
+        reading.failures.append(reason)
+        remarks.append(f"第 {idx} 张：{reason}，未读取。")
+
+    for idx, iid in enumerate(picked, start=1):
         try:
             with get_session() as db:
                 row = db.get(TravelUpload, iid)
                 mime = row.mime if row else ""
             if not mime:
+                _failed(idx, "找不到这张图")
                 continue
             path = stored_path(iid, mime)
             if not path.exists():
+                _failed(idx, "图片文件已不存在")
                 continue
             # Phase 111：长截图（实测 1800x25242）超视觉端单边 8192px 上限会被 400 拒。
             # 规格化会按需切片，多片按上下顺序放进**同一次**调用——同一份文档拆成多次
             # 调用会把上下文割裂（第 3 天的「续住」在片 2、酒店名在片 1）。
-            uris = prepare_for_vision(path.read_bytes(), mime)
+            prepared = prepare_for_vision(path.read_bytes(), mime)
             prompt = USER_IMAGE_PROMPT
-            if len(uris) > 1:
-                prompt = USER_IMAGE_TILED_PREFIX.format(n=len(uris)) + prompt
+            if prepared.tiled:
+                prompt = USER_IMAGE_TILED_PREFIX.format(n=len(prepared.uris)) + prompt
                 if on_note is not None:
                     try:
-                        on_note(f"这是张长截图，分 {len(uris)} 段读，稍慢一点…")
+                        on_note(f"这是张长截图，分 {len(prepared.uris)} 段读，稍慢一点…")
                     except Exception:  # noqa: BLE001 — 播进度失败不能影响读图
                         logger.warning("vision progress note failed", exc_info=True)
             info = get_llm().parse_image(
-                prompt, UserImageInfo, images=uris, cid=cid,
+                prompt, UserImageInfo, images=prepared.uris, cid=cid,
             )
         except Exception:  # noqa: BLE001 — 看不了就当没有这张图
             logger.warning("vision user image failed id=%s", iid, exc_info=True)
+            _failed(idx, "读取失败")
             continue
+        # Phase 112：图读到了，但我们对它做过有损处理（缩放/切片）——模型必须知道，
+        # 否则它会把缩糊了的价格和日期当成看清楚了的。
+        for notice in prepared.notices:
+            remarks.append(f"第 {idx} 张：{notice}。")
+        reading.ok += 1
         # ⚠️ 这里的上限是**渲染上限**，不是模型的产出上限。原来写死 15 条，
         # 一张 8 天行程截图抽出来的逐日安排会被砍在 Day 2——用户问「路线合不合适」，
         # 而下游只看得到前两天。跟切片丢尾部是同一类静默失效（Phase 111）。
@@ -236,12 +290,31 @@ def describe_user_images(
                             ("价格", info.prices), ("其他文字", info.texts)):
             uniq = list(dict.fromkeys(v.strip() for v in vals if (v or "").strip()))
             if uniq:
-                if len(uniq) > cap:  # 真砍了就说一声，别让下游以为这就是全部
+                if len(uniq) > cap:
+                    # 砍了就把「砍了」写进产出。原来这句注释写着「就说一声」，
+                    # 而实际只对 logger 说了——下游仍然以为看到的是全部。
                     logger.info("用户图 %s 的「%s」有 %d 条，超过渲染上限 %d",
                                 iid, label, len(uniq), cap)
+                    remarks.append(
+                        f"第 {idx} 张的「{label}」共 {len(uniq)} 条，此处只列前 {cap} 条。")
                 lines.append(label + "：" + "；".join(uniq[:cap]))
         blocks.append("\n".join(lines))
-    return "\n\n---\n\n".join(blocks)
+    reading.text = "\n\n---\n\n".join(blocks)
+    reading.note = _reading_note(reading, remarks)
+    return reading
+
+
+def _reading_note(reading: UserImageReading, remarks: list[str]) -> str:
+    """把逐图结局写成一段给模型看的说明。全都正常读到时返回空串。
+
+    **空串这条很重要**：每张图都贴一句「一切正常」会让真正的降级淹没在噪声里，
+    也会白占 prompt。只有事情不对劲时才说话。
+    """
+    if not reading.total or (reading.ok == reading.total and not remarks):
+        return ""
+    head = f"【读图说明】共 {reading.total} 张，成功读取 {reading.ok} 张。"
+    return "\n".join([head, *remarks])
+
 
 
 def judge_page_image(image_bytes: bytes, mime: str = "image/jpeg",
@@ -261,9 +334,12 @@ def judge_page_image(image_bytes: bytes, mime: str = "image/jpeg",
 
         # 整页截图同样可能超高（Phase 111）。这里只判页面类型，看第一片就够——
         # 登录墙/验证码/报错都出现在首屏，不需要把整页都送过去。
-        uris = prepare_for_vision(image_bytes, mime)
+        # 这条路不带 notices：判的是「这是不是登录墙」，缩放与否不影响那个判断，
+        # 而它的产出只喂给我们自己的规则、不进对话上下文。
+        prepared = prepare_for_vision(image_bytes, mime)
         return get_llm().parse_image(
-            PAGE_JUDGE_PROMPT, PageJudgement, images=uris[:1], cid=cid, max_tokens=1200,
+            PAGE_JUDGE_PROMPT, PageJudgement, images=prepared.uris[:1],
+            cid=cid, max_tokens=1200,
         )
     except Exception:  # noqa: BLE001
         logger.warning("vision page judge failed", exc_info=True)

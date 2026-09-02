@@ -68,7 +68,8 @@ def test_in_spec_image_is_returned_byte_identical():
     import base64
 
     raw = _png(800, 600)
-    uris = prepare_for_vision(raw, "image/png")
+    prepared = prepare_for_vision(raw, "image/png")
+    uris = prepared.uris
     assert len(uris) == 1
     head, b64 = uris[0].split(",", 1)
     assert head == "data:image/png;base64"
@@ -79,7 +80,8 @@ def test_tall_screenshot_is_split(monkeypatch):
     monkeypatch.setattr(settings, "vision_max_image_side", 500)
     monkeypatch.setattr(settings, "vision_max_tiles", 8)
     monkeypatch.setattr(settings, "vision_tile_overlap_px", 20)
-    uris = prepare_for_vision(_png(300, 2000), "image/png")
+    prepared = prepare_for_vision(_png(300, 2000), "image/png")
+    uris = prepared.uris
     assert len(uris) > 1
     for uri in uris:
         head, im = _decode(uri)
@@ -92,7 +94,8 @@ def test_every_tile_is_within_the_limit_even_when_capped(monkeypatch):
     monkeypatch.setattr(settings, "vision_max_image_side", 500)
     monkeypatch.setattr(settings, "vision_max_tiles", 2)
     monkeypatch.setattr(settings, "vision_tile_overlap_px", 20)
-    uris = prepare_for_vision(_png(300, 9000), "image/png")
+    prepared = prepare_for_vision(_png(300, 9000), "image/png")
+    uris = prepared.uris
     assert len(uris) <= 2
     for uri in uris:
         _head, im = _decode(uri)
@@ -116,7 +119,8 @@ def test_capped_tiling_shrinks_instead_of_dropping_the_tail(monkeypatch):
     buf = io.BytesIO()
     im.save(buf, format="PNG")
 
-    uris = prepare_for_vision(buf.getvalue(), "image/png")
+    prepared = prepare_for_vision(buf.getvalue(), "image/png")
+    uris = prepared.uris
     _head, last = _decode(uris[-1])
     bottom = last.crop((0, last.size[1] - 5, last.size[0], last.size[1])).convert("L")
     assert min(bottom.tobytes()) < 100, "最后一片不是原图底部——尾部被静默丢掉了"
@@ -125,7 +129,8 @@ def test_capped_tiling_shrinks_instead_of_dropping_the_tail(monkeypatch):
 def test_wide_image_is_scaled_not_sliced(monkeypatch):
     """横向没有切片的语义：一行字被竖着切开更难读，等比缩。"""
     monkeypatch.setattr(settings, "vision_max_image_side", 500)
-    uris = prepare_for_vision(_png(2000, 400), "image/png")
+    prepared = prepare_for_vision(_png(2000, 400), "image/png")
+    uris = prepared.uris
     assert len(uris) == 1
     _head, im = _decode(uris[0])
     assert im.size[0] <= 500
@@ -134,7 +139,8 @@ def test_wide_image_is_scaled_not_sliced(monkeypatch):
 
 def test_undecodable_bytes_fall_back_to_passthrough():
     """退化方向必须是「和改造前一样」，而不是凭空少一张图。"""
-    uris = prepare_for_vision(b"not an image at all", "image/png")
+    prepared = prepare_for_vision(b"not an image at all", "image/png")
+    uris = prepared.uris
     assert len(uris) == 1
     assert uris[0].startswith("data:image/png;base64,")
 
@@ -151,7 +157,8 @@ def test_missing_pillow_falls_back_to_passthrough(monkeypatch):
 
     raw = _png(300, 40000)          # 先造好图，再断掉 PIL——helper 自己也要用它
     monkeypatch.setattr(builtins, "__import__", fake)
-    uris = prepare_for_vision(raw, "image/png")
+    prepared = prepare_for_vision(raw, "image/png")
+    uris = prepared.uris
     assert len(uris) == 1
 
 
@@ -160,3 +167,69 @@ def test_max_side_default_leaves_headroom_under_the_measured_limit():
     from app.config import Settings
 
     assert Settings().vision_max_image_side < 8192
+
+
+# ---------- 降级说明（Phase 112） ----------
+# codex 的 `ImageResizeNotice` 那条纪律：链路对输入做了有损处理，处理结果必须自带说明。
+# Phase 111 ⑤ 只做到「对用户可见」，这组用例钉的是「对模型可见」的那一半。
+
+def test_in_spec_image_carries_no_notice():
+    """**空 notices 这条要靠得住**：每张图都贴一句说明，真正的降级就淹没了。"""
+    prepared = prepare_for_vision(_png(800, 600), "image/png")
+    assert prepared.notices == []
+    assert prepared.degraded is False
+    assert prepared.tiled is False
+
+
+def test_scaled_image_says_so_with_both_sizes(monkeypatch):
+    """模型要判断的是「字还清不清楚」——只说「被缩过」没用，必须给出前后尺寸。"""
+    monkeypatch.setattr(settings, "vision_max_image_side", 500)
+    prepared = prepare_for_vision(_png(2000, 400), "image/png")
+    assert prepared.degraded
+    joined = " ".join(prepared.notices)
+    assert "2000×400" in joined, "没说原始尺寸"
+    assert "500×100" in joined, "没说处理后尺寸"
+
+
+def test_capped_tiling_reports_the_final_size_not_the_intermediate(monkeypatch):
+    """先缩宽、再缩高时说明只报**最终**尺寸——中间经过几次 resize 与模型无关。"""
+    monkeypatch.setattr(settings, "vision_max_image_side", 500)
+    monkeypatch.setattr(settings, "vision_max_tiles", 2)
+    monkeypatch.setattr(settings, "vision_tile_overlap_px", 20)
+    prepared = prepare_for_vision(_png(2000, 40000), "image/png")
+    scale_notes = [n for n in prepared.notices if "缩放" in n]
+    assert len(scale_notes) == 1, f"缩放说明应只有一条流水账之外的结论：{prepared.notices}"
+    assert "2000×40000" in scale_notes[0]
+
+
+def test_tiling_tells_the_model_the_parts_are_one_image(monkeypatch):
+    """多片必须说明是同一张图的上下段，否则模型当成几张互不相干的图。"""
+    monkeypatch.setattr(settings, "vision_max_image_side", 500)
+    monkeypatch.setattr(settings, "vision_max_tiles", 8)
+    monkeypatch.setattr(settings, "vision_tile_overlap_px", 20)
+    prepared = prepare_for_vision(_png(300, 2000), "image/png")
+    assert prepared.tiled
+    assert any("同一张长图" in n for n in prepared.notices)
+
+
+def test_fallback_paths_admit_they_may_fail():
+    """解码失败仍原样送（退化方向不变），但**要留下一条说明**——
+    前面播过「正在看你发的图」，就不能装作无事发生（Phase 111 ⑤）。"""
+    prepared = prepare_for_vision(b"not an image at all", "image/png")
+    assert prepared.uris and prepared.degraded
+
+
+def test_missing_pillow_admits_it_did_not_normalize(monkeypatch):
+    import builtins
+
+    real = builtins.__import__
+
+    def fake(name, *a, **kw):
+        if name == "PIL" or name.startswith("PIL."):
+            raise ImportError("no PIL")
+        return real(name, *a, **kw)
+
+    raw = _png(300, 40000)
+    monkeypatch.setattr(builtins, "__import__", fake)
+    prepared = prepare_for_vision(raw, "image/png")
+    assert prepared.degraded, "没装 Pillow 时超大图必然读不出来，不能静默"

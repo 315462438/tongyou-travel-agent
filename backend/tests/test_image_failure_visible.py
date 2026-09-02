@@ -36,16 +36,62 @@ def _calls(node) -> set[str]:
     return out
 
 
-def test_empty_description_tells_the_user():
-    """`desc` 为空 = 图一个字没读出来，必须走可见提示。"""
+def test_any_unread_image_tells_the_user():
+    """**有图没读出来**就必须走可见提示——不是「一张都没读出来」才提示。
+
+    Phase 112 改的正是这条判据。旧代码写的是 `if desc: ... else: _image_unreadable()`，
+    于是传 3 张读出 1 张时 `desc` 非空、走了 if 分支，完全不吭声——而前面刚播过
+    「正在看你发的 3 张图…」。判据必须来自**逐图统计**（`any_unread`），
+    不能来自「产出文本空不空」这个形状。
+    """
     fn = _turn_fn()
     for node in ast.walk(fn):
-        if (isinstance(node, ast.If) and isinstance(node.test, ast.Name)
-                and node.test.id == "desc"):
-            assert node.orelse, "desc 为空时什么都不做——失败对用户完全隐形"
-            assert "_image_unreadable" in _calls(ast.Module(body=node.orelse, type_ignores=[]))
-            return
-    raise AssertionError("没找到 `if desc:` 分支")
+        if not (isinstance(node, ast.If) and isinstance(node.test, ast.Attribute)):
+            continue
+        if node.test.attr != "any_unread":
+            continue
+        assert "_image_unreadable" in _calls(ast.Module(body=node.body, type_ignores=[])), \
+            "any_unread 分支没有通知用户"
+        return
+    raise AssertionError("没找到 `if <reading>.any_unread:` 分支——"
+                         "判据又回到了「产出空不空」的形状上")
+
+
+def test_reading_note_reaches_the_prompt():
+    """读图说明必须真的并进 `user_text`，否则它只是个没人读的字段。
+
+    模型不知道自己看的是一张缩糊了的图，就会把缩糊了的价格和日期当成看清楚了的。
+    """
+    fn = _turn_fn()
+    for node in ast.walk(fn):
+        if not (isinstance(node, ast.If) and isinstance(node.test, ast.Attribute)):
+            continue
+        if node.test.attr != "note":
+            continue
+        targets = [t.id for n in ast.walk(ast.Module(body=node.body, type_ignores=[]))
+                   if isinstance(n, ast.Assign)
+                   for t in n.targets if isinstance(t, ast.Name)]
+        assert "user_text" in targets, "note 分支没有把说明并进 user_text"
+        return
+    raise AssertionError("没找到 `if <reading>.note:` 分支")
+
+
+def test_reading_note_stays_outside_wrap_external():
+    """说明是**我们自己的话**，不能包进 `wrap_external`。
+
+    包进去审计时就分不清哪句是模型「看」出来的、哪句是我们说的
+    （同 Phase 31 对来源编号的处理）。
+    """
+    fn = _turn_fn()
+    for node in ast.walk(fn):
+        if not (isinstance(node, ast.If) and isinstance(node.test, ast.Attribute)):
+            continue
+        if node.test.attr != "note":
+            continue
+        assert "wrap_external" not in _calls(ast.Module(body=node.body, type_ignores=[])), \
+            "读图说明被包进了 wrap_external"
+        return
+    raise AssertionError("没找到 `if <reading>.note:` 分支")
 
 
 def test_vision_exception_also_tells_the_user():

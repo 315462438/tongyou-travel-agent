@@ -147,7 +147,7 @@ def test_disabled_returns_empty(monkeypatch):
     assert vision.enabled() is False
     assert asyncio.run(vision.extract_note_images(["u"])) == ""
     assert vision.judge_page_image(b"x") is None
-    assert vision.describe_user_images(["id"]) == ""
+    assert vision.describe_user_images(["id"]).text == ""
 
 
 def test_xhs_switch_independent(monkeypatch):
@@ -270,7 +270,7 @@ def test_tall_user_image_is_sent_as_multiple_tiles_in_one_call(monkeypatch, tmp_
     monkeypatch.setattr("app.llm.client.get_llm", lambda: _LLM())
     _fake_upload(monkeypatch, tmp_path, _tall_png(300, 4000))
 
-    out = vision.describe_user_images(["id1"])
+    out = vision.describe_user_images(["id1"]).text
     assert "行程" in out
     assert seen["calls"] == 1, "切片必须在一次调用里，不能一片一次"
     assert seen["n"] > 1, "长截图没被切片"
@@ -377,7 +377,7 @@ def test_render_cap_does_not_truncate_an_eight_day_itinerary(monkeypatch, tmp_pa
     monkeypatch.setattr("app.llm.client.get_llm", lambda: _LLM())
     _fake_upload(monkeypatch, tmp_path, _tall_png(300, 400))
 
-    out = vision.describe_user_images(["id1"])
+    out = vision.describe_user_images(["id1"]).text
     for d in days:
         assert d in out, f"{d} 被渲染上限吃掉了"
 
@@ -386,3 +386,106 @@ def test_render_cap_is_configurable_and_generous():
     from app.config import Settings
 
     assert Settings().vision_user_text_items >= 40
+
+
+# ---------- Phase 112：读图说明必须走到模型面前 ----------
+
+def _llm_ok(**kw):
+    class _LLM:
+        def parse_image(self, prompt, schema, *, images, **_k):
+            return vision.UserImageInfo(kind="itinerary", summary="行程", **kw)
+    return _LLM()
+
+
+def test_all_good_says_nothing(monkeypatch, tmp_path):
+    """**没事就别说话。** 每张图都贴一句「一切正常」会让真正的降级淹没在噪声里。"""
+    pytest.importorskip("PIL.Image")
+    monkeypatch.setattr(settings, "vision_enabled", True)
+    monkeypatch.setattr("app.llm.client.get_llm", _llm_ok)
+    _fake_upload(monkeypatch, tmp_path, _tall_png(300, 400))
+
+    reading = vision.describe_user_images(["id1"])
+    assert reading.note == ""
+    assert reading.any_unread is False
+    assert reading.ok == reading.total == 1
+
+
+def test_partial_failure_is_counted_and_explained(monkeypatch, tmp_path):
+    """3 张读出 1 张：旧代码因为产出非空而完全不吭声（Phase 112 修的就是这个）。"""
+    pytest.importorskip("PIL.Image")
+    calls = {"n": 0}
+
+    class _LLM:
+        def parse_image(self, prompt, schema, *, images, **_k):
+            calls["n"] += 1
+            if calls["n"] > 1:
+                raise RuntimeError("400 unsupported image")
+            return vision.UserImageInfo(kind="itinerary", summary="行程")
+
+    monkeypatch.setattr(settings, "vision_enabled", True)
+    monkeypatch.setattr("app.llm.client.get_llm", lambda: _LLM())
+    _fake_upload(monkeypatch, tmp_path, _tall_png(300, 400))
+
+    reading = vision.describe_user_images(["a", "b", "c"])
+    assert reading.total == 3 and reading.ok == 1
+    assert reading.any_unread is True
+    assert bool(reading), "读到了一张，产出仍然可用"
+    assert "共 3 张，成功读取 1 张" in reading.note
+    assert reading.note.count("未读取") == 2, "没有逐条说明哪几张丢了"
+
+
+def test_resize_notice_reaches_the_reading_note(monkeypatch, tmp_path):
+    """缩过的图必须在说明里带上前后尺寸——这是模型判断「字还清不清楚」的唯一依据。"""
+    pytest.importorskip("PIL.Image")
+    monkeypatch.setattr(settings, "vision_enabled", True)
+    monkeypatch.setattr(settings, "vision_max_image_side", 500)
+    monkeypatch.setattr(settings, "vision_max_tiles", 2)
+    monkeypatch.setattr("app.llm.client.get_llm", _llm_ok)
+    _fake_upload(monkeypatch, tmp_path, _tall_png(300, 40000))
+
+    reading = vision.describe_user_images(["id1"])
+    assert "300×40000" in reading.note, "没说原始尺寸"
+    assert "细小文字可能不准确" in reading.note
+
+
+def test_render_cap_writes_the_truncation_into_the_note(monkeypatch, tmp_path):
+    """砍了就把「砍了」写进产出。
+
+    原来那行注释写着「真砍了就说一声」，而实际只对 logger 说了——
+    下游仍然以为看到的是全部（Phase 111 已经修过一次上限，这次修的是「不说」）。
+    """
+    pytest.importorskip("PIL.Image")
+    monkeypatch.setattr(settings, "vision_enabled", True)
+    monkeypatch.setattr(settings, "vision_user_text_items", 2)
+    monkeypatch.setattr("app.llm.client.get_llm",
+                        lambda: _llm_ok(places=["甲", "乙", "丙", "丁"]))
+    _fake_upload(monkeypatch, tmp_path, _tall_png(300, 400))
+
+    reading = vision.describe_user_images(["id1"])
+    assert "共 4 条，此处只列前 2 条" in reading.note
+
+
+def test_note_is_not_the_content(monkeypatch, tmp_path):
+    """说明与内容必须分开装：一个要过 wrap_external，一个绝不能过。"""
+    pytest.importorskip("PIL.Image")
+    monkeypatch.setattr(settings, "vision_enabled", True)
+    monkeypatch.setattr(settings, "vision_max_image_side", 500)
+    monkeypatch.setattr("app.llm.client.get_llm", _llm_ok)
+    _fake_upload(monkeypatch, tmp_path, _tall_png(2000, 400))
+
+    reading = vision.describe_user_images(["id1"])
+    assert "【读图说明】" in reading.note
+    assert "【读图说明】" not in reading.text
+
+
+def test_images_beyond_the_per_message_cap_are_reported(monkeypatch, tmp_path):
+    """超出单条上限的图**也要说**——「多出来的悄悄丢掉」正是本 Phase 在修的失效。"""
+    pytest.importorskip("PIL.Image")
+    monkeypatch.setattr(settings, "vision_enabled", True)
+    monkeypatch.setattr(settings, "vision_max_user_images", 2)
+    monkeypatch.setattr("app.llm.client.get_llm", _llm_ok)
+    _fake_upload(monkeypatch, tmp_path, _tall_png(300, 400))
+
+    reading = vision.describe_user_images(["a", "b", "c", "d"])
+    assert reading.ok == 2
+    assert "另有 2 张超出单条消息的图片数量上限" in reading.note
