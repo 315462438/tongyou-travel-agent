@@ -59,13 +59,13 @@ def _reply(db, n: int, used=None, **meta):
 
 def test_absent_when_no_prior_reply(db):
     """Absent：本会话还没有过终稿回复 → 历史里没有与记忆冲突的表述。"""
-    from app.agent.memory import previous_injected_memories
+    from app.agent.memory import InjectionHistory, previous_injected_memories
 
     assert previous_injected_memories("c1") is None
 
 
 def test_known_when_prior_reply_recorded_keys(db):
-    from app.agent.memory import previous_injected_memories
+    from app.agent.memory import InjectionHistory, previous_injected_memories
 
     _reply(db, 1, used=[{"kind": "memory", "key": "忌口", "content": "吃素"}])
     assert previous_injected_memories("c1").shown == {"忌口": {"吃素"}}
@@ -89,7 +89,7 @@ def test_unknown_when_old_format_lacks_key(db):
 
 def test_poster_and_budget_messages_are_skipped(db):
     """海报/预算面板不是一次「读记忆并作答」的回合，不能被当成上一轮。"""
-    from app.agent.memory import previous_injected_memories
+    from app.agent.memory import InjectionHistory, previous_injected_memories
 
     _reply(db, 1, used=[{"kind": "memory", "key": "忌口", "content": "吃素"}])
     _reply(db, 2, poster={"title": "x"})
@@ -98,9 +98,41 @@ def test_poster_and_budget_messages_are_skipped(db):
     assert previous_injected_memories("c1").shown == {"忌口": {"吃素"}}
 
 
+def test_quick_take_does_not_reset_the_state_to_unknown(db):
+    """真实 guide 轮的消息序列：上一轮终稿 → 本轮流式占位 → 本轮快答。
+
+    2026-09-02 的线上 bug：图的拓扑是 parse→quick_take→collect→generate，
+    `emit_guide_quick_take` 写的 meta 只有 `{"preliminary": True}`、没有 memories_used，
+    于是终稿那次回头看，最近一条"真回合"是本轮自己的快答 → 判 Unknown。
+    结果精确 diff 只到得了本轮最早的两个 prompt，**写攻略正文那次永远拿不到**，
+    而 `guide_quick_take` 默认开着——线上每个 guide 轮都是这样，且不报错。
+    """
+    from app.agent.memory import InjectionHistory, previous_injected_memories
+
+    _reply(db, 1, [{"kind": "memory", "key": "忌口", "content": "素食"}])
+    assert isinstance(previous_injected_memories("c1"), InjectionHistory)
+
+    _reply(db, 2, streaming=True)     # 本轮流式占位（Phase 71 顺序不变式）
+    _reply(db, 3, preliminary=True)   # 本轮快答
+    got = previous_injected_memories("c1")
+    assert isinstance(got, InjectionHistory), "本轮的快答把状态打回了 Unknown"
+    assert got.shown == {"忌口": {"素食"}}, "比对基准应该是上一轮终稿，不是本轮快答"
+
+
+def test_a_turn_that_only_produced_a_quick_take_is_not_a_baseline(db):
+    """快答之后整轮失败（如上游 503）时，下一轮的基准仍是上一次真正的终稿。"""
+    from app.agent.memory import InjectionHistory, previous_injected_memories
+
+    _reply(db, 1, [{"kind": "memory", "key": "口味", "content": "爱吃辣"}])
+    _reply(db, 2, preliminary=True)   # 这一轮只出了快答就挂了
+    got = previous_injected_memories("c1")
+    assert isinstance(got, InjectionHistory)
+    assert got.shown == {"口味": {"爱吃辣"}}
+
+
 def test_empty_memories_used_is_known_not_unknown(db):
     """上一轮确实一条记忆都没注入 → Known(空)，不该退化成 Unknown。"""
-    from app.agent.memory import previous_injected_memories
+    from app.agent.memory import InjectionHistory, previous_injected_memories
 
     _reply(db, 1, used=[{"kind": "past_chat", "title": "t", "content": "c"}])
     assert previous_injected_memories("c1").shown == {}
@@ -207,7 +239,7 @@ def test_change_is_caught_even_if_key_was_filtered_out_last_turn():
 
 def test_aggregates_shown_values_across_the_whole_conversation(db):
     """previous_injected_memories 聚合全会话，不是只读最近一条。"""
-    from app.agent.memory import previous_injected_memories
+    from app.agent.memory import InjectionHistory, previous_injected_memories
 
     _reply(db, 1, used=[{"kind": "memory", "key": "忌口", "content": "吃素"},
                         {"kind": "memory", "key": "预算", "content": "3000"}])
@@ -218,7 +250,7 @@ def test_aggregates_shown_values_across_the_whole_conversation(db):
 
 def test_shown_keeps_every_historical_value_not_just_the_latest(db):
     """同一个 key 展示过多个值时全都要留——历史里可能有基于任意一个值写下的内容。"""
-    from app.agent.memory import previous_injected_memories
+    from app.agent.memory import InjectionHistory, previous_injected_memories
 
     _reply(db, 1, used=[{"kind": "memory", "key": "预算", "content": "3000"}])
     _reply(db, 2, used=[{"kind": "memory", "key": "预算", "content": "8000"}])
@@ -227,7 +259,7 @@ def test_shown_keeps_every_historical_value_not_just_the_latest(db):
 
 def test_older_legacy_message_does_not_pin_conversation_to_unknown(db):
     """只用**最近**那条判 Unknown：一条老消息不该让整个会话永远发兜底重申。"""
-    from app.agent.memory import previous_injected_memories
+    from app.agent.memory import InjectionHistory, previous_injected_memories
 
     _reply(db, 1)  # 老消息，没有 memories_used
     _reply(db, 2, used=[{"kind": "memory", "key": "忌口", "content": "吃素"}])
@@ -286,7 +318,7 @@ def test_readded_memory_after_removal_is_announced():
 
 def test_announced_ledger_accumulates_across_turns(db):
     """announced 由旧到新回放合并，新的覆盖旧的。"""
-    from app.agent.memory import previous_injected_memories
+    from app.agent.memory import InjectionHistory, previous_injected_memories
 
     _reply(db, 1, used=[{"kind": "memory", "key": "预算", "content": "3000"}],
            memories_changed={"预算": "3000"})

@@ -777,6 +777,19 @@ World State（系统上下文变成追加进历史的增量消息、RFC 7386 mer
 以为用户撤回了偏好，那是**主动误导，比不通知更糟**；**Unknown 往「通知」这边倒**
 （代价不对称，同 Phase 104：多说一句几十 token，漏说则模型继续按已被推翻的约束作答）。
 读失败**保持静默**而非发 Unknown 那句——DB 抖动是基础设施问题，不是「拿不准说过什么」。
+⚠️ **2026-09-02 订正**：这套机制在 guide 链路上**从上线起就跑在退化档位**且不报错——
+`previous_injected_memories` 过滤了流式占位/海报/预算面板，**漏了快答**；而
+`emit_guide_quick_take` 写的 meta 只有 `{"preliminary": True}`、没有 `memories_used`，
+拓扑又是 parse→quick_take→collect→generate，于是终稿那次回头看，最近一条「真回合」
+是**本轮自己刚写的快答** → 判 Unknown。三个后果同时发生：精确 diff 只到得了 parse 与
+quick_take 的 prompt（最不需要它的两处）、**写正文那次永远只有泛泛那句**、Unknown 的
+`announced` 是 `{}` 导致 `meta.memories_changed` 从没被写过（账本恒空 → 泛泛那句每轮都发）。
+`guide_quick_take` 默认 True，线上每轮如此。修法是把 `preliminary` 并入过滤名单。
+**一般化：凡「读回自己写过的东西」判定历史状态，都要问本轮自己的中间产物会不会混进去**
+——它还会自己跟自己比（同一轮 gather_context 输入相同，diff 必然为空），所以不是多发噪声，
+是**该发的那句永远发不出去**。原有 25 条用例全是「上一轮终稿→本轮」的干净序列，
+没有一条在中间插快答——**测试输入比生产干净，是这类失效最常见的藏身处**（同 Phase 111）。
+坑见 `docs/pitfalls/本轮的中间产物会污染上一轮的判定.md`。
 计划 `docs/task_plans/移除历史滑动窗口-2026-08-22.md`、
 `docs/task_plans/记忆变更三态通知-2026-08-22.md`，用例
 `docs/test_cases/移除历史滑动窗口-验收用例.md`、`docs/test_cases/记忆变更三态通知-验收用例.md`

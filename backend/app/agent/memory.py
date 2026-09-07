@@ -824,10 +824,25 @@ def previous_injected_memories(cid: str):
             .limit(_HISTORY_SCAN_LIMIT)
         ).scalars().all()
 
-    # 流式占位/海报/预算面板不是一次「模型读过记忆并作答」的回合
+    # 流式占位/海报/预算面板/快答不是一次「模型读过记忆并作答**并记下注入了什么**」的回合。
+    #
+    # ⚠️ `preliminary`（快答）这一条是 2026-09-02 补的，漏它让整个机制在 guide 链路上
+    # 静默降级了：图的拓扑是 parse→quick_take→collect→generate，而 `emit_guide_quick_take`
+    # 写的 meta 只有 `{"preliminary": True}`、**没有 memories_used**。于是终稿那次
+    # `gather_context` 回头看，最近一条"真回合"是本轮自己的快答 → 读不到 memories_used
+    # → 判 `_UNKNOWN`。后果是三件事一起发生，且都不报错：
+    #   ① 精确 diff 只到得了 parse 与 quick_take 的 prompt（本轮最早、最不需要它的两处），
+    #      **写攻略正文那次永远只拿到泛泛的「以当前这份为准」**；
+    #   ② Unknown 分支返回的 `announced` 是 `{}`（假值），`meta.memories_changed` 于是
+    #      在 guide 路径上从来没被写进去过，「只说一遍」的账本恒空 → 那句泛泛的每轮都发；
+    #   ③ `guide_quick_take` 默认 True，所以线上每个 guide 轮都是这样。
+    #
+    # 快答是**本轮内**的产物，不是「早前告诉过模型什么」——拿它当比对基准还会自己跟自己比
+    # （同一轮的 gather_context 输入完全相同），diff 必然为空，等于把变更信息整个吃掉。
     turns = [
         (m, meta) for m, meta in ((m, _parse_meta(m)) for m in rows)
-        if not (meta.get("streaming") or meta.get("poster") or meta.get("budget"))
+        if not (meta.get("streaming") or meta.get("poster") or meta.get("budget")
+                or meta.get("preliminary"))
     ]
     if not turns:
         return None  # Absent
