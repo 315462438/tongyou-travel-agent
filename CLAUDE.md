@@ -112,7 +112,8 @@ ssh "$DEPLOY_HOST" 'sudo journalctl -u travel-backend -n 50 --no-pager'
 - Backend: Python 3.12 venv at `backend/.venv`（本机 `python3.12`；PyCharm 里显示的 3.9 已过时）
 - Frontend: Node 23 + Vite + React-TS（`frontend/`）。构建期环境变量见
   `frontend/.env.example`，真值放 `frontend/.env.local`（`*.local` 已 gitignore）
-- LLM: DeepSeek（OpenAI 兼容接口），key 在 `backend/.env`；模型分层 v4-pro（规划/抽取）+ v4-flash（分类）
+- LLM: DeepSeek（OpenAI 兼容接口），key 在 `backend/.env`；全部用 `deepseek-flash`（V4.1 Flash，规划/抽取/分类/视觉，2026-09-14 起；按调用定思考档位）。
+  `deepseek-v4-flash`/`-vision-exp` 已下线、只是临时转发别名；V4.1 Pro 上线前 `deepseek-v4-pro` 也被路由到 V4.1 Flash
 - DB: 远程 PostgreSQL 16（部署在上面的服务器），**必须走 SSH 隧道**，不能公网直连
   （原因见 `docs/pitfalls/远程PostgreSQL公网直连被重置.md`）
 
@@ -438,6 +439,23 @@ React Bits `Aurora`（低透明、pointer-events none、低动态偏好不挂载
 反馈切换只更新一条，取消反馈或删除目标时同步撤销；所有读写按当前用户隔离。点击好友通知直达
 好友页，接力通知直达对应目的地；未读数每 30 秒及窗口聚焦时刷新。坑见
 `docs/pitfalls/事件通知必须与业务同事务且按事件去重.md`。
+
+**Phase 113 — 切换 DeepSeek V4.1 + 视觉切片按像素预算重校准**（读 `deepseek-harness` 上游
+09-09~09-10 后的改造）：① 2026-09-10 V4.1 Flash 发布（正式名 `deepseek-flash`，原生多模态），
+**规划/抽取/分类/视觉全部改用 `deepseek-flash`**——开放平台公告 V4.1 Flash 全面超过 V4 Pro，且
+V4.1 Pro 上线前 v4-pro 请求会被全部路由到 V4.1 Flash。⚠️ **遗留**：`extract_eval` 对照 flash 虽 5/5 通过、
+快 10–20 倍，但开销条目在 3 篇里只剩 1/3–1/2（14→5、13→5、32→13）——检查项不数开销召回所以没亮红，
+而漏项会让预算面板总额偏低且不报错（Phase 67 逐项求和），待补检查项后单独治。
+② **转发让线上读图静默退化**：V4.1 单图上限 1024 token（上游 a64dc3a690，官方计算器 v41），
+8192px 只是「收不收」的闸门、不是「读不读得清」——Phase 111 的 8000 高 × 4 片在 V4.1 上读
+1800×25242 长图**按行对齐 0%**，行数全对、不报错。改为 `tile_side = min(8000, vision_max_tile_pixels
+(4MP) // 宽)`、`vision_max_tiles` 4→16；线上真实代码路径复验 12 片 100%、10s。
+**教训：模型名被转发 = 模型换了，按模型实测出来的参数都要重测**；测准确率别用有规律的数据
+（等差价格测出「全对」是模型推出来的）。**刻意不搬**：in-history 系统提示替换（投影架构 +
+Phase 58 已末置易变项）、模型切换通知（无会话内换模型）。计划
+`docs/task_plans/切换DeepSeek-V4.1与视觉切片重校准-2026-09-14.md`，坑
+`docs/pitfalls/视觉模型换代后切片尺寸静默失效.md`，用例
+`docs/test_cases/切换DeepSeek-V4.1与视觉切片重校准-验收用例.md`（`test_image_prep.py` 22 passed）。
 
 **Phase 112 — 降级必须走到模型面前 + 思考区改一行**（复核 `openai/codex` 上游后的两处改造）：
 ① **图片降级此前只对用户可见、对模型不可见**。Phase 111 ⑤ 立的「失败必须可见」做了一半：

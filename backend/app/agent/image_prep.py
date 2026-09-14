@@ -20,6 +20,20 @@ DeepSeek 视觉端对图片有**单边 8192 px** 的硬上限，越界返回 400
 25242 → 8192 是 0.32 倍，行程单上的字直接糊掉，抽出来的东西不可信。
 长截图只能切，切完按上下顺序一次性交给模型（`parse_image` 本来就收多张）。
 
+## 8192 是「收不收」，不是「读不读得清」（V4.1，2026-09-14）
+
+2026-09-10 视觉端换成 V4.1 Flash（`vision-exp` 转发过去），单图 token 上限改成 1024
+（约 1300×1300 的信息量），大图在服务端先被缩到这个量级再读。8192 的尺寸闸门还在，
+但**过了闸门不等于读得清**。同一张 1800×25242（26px 随机数字，525 行）：
+
+    按 8000 高切 4 片    按行对齐 0%   集合命中 38%   ← 改造前的切法，不报错
+    按 3000 高切 9 片    100%
+    按 2000 高切 14 片   100%
+
+单片 20px 字：1800×2000 100% / 1800×3000 99% / 1800×4096 79% / 1800×5500 0%。
+所以单片高度 = min(单边上限, 像素预算 ÷ 宽)，见 `vision_max_tile_pixels`。
+读错的方式是**数字念错而不是缺行**——行数全对，模型和用户都看不出来。
+
 ## 一条不可让步的约束
 
 **宁可整体缩小一点，也不能只切前几片。** 片数超上限时先等比缩再切，让整页都被覆盖；
@@ -106,6 +120,12 @@ def _needed_tiles(height: int, max_side: int, overlap: int) -> int:
     return n
 
 
+def tile_side(width: int, max_side: int) -> int:
+    """单片最大高度：单边上限与「像素预算 ÷ 宽」取小（见模块 docstring 的 V4.1 实测）。"""
+    budget = max(1, settings.vision_max_tile_pixels)
+    return max(1, min(max_side, budget // max(1, width)))
+
+
 def prepare_for_vision(data: bytes, mime: str) -> PreparedImages:
     """原始图片字节 → 一组按**上下顺序**排列、每张都在规格内的 data URI + 降级说明。
 
@@ -133,7 +153,8 @@ def prepare_for_vision(data: bytes, mime: str) -> PreparedImages:
             src_w, src_h = im.size
             width, height = src_w, src_h
             notices: list[str] = []
-            if width <= max_side and height <= max_side and mime in _SENDABLE:
+            if (width <= max_side and height <= tile_side(width, max_side)
+                    and mime in _SENDABLE):
                 return PreparedImages(uris=[_to_data_uri(data, mime)])
 
             # 太宽：横向没有「切片」的语义（一行字被竖着切开更难读），等比缩。
@@ -142,13 +163,15 @@ def prepare_for_vision(data: bytes, mime: str) -> PreparedImages:
                 width = max_side
                 im = im.resize((width, height), Image.LANCZOS)
 
-            overlap = max(0, min(settings.vision_tile_overlap_px, max_side - 1))
+            side = tile_side(width, max_side)
+            overlap = max(0, min(settings.vision_tile_overlap_px, side - 1))
             max_tiles = max(1, settings.vision_max_tiles)
-            need = _needed_tiles(height, max_side, overlap)
+            need = _needed_tiles(height, side, overlap)
             if need > max_tiles:
                 # 片数不够覆盖整页 → 先等比缩到「刚好切得下」，再切。
                 # 绝不改成只切前 max_tiles 片：那是静默丢尾部（见模块 docstring）。
-                budget = max_side + (max_tiles - 1) * (max_side - overlap)
+                # 缩小后宽变窄、单片可以更高——这里按缩前的 side 算是保守的，不会越预算。
+                budget = side + (max_tiles - 1) * (side - overlap)
                 scale = budget / height
                 width = max(1, round(width * scale))
                 height = budget
@@ -159,7 +182,7 @@ def prepare_for_vision(data: bytes, mime: str) -> PreparedImages:
             if im.mode not in ("RGB", "L"):
                 im = im.convert("RGB")
             out: list[str] = []
-            for y, h in plan_tiles(height, max_side, max_tiles, overlap):
+            for y, h in plan_tiles(height, side, max_tiles, overlap):
                 buf = io.BytesIO()
                 im.crop((0, y, width, y + h)).save(
                     buf, format="JPEG", quality=settings.vision_jpeg_quality)

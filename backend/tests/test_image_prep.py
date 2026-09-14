@@ -169,6 +169,39 @@ def test_max_side_default_leaves_headroom_under_the_measured_limit():
     assert Settings().vision_max_image_side < 8192
 
 
+# ---------- 单片像素预算（V4.1，2026-09-14） ----------
+# 8192 是「收不收」的闸门，不是「读不读得清」：V4.1 每张图最多 1024 token，
+# 1800×25242 按旧的 8000 高切 4 片只读对 0%（数字念错、行数全对，不报错）。
+
+def test_default_tile_pixel_budget_stays_under_the_measured_readable_limit():
+    """实测 20px 字：5.4MP 读对 99%、7.4MP 79%。默认值不许调回会读错的量级。"""
+    from app.config import Settings
+
+    assert Settings().vision_max_tile_pixels <= 5_400_000
+
+
+def test_tall_image_within_side_limit_is_still_split_by_pixel_budget():
+    """1800×8000 过得了 8192 闸门——改造前原样整张送，V4.1 上正是读错的那一档。"""
+    prepared = prepare_for_vision(_png(1800, 8000), "image/png")
+    assert prepared.tiled
+    for uri in prepared.uris:
+        _head, im = _decode(uri)
+        assert im.size[0] * im.size[1] <= settings.vision_max_tile_pixels
+    assert not any("缩放" in n for n in prepared.notices), "只需切片，不该缩小"
+
+
+def test_real_long_screenshot_is_tiled_without_shrinking_by_default():
+    """线上那张 1800×25242：默认配置下必须切得下，不缩小（缩小就是字糊）、不丢尾部。"""
+    prepared = prepare_for_vision(_png(1800, 25242), "image/png")
+    assert 1 < len(prepared.uris) <= settings.vision_max_tiles
+    assert not any("缩放" in n for n in prepared.notices)
+    total_w = {_decode(u)[1].size[0] for u in prepared.uris}
+    assert total_w == {1800}
+    for uri in prepared.uris:
+        _head, im = _decode(uri)
+        assert im.size[0] * im.size[1] <= settings.vision_max_tile_pixels
+
+
 # ---------- 降级说明（Phase 112） ----------
 # codex 的 `ImageResizeNotice` 那条纪律：链路对输入做了有损处理，处理结果必须自带说明。
 # Phase 111 ⑤ 只做到「对用户可见」，这组用例钉的是「对模型可见」的那一半。

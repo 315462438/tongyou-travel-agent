@@ -3,7 +3,7 @@
 - DeepSeek OpenAI 兼容接口（base_url=https://api.deepseek.com）
 - parse():   结构化输出：json_object 模式 + Pydantic 校验 + 失败带错误重试一次
 - generate(): 自由文本生成
-- 模型分层：deepseek-v4-pro（规划/抽取）、deepseek-v4-flash（轻量分类）
+- 模型：全部 deepseek-flash（V4.1，规划/抽取/分类/视觉；按调用定思考档位，见 _thinking_kwargs）
 """
 
 import json

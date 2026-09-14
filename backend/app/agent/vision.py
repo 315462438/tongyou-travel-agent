@@ -1,4 +1,5 @@
-"""视觉理解（Phase 105）。DeepSeek `deepseek-v4-flash-vision-exp`。
+"""视觉理解（Phase 105）。DeepSeek `deepseek-flash`（V4.1 原生多模态；Phase 105 时是
+已下线的 `deepseek-v4-flash-vision-exp`）。
 
 ## 为什么接
 

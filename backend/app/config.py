@@ -8,9 +8,14 @@ class Settings(BaseSettings):
     deepseek_api_key: str = ""
     deepseek_base_url: str = "https://api.deepseek.com"
 
-    model_planner: str = "deepseek-v4-pro"
-    model_extractor: str = "deepseek-v4-pro"
-    model_classifier: str = "deepseek-v4-flash"
+    # 2026-09-14 全部切到 V4.1 Flash：官方称其性能/费用/速度全面超过 V4 Pro，且 V4.1 Pro 上线前
+    # 对 v4-pro 的请求会被全部路由到 V4.1 Flash。extract_eval 对照：5/5 通过、快 10–20 倍，
+    # 但 3 篇的开销条目明显变少（见 docs/task_plans/切换DeepSeek-V4.1与视觉切片重校准-2026-09-14.md）。
+    model_planner: str = "deepseek-flash"
+    model_extractor: str = "deepseek-flash"
+    # 2026-09-10 起 V4 Flash 下线，`deepseek-v4-flash` 只是临时转发到 V4.1 Flash 的别名，
+    # 正式名是 `deepseek-flash`（官方 changelog）。转发哪天停掉会直接 400，别再用旧名。
+    model_classifier: str = "deepseek-flash"
 
     chrome_debug_url: str = "http://127.0.0.1:9223"
     # （已废弃的部署方式）指定 chrome 路径让 mcp 每会话自启动 headless 浏览器。
@@ -224,8 +229,10 @@ class Settings(BaseSettings):
     # **全文落库照常进行**——数据在手上，是将来任何检索方案的地基，且零风险。
     source_focus_enabled: bool = False
     # ---- 视觉模型（Phase 105）----
-    model_vision: str = "deepseek-v4-flash-vision-exp"
-    vision_enabled: bool = True          # 总开关。exp 模型，随时可一键退回
+    # V4.1 Flash 原生多模态，与文本共用 `deepseek-flash`；`deepseek-v4-flash-vision-exp` 已下线、
+    # 暂时转发到它。
+    model_vision: str = "deepseek-flash"
+    vision_enabled: bool = True          # 总开关，随时可一键退回
     vision_xhs_enabled: bool = True      # 小红书图抽取
     vision_page_type_enabled: bool = True  # 页面类型判定（互补通道，不替换文本判定）
     vision_budget_s: float = 20.0        # 单轮视觉总预算，超时交回已完成的（照搬 Phase 102）
@@ -236,7 +243,15 @@ class Settings(BaseSettings):
     # 视觉端硬上限实测为单边 8192px（8192 过、8500 挂），这里留出余量。
     # 越界返回的 400 报文写的是「格式不支持」，会把人带偏——真正越界的是尺寸。
     vision_max_image_side: int = 8000
-    vision_max_tiles: int = 4            # 一张长图最多切几片（都在同一次调用里送）
+    # 单片像素预算（V4.1 起）。8192 只是「收不收」的上限，不是「读不读得清」的上限：
+    # V4.1 每张图最多 1024 token（约 1300×1300 的信息量），大图在服务端被缩到这个量级。
+    # 实测 20px 中文随机数字：1800×2000 读对 100%、1800×3000 99%、1800×4096 79%、
+    # 1800×5500 0%；1800×25242 长图按旧的 8000 高切 4 片**只读对 0%（集合命中 38%）**、
+    # 按 2000/3000 高切 14/9 片 100%。4MP 以内留出余量。
+    vision_max_tile_pixels: int = 4_000_000
+    # 一张长图最多切几片（都在同一次调用里送）。实测单次 50 张图照收；每片 ≈1024 token，
+    # 16 片 ≈1.6 万 token。1800 宽可覆盖约 3.5 万 px 高，再长才先缩后切。
+    vision_max_tiles: int = 16
     vision_tile_overlap_px: int = 80     # 相邻片重叠，免得卡在切口上的那行字两片都残
     vision_jpeg_quality: int = 85        # 切片重编码质量；实测 85 读行程单文字无压力
     # 用户图抽出的每类条目最多渲染几条进 prompt。原来写死 15，一张 8 天行程截图
