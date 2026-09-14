@@ -360,13 +360,29 @@ def test_headcount_merge_guards_the_low_direction():
     """合并用 max()：实测的失手方向是**偏小**（该 2 认成 1），max 天然防小。
 
     这条钉住方向——改成 min 或直接覆盖都会让兜底失去意义。
-    """
-    from pathlib import Path
 
-    src = (Path(__file__).resolve().parent.parent / "app/ontology/extract.py").read_text("utf-8")
-    seg = src[src.index("hc_extra and not isinstance"):]
-    seg = seg[: seg.index("\n\n")] if "\n\n" in seg else seg
-    assert "max(trip.headcount" in seg, "人数合并必须用 max（失手方向是偏小）"
+    2026-09-14 从「源码里要有 `max(trip.headcount` 字样」改成行为断言：人数合并挪到建开销之前
+    （团组金额要按最终人数均摊）后变量改了名，行为没变，字符串断言却红了。
+    """
+    import asyncio
+
+    from app.ontology.extract import build_trip_object
+    from app.schemas.ontology_schema import HeadcountExtraction, TripCostExtraction
+
+    class _LLM:
+        def __init__(self, main: int, lane: int):
+            self.main, self.lane = main, lane
+
+        def parse(self, prompt, schema, **_kw):
+            if schema is HeadcountExtraction:
+                return HeadcountExtraction(headcount=self.lane)
+            return TripCostExtraction(headcount=self.main)
+
+    guide = "## Day 1 西湖\n上午西湖。\n"
+    run = lambda main, lane: asyncio.run(  # noqa: E731
+        build_trip_object(_LLM(main, lane), guide, lanes=("cost",))).headcount
+    assert run(2, 1) == 2, "兜底路偏小时不能把主路的 2 覆盖成 1"
+    assert run(1, 2) == 2, "主路偏小时兜底路要能修上来"
 
 
 def test_headcount_lane_only_runs_with_the_cost_lane():

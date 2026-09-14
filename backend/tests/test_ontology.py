@@ -371,6 +371,84 @@ def test_failed_cost_lane_keeps_stops():
     assert trip.expenses == [] and trip.stated_total == 0
 
 
+class _GroupCostLLM(_FakeLLM):
+    """重庆样本的形状：预算表写「两大一小」全家金额，主路人数认成 1，人数兜底路认出 3。"""
+
+    def __init__(self, scope: str = "group", **kw):
+        super().__init__(**kw)
+        self.scope = scope
+
+    def parse(self, prompt, schema, **kw):
+        from app.schemas.ontology_schema import HeadcountExtraction
+
+        if schema is TripCostExtraction:
+            self.calls.append(schema.__name__)
+            return TripCostExtraction(
+                headcount=1,
+                expenses=[
+                    ExpenseExtraction(category="住宿", name="酒店4晚", amount=1800, scope=self.scope,
+                                      note="按间"),
+                    ExpenseExtraction(category="门票", name="南天湖门票", day=1, amount=60),
+                ],
+                stated_total=4500,
+            )
+        if schema is HeadcountExtraction:
+            self.calls.append(schema.__name__)
+            return HeadcountExtraction(headcount=3)
+        return super().parse(prompt, schema, **kw)
+
+
+def test_group_amounts_are_split_by_the_final_headcount():
+    """**2026-09-14 线上实测的缺陷**：V4.1 Flash 4 次里 3 次把全家金额当人均填，预算面板 3.18 倍。
+
+    现在模型只照抄 + 标 scope，除法在服务端做，且用的是**并入人数兜底路之后**的人数
+    （主路认成 1、兜底认出 3——按 1 除等于没修）。
+    """
+    trip = asyncio.run(build_trip_object(_GroupCostLLM(), _GUIDE, lanes=("cost",)))
+    assert trip.headcount == 3
+    by_name = {e.name: e for e in trip.expenses}
+    assert by_name["酒店4晚"].amount == 600.0
+    assert "÷3" in by_name["酒店4晚"].note and "按间" in by_name["酒店4晚"].note, "均摊要留痕，原备注不能丢"
+    assert by_name["南天湖门票"].amount == 60.0, "人均口径的不能被再除一次"
+
+
+def test_unknown_scope_is_treated_as_per_person():
+    """枚举外的值不能让整条 cost 路校验失败；退化方向是「和改造前一样按人均」。"""
+    trip = asyncio.run(build_trip_object(_GroupCostLLM(scope="whole-family?"), _GUIDE, lanes=("cost",)))
+    assert {e.name: e.amount for e in trip.expenses}["酒店4晚"] == 1800.0
+
+
+def test_cost_only_run_does_not_warn_itinerary_empty(caplog):
+    """预算面板只跑 cost 路，stops 本来就是空的——不能因此打「itinerary 抽空」的告警。
+
+    2026-09-14 评估时撞见：每点一次预算面板都会冒一条假告警，真的抽空时反而淹在里面。
+    """
+    import logging
+
+    llm = _FakeLLM()
+    with caplog.at_level(logging.WARNING, logger="app.ontology.extract"):
+        trip = asyncio.run(build_trip_object(llm, _GUIDE, lanes=("cost",)))
+    assert "TripItineraryExtraction" not in llm.calls
+    assert trip.lanes == ["cost"]
+    assert not [r for r in caplog.records if "itinerary lane returned empty" in r.getMessage()]
+
+
+def test_itinerary_run_that_comes_back_empty_still_warns(caplog):
+    """反向：真的要了 itinerary 路却一个点都没抽到，告警和「不登记」都必须还在。"""
+    import logging
+
+    class _NoStops(_FakeLLM):
+        def parse(self, prompt, schema, **kw):
+            if schema is TripItineraryExtraction:
+                return TripItineraryExtraction(title="杭州3日", destination="杭州")
+            return super().parse(prompt, schema, **kw)
+
+    with caplog.at_level(logging.WARNING, logger="app.ontology.extract"):
+        trip = asyncio.run(build_trip_object(_NoStops(), _GUIDE))
+    assert "itinerary" not in trip.lanes
+    assert [r for r in caplog.records if "itinerary lane returned empty" in r.getMessage()]
+
+
 def test_failed_itinerary_lane_keeps_the_rest():
     trip = asyncio.run(
         build_trip_object(_FakeLLM(fail_on=TripItineraryExtraction), _GUIDE, destination_hint="杭州")

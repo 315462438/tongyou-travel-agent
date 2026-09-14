@@ -126,6 +126,53 @@ def check_cost_present(trip, s: Sample) -> list[Finding]:
     return out
 
 
+# 逐项人均合计 ÷（正文合计 ÷ 人数）落在这个区间外 → 预算面板总额明显偏低/偏高。
+# 偏高同样是真实翻过的车：2026-09-14 重庆样本 flash 一轮抽出 318%（团组金额当人均填 / 分类表与逐日价格重复计）。
+COST_COVERAGE_WARN_BELOW = 0.6
+COST_COVERAGE_WARN_ABOVE = 1.5
+
+
+def cost_coverage(trip) -> float | None:
+    """逐项人均合计 ÷ 正文自报的人均合计。拿不到正文合计或人数时返回 None。
+
+    **为什么不数条目**（2026-09-14）：换 V4.1 Flash 后「开销条目数」14→5、13→5、32→13，
+    看着像严重漏抽——逐项一看正好相反：flash 抽的是正文的**分类预算表**（住宿/餐饮/交通…
+    5 行），合计贴着正文总额（重庆 1592 vs 1500、玉树 4907 vs 4800）；v4-pro 抽的是散在
+    逐日表里的**每顿饭价格**，条目多却漏了住宿和油费（重庆 650、玉树 3146）。
+    条目数衡量的是粒度，不是覆盖；下游预算面板要的是总额对得上。
+    """
+    stated = float(getattr(trip, "stated_total", 0) or 0)
+    heads = int(trip.headcount or 0)
+    if stated <= 0 or heads <= 0:
+        return None
+    per_person = stated / heads
+    got = sum(float(e.amount or 0) for e in trip.expenses
+              if e.amount and e.amount > 0 and not any(w in e.name for w in _TOTAL_WORDS))
+    return round(got / per_person, 2) if per_person > 0 else None
+
+
+def check_cost_coverage(trip, s: Sample) -> list[Finding]:
+    """守：开销抽漏一大块（常见是漏住宿/油费）或重复计/团组当人均 → 预算面板总额偏低或偏高，且不报错。
+
+    只报 warn：分母 `stated_total` 本身也是模型从正文抄的，正文把人均写成「合计」、
+    或合计含了逐项没写单价的大交通时都会偏，拿它当硬闸门会随机变红。
+    """
+    if not s.expects_cost:
+        return []
+    ratio = cost_coverage(trip)
+    if ratio is None:
+        return []
+    if ratio < COST_COVERAGE_WARN_BELOW:
+        return [Finding("ext_cost_coverage_low",
+                        f"逐项人均合计只有正文合计的 {ratio:.0%}（疑似漏了住宿/交通等大项）",
+                        level="warn")]
+    if ratio > COST_COVERAGE_WARN_ABOVE:
+        return [Finding("ext_cost_coverage_high",
+                        f"逐项人均合计是正文合计的 {ratio:.0%}（疑似团组金额当人均、或分类表与逐日价格重复计）",
+                        level="warn")]
+    return []
+
+
 def check_name_hygiene(trip) -> list[Finding]:
     """守：名字里带 `**` / 图片占位符残渣——它会原样显示在海报和预算表里。"""
     named = [*trip.stops, *trip.expenses, *trip.foods, *trip.lodgings]
@@ -157,6 +204,7 @@ def run_extract_checks(trip, s: Sample) -> list[Finding]:
     findings += check_total_not_an_item(trip)
     findings += check_headcount(trip, s)
     findings += check_cost_present(trip, s)
+    findings += check_cost_coverage(trip, s)
     findings += check_name_hygiene(trip)
     findings += check_lanes_registered(trip, s)
     return findings

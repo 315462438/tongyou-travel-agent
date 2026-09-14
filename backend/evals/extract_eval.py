@@ -23,7 +23,7 @@ import pathlib
 import sys
 import time
 
-from evals.extract_checks import Sample, run_extract_checks
+from evals.extract_checks import Sample, cost_coverage, run_extract_checks
 
 ROOT = pathlib.Path(__file__).parent
 SAMPLES = ROOT / "samples"
@@ -71,6 +71,9 @@ async def run_one(s: Sample) -> dict:
             "days": len(trip.days),
             "stops": len(trip.stops),
             "expenses": len(trip.expenses),
+            # 条目数只反映粒度；覆盖率才反映预算面板总额对不对得上（见 extract_checks.cost_coverage）
+            "cost_coverage": cost_coverage(trip),
+            "stated_total": trip.stated_total,
             "lodgings": len(trip.lodgings),
             "foods": len(trip.foods),
             "reservations": len(trip.reservations),
@@ -126,13 +129,15 @@ async def _run_all(args) -> int:
 
 def render(tag: str, results: list[dict]) -> str:
     lines = [f"# 本体抽取评估 · {tag}", "",
-             "| 样本 | 结论 | 耗时 | 天 | 停留点 | 开销 | 人数 | lanes |",
-             "| --- | --- | --- | --- | --- | --- | --- | --- |"]
+             "| 样本 | 结论 | 耗时 | 天 | 停留点 | 开销 | 覆盖 | 人数 | lanes |",
+             "| --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
     for r in results:
         m = r.get("metrics") or {}
+        cov = m.get("cost_coverage")
         lines.append(
             f"| {r['id']} | {'✅' if r['passed'] else '❌'} | {r.get('elapsed_s', '-')}s "
             f"| {m.get('days', '-')} | {m.get('stops', '-')} | {m.get('expenses', '-')} "
+            f"| {'-' if cov is None else f'{cov:.0%}'} "
             f"| {m.get('headcount', '-')} | {'+'.join(m.get('lanes') or []) or '-'} |")
     lines += ["", "## 明细", ""]
     for r in results:

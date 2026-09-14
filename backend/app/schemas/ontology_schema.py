@@ -50,7 +50,17 @@ class ExpenseExtraction(BaseModel):
     )
     name: str = Field(description="项目名，如「灵隐寺门票」「西湖边民宿1晚」")
     day: int = Field(default=0, description="第几天的开销；整趟通用或分不清就填 0")
-    amount: float = Field(description="金额（元），按【一个人】算。区间价如「200-300元」取中间值 250")
+    amount: float = Field(
+        description="金额（元），**照抄正文的数**，不要自己除以人数。区间价如「200-300元」取中间值 250"
+    )
+    # 用 str 不用 Literal：模型偶尔填出枚举外的值，Literal 会让整条 cost 路校验失败、预算面板全空；
+    # 服务端只认 "group"，其余一律按人均处理（退化方向 = 改造前的行为）。
+    scope: str = Field(
+        default="per_person",
+        description="这个金额的口径，照正文判断、不要换算：正文写「人均/每人/元/人」→ per_person；"
+        "写的是全家/两人/团组/按间/全程油费这类整队一起花的钱（常见于标题写「两大一小」「2人」的预算表）→ group。"
+        "系统会用人数把 group 均摊成人均",
+    )
     note: str = Field(default="", description="备注，12 字内，可留空")
 
 

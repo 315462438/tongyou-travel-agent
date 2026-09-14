@@ -59,7 +59,9 @@ EXTRACT_SYSTEM = (
     "铁律：**只用正文里真实出现的信息**，不要估算、不要编造、不要脑补市场价或地点。"
     "正文没写的字段留空或填 0。\n"
     "- 地点用能在地图上搜到的规范名；同一个地点不要重复出现在多天。\n"
-    "- 金额一律按**一个人**计；不要输出「合计」「总预算」这类总计项，总额由系统累加。\n"
+    "- 金额**照抄正文**（区间取中值），**不要自己除以人数**；每项用 scope 标口径："
+    "正文写的是人均/每人就填 per_person，写的是全家/两人/团组合计就填 group，换算由系统做。"
+    "不要输出「合计」「总预算」这类总计项，总额由系统累加。\n"
     "- 住宿只填正文明确提到的酒店/民宿，正文只说了区域就给空数组。"
 ) + EXTRACT_THINKING_DISCIPLINE + EXTERNAL_POLICY
 
@@ -106,15 +108,41 @@ def split_day_sections(guide: str) -> tuple[str, dict[int, str]]:
     return head + tail, sections
 
 
-def _to_trip(profile, cost, stops, day_meta, failed_days) -> TripObject:
-    """抽取结果 → 规范化对象图。归一/去重/重排序都在 TripObject.normalized 里。"""
+def _per_person(e, headcount: int) -> tuple[float, str]:
+    """把一条开销换算成人均口径。**除法由这里做，不交给模型**（同 Phase 67 不让模型算总额）。
+
+    2026-09-14 实测：重庆样本的预算表写的是「两大一小」全家金额，V4.1 Flash 被要求「按一个人
+    填」时 4 次里 3 次原样照抄团组数 → 预算面板人均总额是正文的 3.18 倍，且不报错。
+    让模型只**照抄金额 + 标口径**（`scope`），换算用确定的人数在服务端做。
+    """
+    amount = float(e.amount or 0)
+    if getattr(e, "scope", "per_person") == "group" and headcount > 1:
+        note = (e.note or "").strip()
+        return amount / headcount, (f"{note}；" if note else "") + f"全体{amount:g}元÷{headcount}人"
+    return amount, e.note
+
+
+def _to_trip(profile, cost, stops, day_meta, failed_days, *, headcount: int = 0) -> TripObject:
+    """抽取结果 → 规范化对象图。归一/去重/重排序都在 TripObject.normalized 里。
+
+    `headcount` 是并入人数兜底路之后的**最终**人数——团组金额要按它均摊，
+    所以必须先定人数、再建开销（顺序反了会按没修正的人数除）。
+    """
+    headcount = max(1, headcount or max(profile.headcount, cost.headcount))
+    expenses = []
+    for e in cost.expenses:
+        if _is_total_line(e.name):
+            continue
+        amount, note = _per_person(e, headcount)
+        expenses.append(ExpenseObject(category=e.category, name=e.name, day=e.day,
+                                      amount=amount, note=note))
     return TripObject(
         title=profile.title,
         subtitle=profile.subtitle,
         theme=profile.theme,
         destination=profile.destination,
         days_count=profile.days_count,
-        headcount=max(profile.headcount, cost.headcount),
+        headcount=headcount,
         stated_total=cost.stated_total,
         days=[
             DayObject(
@@ -130,11 +158,7 @@ def _to_trip(profile, cost, stops, day_meta, failed_days) -> TripObject:
             )
             for s in stops
         ],
-        expenses=[
-            ExpenseObject(category=e.category, name=e.name, day=e.day, amount=e.amount, note=e.note)
-            for e in cost.expenses
-            if not _is_total_line(e.name)
-        ],
+        expenses=expenses,
         reservations=[
             ReservationObject(name=r.name, channel=r.channel, advance=r.advance, note=r.note)
             for r in cost.reservations
@@ -341,21 +365,25 @@ async def build_trip_object(
     # 线上评估抓到过一次：5 天攻略抽出 0 天 0 点，lanes 仍写着 itinerary。
     # 判据要保守：只有「正文里明明有 Day 段落，却一个停留点都没抽到」才算空——
     # 真的没有 Day 标题的攻略抽不出地点是正常的，不能因此让它每次都重试。
-    itinerary_is_empty = bool(sections) and not stops
+    # 只在**这次确实要了** itinerary 路时才判空：预算面板只跑 cost 路，stops 必然为空，
+    # 不加这个条件每次点预算都会打一条「itinerary 抽空」的假告警（2026-09-14 评估时撞见）。
+    itinerary_is_empty = LANE_ITINERARY in want and bool(sections) and not stops
     if itinerary_is_empty:
         logger.warning(
             "ontology itinerary lane returned empty for a guide with %d day sections "
             "(cid=%s) — 不登记该路，下次调用会重试", len(sections), cid,
         )
 
-    trip = _to_trip(profile_r, cost_r, stops, day_meta, failed)
     # 并入人数：仍用 max()，因为**观测到的失手方向是偏小**（该是 2 认成 1），
     # 而 max 天然防小。兜底路自己失败时返回 1，对 max 是中性的。
+    # ⚠️ 必须在建开销**之前**定下来：团组金额按最终人数均摊（`_per_person`）。
+    headcount = max(1, profile_r.headcount, cost_r.headcount)
     if hc_extra and not isinstance(hc_extra[0], BaseException):
-        merged = max(trip.headcount, int(hc_extra[0] or 1))
-        if merged != trip.headcount:
-            logger.info("headcount lane corrected %s → %s (cid=%s)", trip.headcount, merged, cid)
-            trip = trip.model_copy(update={"headcount": merged})
+        merged = max(headcount, int(hc_extra[0] or 1))
+        if merged != headcount:
+            logger.info("headcount lane corrected %s → %s (cid=%s)", headcount, merged, cid)
+        headcount = merged
+    trip = _to_trip(profile_r, cost_r, stops, day_meta, failed, headcount=headcount)
     # 只登记**真正跑过且没抛异常**的路：抛异常的路留空，下次调用会重试它
     done = [
         ln for ln in want

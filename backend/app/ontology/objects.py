@@ -25,7 +25,9 @@ import hashlib
 from pydantic import BaseModel, Field
 
 # 对象图结构版本。改了字段语义就 +1，`store` 据此判定缓存失效重建。
-SCHEMA_VERSION = 1
+# 2 (2026-09-14)：开销改为「模型照抄 + scope 标口径、服务端按人数均摊」，
+#   v1 缓存里可能存着团组金额当人均的错账（预算面板 3 倍），必须重抽。
+SCHEMA_VERSION = 2
 
 # 地点类型。lodging 单列是因为它在路线图上不算「玩的点」，但在预算里是住宿。
 STOP_TYPES = ("spot", "food", "checkin", "lodging", "transit")

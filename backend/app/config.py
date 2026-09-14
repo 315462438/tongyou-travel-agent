@@ -9,8 +9,9 @@ class Settings(BaseSettings):
     deepseek_base_url: str = "https://api.deepseek.com"
 
     # 2026-09-14 全部切到 V4.1 Flash：官方称其性能/费用/速度全面超过 V4 Pro，且 V4.1 Pro 上线前
-    # 对 v4-pro 的请求会被全部路由到 V4.1 Flash。extract_eval 对照：5/5 通过、快 10–20 倍，
-    # 但 3 篇的开销条目明显变少（见 docs/task_plans/切换DeepSeek-V4.1与视觉切片重校准-2026-09-14.md）。
+    # 对 v4-pro 的请求会被全部路由到 V4.1 Flash。extract_eval 对照：5/5 通过、快 10–20 倍；
+    # 开销条目数变少是粒度变了（抽分类预算表而非每顿饭），总额反而更贴正文
+    # （见 docs/task_plans/切换DeepSeek-V4.1与视觉切片重校准-2026-09-14.md）。
     model_planner: str = "deepseek-flash"
     model_extractor: str = "deepseek-flash"
     # 2026-09-10 起 V4 Flash 下线，`deepseek-v4-flash` 只是临时转发到 V4.1 Flash 的别名，

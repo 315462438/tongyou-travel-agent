@@ -115,6 +115,63 @@ def test_all_zero_amounts_is_reported():
     assert "ext_zero_amounts" in _codes(trip)
 
 
+# ---------- 预算覆盖率（2026-09-14） ----------
+# 条目数只反映粒度：flash 抽分类预算表 5 项、总额贴正文；v4-pro 抽每顿饭 13 项、漏住宿油费。
+
+def test_coverage_is_per_person_sum_over_stated_per_person():
+    from evals.extract_checks import cost_coverage
+
+    trip = _trip(stated_total=1000.0, headcount=2)  # 正文人均 500；逐项 70 + 300 = 370
+    assert cost_coverage(trip) == pytest.approx(0.74)
+
+
+def test_few_category_items_that_match_the_stated_total_do_not_warn():
+    """线上重庆样本的形状：5 条分类大项，合计贴着正文——条目少不是问题。"""
+    items = [ExpenseObject(name=n, category=c, day=0, amount=a) for n, c, a in (
+        ("酒店4晚", "住宿", 600.0), ("5天餐饮", "餐饮", 367.0), ("油费过路费", "交通", 233.0),
+        ("门票项目", "门票", 292.0), ("宝宝用品", "其他", 100.0))]
+    trip = _trip(expenses=items, stated_total=4500.0, headcount=3)
+    assert "ext_cost_coverage_low" not in _codes(trip)
+
+
+def test_many_small_items_missing_lodging_warn():
+    """线上 v4-pro 的形状：一堆单顿饭价格，漏了住宿和油费，总额只有正文的四成多。"""
+    items = [ExpenseObject(name=f"第{d}天午餐", category="餐饮", day=d, amount=50.0)
+             for d in range(1, 14)]
+    trip = _trip(expenses=items, stated_total=4500.0, headcount=3)  # 650 / 1500
+    findings = [f for f in run_extract_checks(trip, _SAMPLE) if f.code == "ext_cost_coverage_low"]
+    assert findings and findings[0].level == "warn", "分母也是模型抄的，只能 warn 不能硬失败"
+
+
+def test_group_amounts_filled_as_per_person_warn_high():
+    """线上重庆样本 flash 一轮的形状：团组金额当人均填，总额是正文的 3 倍多。"""
+    items = [ExpenseObject(name=n, category=c, day=0, amount=a) for n, c, a in (
+        ("酒店4晚", "住宿", 1800.0), ("5天餐饮", "餐饮", 1100.0), ("油费过路费", "交通", 700.0),
+        ("门票项目", "门票", 875.0))]
+    trip = _trip(expenses=items, stated_total=4500.0, headcount=3)  # 4475 / 1500
+    findings = [f for f in run_extract_checks(trip, _SAMPLE) if f.code == "ext_cost_coverage_high"]
+    assert findings and findings[0].level == "warn"
+
+
+def test_no_stated_total_skips_the_coverage_check():
+    """正文没写合计就没有 ground truth——不能拿 0 当分母乱报。"""
+    from evals.extract_checks import cost_coverage
+
+    trip = _trip(stated_total=0.0)
+    assert cost_coverage(trip) is None
+    assert "ext_cost_coverage_low" not in _codes(trip)
+
+
+def test_total_rows_do_not_inflate_coverage():
+    """「合计」行混进逐项时覆盖率不能被它撑满——那条由 ext_total_as_item 另报。"""
+    from evals.extract_checks import cost_coverage
+
+    trip = _trip(expenses=[ExpenseObject(name="门票", amount=70.0),
+                           ExpenseObject(name="合计", amount=2000.0)],
+                 stated_total=1000.0, headcount=2)
+    assert cost_coverage(trip) == pytest.approx(0.14)
+
+
 # ---------- 名字卫生 ----------
 
 @pytest.mark.parametrize("bad", ["**黄鹤楼**", "[[img:黄鹤楼]]", "`东湖`"])
