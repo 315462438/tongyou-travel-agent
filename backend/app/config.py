@@ -75,10 +75,18 @@ class Settings(BaseSettings):
 
     # LangGraph 反思循环（Phase 14）：生成后自检，不满意就补搜/重写再生成
     reflection_enabled: bool = True
-    graph_max_guide_rounds: int = 2  # 攻略最多循环轮数
+    # 攻略最多循环轮数（自检 → 补搜 → 重写）。2026-10-14 2 → 1：线上一轮「巢湖吃螃蟹」初稿 137s 就出了，
+    # 两轮补搜重写又拖到 596s；速度优先，只留一轮查漏补缺。
+    graph_max_guide_rounds: int = 1
+    guide_research_budget_s: float = 60  # 补搜一轮的预算：到点不再开新搜索/新页面，已抓到的照用
     graph_max_poster_rounds: int = 2  # 海报最多循环轮数
 
     # 高德地图 Web 服务 API（Phase 10）：结构化天气/景点/坐标。留空则禁用
+    # 联网搜索 API（2026-10-15，阿里云 AI 搜索开放平台·联网搜索）。两项都配上才启用，否则回退浏览器搜必应。
+    aliyun_search_api_key: str = ""
+    aliyun_search_host: str = ""  # 控制台「公网 API 域名」，如 https://default-xxxx.platform-cn-shanghai.opensearch.aliyuncs.com
+    web_search_api_timeout_s: float = 15
+    web_search_api_top_k: int = 8
     amap_key: str = ""
     amap_secret: str = ""  # key 的数字签名私钥
     # Phase 62：海外地理编码。生产服务器直连 OSMF Nominatim 超时，默认改用实测可达的
@@ -338,6 +346,15 @@ class Settings(BaseSettings):
     # 空 = 不启用（本地开发默认跳过）。攻略/路线/美食来源优先小红书，必应降为兜底。
     xhs_mcp_url: str = ""  # 服务器 .env: http://127.0.0.1:18060/mcp
     xhs_mcp_timeout_s: int = 40  # 单次 MCP 调用整体超时（搜索页冷加载可超 25s，实测掐死过）
+    # 搜索单次超时。⚠️ 不能低于 ~40s（2026-10-14 设成 25s 当晚出事）：MCP 内部搜索卡住时要到它
+    # 自己的 60s 上限才放手，且容器一次只跑一个请求。我们 25s 就重试 → 重试撞上还没放手的那次，
+    # 两次一起卡死到 60s，整轮小红书全军覆没。40s 时重试在第一次放手后才轮到，~10s 就成功。
+    xhs_search_timeout_s: int = 40
+    # 2026-10-14 笔记详情直读：笔记页是服务端渲染的，带 MCP 那份登录 cookie 直接 GET 页面即可拿到
+    # 标题/正文/图片（线上实测每篇 0.4-0.5s，MCP 每篇冷启动 Chrome 要 15-20s）。空 = 不启用，
+    # 只走 MCP。服务器 .env: XHS_COOKIE_FILE=/home/ubuntu/xhs-mcp-data/cookies.json
+    xhs_cookie_file: str = ""
+    xhs_page_timeout_s: float = 8
     # 2026-08-14：整轮 xhs 采集总预算（搜索+全部详情）。单次 40s 超时 + 连续失败熔断都挡不住
     # 「半死」MCP（失败-成功交替 / 每篇卡在超时边缘）：最坏 2×40s 搜索 + 7×40s 详情 ≈ 5 分钟。
     # 超预算整轮放弃（返回已收集结果），必应兜底——采集不能成为无限等待窗口。
@@ -345,10 +362,11 @@ class Settings(BaseSettings):
     # 旋钮；搜索实测 16–27s，75s 够搜索 + 2–3 篇详情。晚到的不等——必应+高德已够生成，
     # xhs 是增味不是主料；且超时现在交回部分收成，不再全丢。
     xhs_collect_timeout_s: float = 75
-    xhs_notes_per_turn: int = 5  # guide 每轮最多取几篇笔记详情做来源（单城）
-    xhs_notes_per_city: int = 2  # 多城行程逐城各取几篇（最多 3 城）
+    # 2026-10-14 详情改为直读笔记页（每篇 ~0.5s）后篇数放开：小红书优先，够了就不开浏览器。
+    xhs_notes_per_turn: int = 6  # guide 每轮最多取几篇笔记详情做来源（单城）
+    xhs_notes_per_city: int = 3  # 多城行程逐城各取几篇（最多 3 城）
     xhs_min_for_light_search: int = 1  # 拿到 ≥N 篇 → 必应轻量化（1 查询 4 抓取）
-    xhs_skip_search_min: int = 3  # 拿到 ≥N 篇 → 必应**直接跳过**（小红书资料已足够）
+    xhs_skip_search_min: int = 4  # 拿到 ≥N 篇 → 必应**直接跳过**（小红书资料已足够）
     # 跨会话来源复用（2026-07-31）：同目的地近期会话的小红书**正文**可直接拿来用，
     # 省掉最贵的一步（详情逐篇串行 19-20s×5 ≈ 首轮耗时的 85%）。
     xhs_reuse_enabled: bool = True
@@ -368,7 +386,9 @@ class Settings(BaseSettings):
     # 砍短了整轮就废，独立流程失败只需用户点一下重试，所以可以更省池子。
     connect_wait_s: int = 90
     price_login_wait_s: int = 90  # 拿实价的主动登录引导：等待时长（不登录也继续，只是无价）
-    confirm_wait_s: int = 60  # 需登录来源的确认卡片：等用户点击的时长，超时按跳过
+    # 需登录来源的确认卡片：等用户点击的时长，超时按跳过。2026-10-14 60 → 12：线上用户
+    # 几乎不点，每张卡都白等满 60s（一轮最多两张），是采集段最大的空等。
+    confirm_wait_s: int = 12
     # 站点登录态有效期（分钟，0=永不过期）。仅服务器模式生效：超时后清浏览器
     # cookie，下次使用重新引导扫码（Phase 9）
     site_login_ttl_min: int = 60

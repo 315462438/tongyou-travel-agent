@@ -16,6 +16,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+import re
+from urllib.parse import quote
 
 from app.config import settings
 
@@ -99,6 +102,87 @@ def note_url(feed_id: str) -> str:
     return f"https://www.xiaohongshu.com/explore/{feed_id}"
 
 
+# ---------- 笔记页直读（2026-10-14） ----------
+# 笔记页是服务端渲染的：`window.__INITIAL_STATE__` 里的 note.noteDetailMap[feed_id].note 与 MCP
+# get_feed_detail 返回的 note 同构（title/desc/imageList[].urlDefault）。匿名请求会被跳登录页，
+# 带上 MCP 容器扫码登录后的同一份 cookie 即可。思路来自 tamnd/xiaohongshu-cli。
+# 失败（未配置/被跳登录/风控/改版解析不出）一律返回 None，由 note_detail 回退 MCP，最差等于现状。
+
+_STATE_RE = re.compile(r"window\.__INITIAL_STATE__=(.*?)</script>", re.S)
+# 状态是 JS 字面量而非 JSON：值位置的 undefined、空的 new Map([]) 要先换掉。只换值位置，
+# 不碰正文字符串里恰好出现的同名单词。
+_UNDEFINED_RE = re.compile(r"(?<=[:\[,])undefined(?=[,\]}])")
+_PAGE_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/148.0.7778.215 Safari/537.36")
+
+
+def _parse_page_state(html: str, feed_id: str) -> dict | None:
+    """笔记页 HTML → 与 _parse_detail 相同的 {title, desc, images}；拿不到返回 None。"""
+    m = _STATE_RE.search(html)
+    if not m:
+        return None
+    raw = _UNDEFINED_RE.sub("null", m.group(1)).replace("new Map([])", "{}")
+    try:
+        state, _ = json.JSONDecoder().raw_decode(raw)
+    except ValueError:
+        return None
+    detail_map = ((state.get("note") or {}).get("noteDetailMap") or {}) if isinstance(state, dict) else {}
+    note = (detail_map.get(feed_id) or {}).get("note") if isinstance(detail_map, dict) else None
+    if not isinstance(note, dict):
+        return None
+    return _parse_detail(json.dumps({"data": {"note": note}}))
+
+
+_cookie_cache: tuple[float, dict[str, str]] | None = None
+
+
+def _page_cookies() -> dict[str, str] | None:
+    """MCP 的 cookies.json（[{name, value, …}]）→ {name: value}；按文件修改时间缓存，重新扫码后自动换新。"""
+    global _cookie_cache
+    path = settings.xhs_cookie_file
+    if not path:
+        return None
+    try:
+        mtime = os.path.getmtime(path)
+        if _cookie_cache is None or _cookie_cache[0] != mtime:
+            with open(path, encoding="utf-8") as f:
+                items = json.load(f)
+            jar = {c["name"]: c["value"] for c in items
+                   if isinstance(c, dict) and isinstance(c.get("name"), str) and isinstance(c.get("value"), str)}
+            _cookie_cache = (mtime, jar)
+        return _cookie_cache[1] or None
+    except (OSError, ValueError, TypeError):
+        logger.warning("xhs cookie file unreadable: %s", path, exc_info=True)
+        return None
+
+
+async def _detail_via_page(feed_id: str, xsec_token: str) -> dict | None:
+    cookies = _page_cookies()
+    if not cookies:
+        return None
+    import httpx
+
+    url = (f"https://www.xiaohongshu.com/explore/{quote(feed_id)}"
+           f"?xsec_token={quote(xsec_token)}&xsec_source=pc_search")
+    try:
+        async with httpx.AsyncClient(
+            headers={"User-Agent": _PAGE_UA, "Accept-Language": "zh-CN,zh;q=0.9"},
+            cookies=cookies, follow_redirects=True, timeout=settings.xhs_page_timeout_s,
+        ) as client:
+            resp = await client.get(url)
+    except httpx.HTTPError:
+        logger.warning("xhs page fetch failed for %s", feed_id, exc_info=True)
+        return None
+    # 被跳登录页 / 风控（461 等）/ 删帖：都交回 MCP，不在这里重试。
+    if resp.status_code != 200 or not resp.url.path.startswith("/explore/"):
+        logger.warning("xhs page fetch for %s ended at %s %s", feed_id, resp.status_code, resp.url.path)
+        return None
+    det = _parse_page_state(resp.text, feed_id)
+    if det is None:
+        logger.warning("xhs page state unparsable for %s", feed_id)
+    return det
+
+
 # ---------- MCP 调用 ----------
 
 # Phase 68 安全护栏：这个第三方 MCP（xpzouying/xiaohongshu-mcp）还暴露了
@@ -114,7 +198,7 @@ class XHSToolNotAllowed(RuntimeError):
     """调用了非只读白名单内的小红书工具。"""
 
 
-async def _call_tool(tool: str, args: dict) -> str:
+async def _call_tool(tool: str, args: dict, timeout: float | None = None) -> str:
     """单次 MCP 工具调用，返回文本内容。整体超时兜底（MCP 服务僵死不能拖垮主流程）。"""
     if tool not in _READONLY_TOOLS:
         logger.error("拒绝调用非只读小红书工具 %r（白名单：%s）", tool, sorted(_READONLY_TOOLS))
@@ -132,7 +216,7 @@ async def _call_tool(tool: str, args: dict) -> str:
                     c.text for c in res.content if getattr(c, "type", "") == "text"
                 )
 
-    return await asyncio.wait_for(_inner(), timeout=settings.xhs_mcp_timeout_s)
+    return await asyncio.wait_for(_inner(), timeout=timeout or settings.xhs_mcp_timeout_s)
 
 
 async def search_notes(keyword: str) -> list[dict]:
@@ -147,7 +231,9 @@ async def search_notes(keyword: str) -> list[dict]:
     with obs.span("xhs_search", input_data=keyword) as _s:
         for attempt in range(2):
             try:
-                feeds = _parse_feeds(await _call_tool("search_feeds", {"keyword": keyword}))
+                feeds = _parse_feeds(await _call_tool(
+                    "search_feeds", {"keyword": keyword}, timeout=settings.xhs_search_timeout_s,
+                ))
                 if _s is not None:
                     _s.update(output={"feeds": len(feeds)})
                 return feeds
@@ -158,18 +244,24 @@ async def search_notes(keyword: str) -> list[dict]:
 
 
 async def note_detail(feed_id: str, xsec_token: str) -> dict | None:
-    """取笔记详情 → {title, desc}；失败返回 None。"""
+    """取笔记详情 → {title, desc, images}；先直读笔记页，失败回退 MCP；都失败返回 None。"""
     if not enabled():
         return None
     from app import observability as obs
 
     with obs.span("xhs_detail", input_data=feed_id) as _s:
+        # 先直读笔记页（~0.5s），读不到再走 MCP（每篇冷启动 Chrome ~15-20s）。
+        det = await _detail_via_page(feed_id, xsec_token)
+        if det is not None:
+            if _s is not None:
+                _s.update(output={"chars": len(det.get("desc") or ""), "via": "page"})
+            return det
         try:
             det = _parse_detail(await _call_tool(
                 "get_feed_detail", {"feed_id": feed_id, "xsec_token": xsec_token}
             ))
             if _s is not None:
-                _s.update(output={"chars": len((det or {}).get("desc") or "")})
+                _s.update(output={"chars": len((det or {}).get("desc") or ""), "via": "mcp"})
             return det
         except Exception:  # noqa: BLE001
             logger.warning("xhs note_detail failed for %s", feed_id, exc_info=True)

@@ -1,3 +1,4 @@
+import logging
 import json
 import os
 from datetime import datetime, timedelta, timezone
@@ -14,6 +15,8 @@ from app.api.deps import get_current_user
 from app.config import settings
 from app.db.models import TravelConversation, TravelMessage, TravelUpload, TravelUser
 from app.db.session import get_db
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -186,6 +189,14 @@ def stop_turn(cid: str, db: Session = Depends(get_db), user: TravelUser = Depend
 
     _owned(db, cid, user)
     request_cancel(cid)
+    # 2026-10-15：协作式取消要等到下一个检查点（可能正卡在一次搜索/模型调用里），
+    # 期间前端一直显示运行中。这里先把本轮的流式占位终稿，下一次轮询就停下来。
+    from app.agent.orchestrator import close_turn_streaming
+
+    try:
+        close_turn_streaming(cid)
+    except Exception:  # noqa: BLE001 — 收尾失败不影响取消本身
+        logger.warning("stop: close streaming failed cid=%s", cid, exc_info=True)
     return {"status": "stopping"}
 
 

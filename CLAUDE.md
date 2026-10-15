@@ -87,7 +87,7 @@ SSH 密钥登录已配置（`ssh "$DEPLOY_HOST"` 免密）。
   本地开发 `BROWSER_POOL_ENABLED` 不设
   → 回退单调试 Chrome（`CHROME_DEBUG_URL` + start_chrome.sh）+ 全局串行。
   见 docs/pitfalls/snap-chromium多实例与小内存.md。
-- **xhs-mcp 容器**：**启动配置已固化**在 `/home/ubuntu/xhs-mcp/docker-compose.yml`
+- **xhs-mcp 容器**：⚠️ **2026-10-15 起已停用**（服务器 IP 再次被小红书风控 300012，登录态也拦），`.env` 中 `XHS_MCP_URL` 已注释、容器已 stop，网页资料改走阿里云联网搜索（`ALIYUN_SEARCH_API_KEY`/`ALIYUN_SEARCH_HOST`）。详见 docs/pitfalls/小红书风控封锁云服务器IP.md。以下为原配置说明：**启动配置已固化**在 `/home/ubuntu/xhs-mcp/docker-compose.yml`
   （2026-08-14 从运行中容器导出；此前无任何启动脚本，容器重建会丢配置）。重建：
   `cd /home/ubuntu/xhs-mcp && docker compose up -d`。内存限制 **1.5GiB**（800MiB 下容器内
   chrome 搜索高峰会 OOM——16:21/16:23 两次内核杀进程，深度研究期间 xhs 不稳）。

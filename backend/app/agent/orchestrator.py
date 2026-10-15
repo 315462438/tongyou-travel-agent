@@ -1392,12 +1392,14 @@ async def collect_sources(
         _progress(cid, "基于已有资料重新规划（无需重新搜索）…")
         return refreshed_sources, True
 
-    site_sources: list[dict] = await _collect_amap(cid, pref)  # 多城逐城，可能多条
-    # Phase 59：攻略/路线/美食来源优先小红书（纯 HTTP MCP，无需浏览器）。
-    # 2026-08-13 并行提速：小红书详情与浏览器（必应/携程）**同时跑**——两条通道独立
-    # （xhs 是 HTTP MCP 服务、必应是 ChromeMCP），采集段从 ~200s 降到 ≈ max(xhs, 必应)。
-    # 未复用时必应先按 light 档开浏览器（xhs 大概率有料）；xhs 收成 0 篇再补 full 第 2 查询，
-    # 仍比串行（等 xhs 全失败后才 full）快。
+    # 高德（~0.5s）与小红书没有数据依赖：先起任务，和小红书同时跑，用到时再收。
+    # _collect_amap 内部吞掉单城异常，任务不会带着未取的异常被丢弃。
+    amap_task = asyncio.create_task(_collect_amap(cid, pref))  # 多城逐城，可能多条
+    # Phase 59：攻略/路线/美食来源优先小红书。
+    # 2026-10-14 改回**先小红书、按收成再决定开不开浏览器**：详情改为直读笔记页后，小红书
+    # 一轮只要搜索 ~15s + 每篇 ~0.5s，比浏览器道（开 Chrome + 必应 + 逐页打开）快得多。
+    # 收成够（≥ xhs_skip_search_min）就完全不开浏览器；不够才按 light/full 补网页资料。
+    # （此前 2026-08-13 改成并行，是因为当时每篇详情要 ~20s，小红书道才是长杆。）
     xhs_sources: list[dict] = []
     reused = False
     if intent != "hotel":
@@ -1405,26 +1407,32 @@ async def collect_sources(
         if xhs_sources:
             reused = True
             _progress(cid, f"♻️ {reuse_note}")
-    xhs_pending = intent != "hotel" and not xhs_sources  # 需要现抓小红书 → 与浏览器并行
-    xhs_task: asyncio.Task | None = None
+    xhs_pending = intent != "hotel" and not xhs_sources  # 需要现抓小红书 → 先抓，再定必应档位
     if xhs_pending:
-        xhs_task = asyncio.create_task(_collect_xhs(cid, pref))
-        search_mode = "light"  # 预判档位，xhs 完成后按收成再补
+        _progress(cid, "正在搜集小红书笔记…")
+        xhs_sources = await wait_cancellable(cid, asyncio.create_task(_collect_xhs(cid, pref)))
+        search_mode = _web_search_mode(len(xhs_sources))
     else:
         search_mode = _web_search_mode(len(xhs_sources))
         # 复用的资料是**上次那个问法**抓的，本轮角度可能不同 → 必应最多降到 light，不允许 skip。
         # 多花 ~30s 换角度覆盖，相对省下的 3.5 分钟仍是大赚。
         if reused and search_mode == "skip":
             search_mode = "light"
+    site_sources: list[dict] = await wait_cancellable(cid, amap_task)
     site_sources += xhs_sources
-    # 小红书资料足够 + 不需要携程酒店 → 完全不用开浏览器（跳过整个浏览器会话，最大提速）
+    if search_mode == "skip":
+        _progress(cid, "小红书资料充足，跳过网页搜索")
+    # 2026-10-15：网页资料先走联网搜索 API（纯 HTTP ~2s，结果自带正文），拿到了就不再开浏览器搜必应。
+    api_sources: list[dict] | None = None
+    if search_mode != "skip":
+        api_sources = await _collect_web_api(cid, pref, _build_queries(pref, intent),
+                                             light=search_mode == "light")
+        if api_sources:
+            search_mode = "skip"
+    # 小红书/搜索 API 资料足够 + 不需要携程酒店 → 完全不用开浏览器（跳过整个浏览器会话，最大提速）
     need_browser = hotel_needed or search_mode != "skip" or (
         intent != "hotel" and settings.site_routing_enabled and settings.xhs_enabled
     )
-    if xhs_pending:
-        _progress(cid, "正在并行搜集小红书笔记与网页资料…")
-    elif search_mode == "skip":
-        _progress(cid, "小红书资料充足，跳过网页搜索")
     # 2026-08-13 修复：浏览器块（acquire 排队/启动/抓取）全程包 try——任何非取消异常都在
     # 这里消化，**绝不冒进 LangGraph 的 arun_with_retry**（线上实测：xhs MCP 500 +
     # BrowserAcquireTimeout 让 collect 节点被重试 3 次，每次再等 2-5 分钟，用户看到"无限
@@ -1444,20 +1452,14 @@ async def collect_sources(
                     if intent != "hotel":
                         site_sources += await _collect_from_routed_site(cid, pref, intent, browser, user_id, user_text)
                     if search_mode != "skip":
+                        if api_sources is not None:
+                            _progress(cid, "联网搜索没有拿到可用资料，改用浏览器搜索…")
+                        if xhs_pending:
+                            _progress(cid, "小红书资料不够，正在补充网页搜索…" if xhs_sources
+                                      else "小红书暂无可用笔记，正在网页搜索…")
                         web_sources = await _search_and_collect(
-                            cid, pref, intent, browser, user_id, light=True,
+                            cid, pref, intent, browser, user_id, light=search_mode == "light",
                         )
-                    if xhs_task is not None:
-                        got = await wait_cancellable(cid, xhs_task)  # 等 xhs 期间响应停止
-                        xhs_task = None
-                        site_sources += got
-                        if not got and web_sources:
-                            # xhs 0 篇 → 补跑 full 的后续查询（queries[1:]），弥补 light 档缺口
-                            _progress(cid, "小红书暂无可用笔记，正在补充网页搜索…")
-                            extra = await _search_and_collect_queries(
-                                cid, pref, _build_queries(pref, intent)[1:], browser, max_fetch=4,
-                            )
-                            web_sources += extra
             except TurnCancelled:
                 raise  # 停止优先：不得被下面的广捕获吞掉
             except MCPConnectionError as e:
@@ -1469,14 +1471,8 @@ async def collect_sources(
         raise
     except Exception:  # noqa: BLE001 — _expire_stale_logins 等兜底，同样不冒进重试
         logger.warning("collect setup degraded cid=%s", cid, exc_info=True)
-    if xhs_task is not None:
-        # 浏览器块未收尾（连接失败/未开浏览器）时也要收 xhs 结果，避免 Task 泄漏
-        try:
-            site_sources += await wait_cancellable(cid, xhs_task)
-        except TurnCancelled:
-            raise
-        except Exception:  # noqa: BLE001
-            logger.warning("xhs collect join failed cid=%s", cid, exc_info=True)
+    if api_sources:
+        web_sources = api_sources + web_sources
     sources = site_sources + web_sources
     if same_dest:
         seen_urls = {s.get("url") for s in sources}
@@ -1489,11 +1485,28 @@ async def research_more(cid: str, pref: Preference, queries: list[str], user_id:
     if not queries:
         return []
     _progress(cid, f"正在补充资料：{('、'.join(queries))[:40]}…")
+    # 2026-10-14 限时：线上一轮补搜曾因单个必应搜索卡 100s、几个页面各卡 30-50s 拖到 300s。
+    # 软预算到点后不再开新搜索/新页面（已抓的照用）；硬上限兜住正卡在单个请求里的情况，
+    # 此时同样交回已抓到的部分。
+    import time as _time
+
+    api = await _collect_web_api(cid, pref, queries[:3], light=False)
+    if api:
+        return api
+
+    budget = settings.guide_research_budget_s
+    deadline = _time.monotonic() + budget
     extra: list[dict] = []
-    try:
+
+    async def _run() -> None:
         async with ChromeMCP(user_id=user_id, on_queue=_queue_cb(cid)) as chrome:
             browser = BrowserTool(chrome=chrome)
-            extra = await _search_and_collect_queries(cid, pref, queries[:3], browser)
+            await _search_and_collect_queries(cid, pref, queries[:3], browser, deadline=deadline, out=extra)
+
+    try:
+        await asyncio.wait_for(_run(), timeout=budget + 20)
+    except asyncio.TimeoutError:
+        logger.warning("research_more hit hard cap %.0fs, keeping %d sources", budget + 20, len(extra))
     except Exception:  # noqa: BLE001
         logger.warning("research_more failed", exc_info=True)
     return extra
@@ -2047,8 +2060,9 @@ def _build_queries(pref: Preference, intent: str = "general") -> list[str]:
     from app.agent.site_router import split_cities
 
     # 多城时逐城出词：「吉隆坡、仙本那、亚庇 7天旅游攻略」整串当关键词，搜索引擎
-    # 只会给泛泛结果（2026-08-01 全量扫描）。必应对同 IP 连续查询会限流，取前 2 城。
-    cities = split_cities(pref.destination)[:2] or [pref.destination or "热门目的地"]
+    # 只会给泛泛结果（2026-08-01 全量扫描）。必应时代因同 IP 连续查询限流只取前 2 城；
+    # 2026-10-15 改为联网搜索 API 并行查询（限 3 QPS），取前 3 城。
+    cities = split_cities(pref.destination)[:3] or [pref.destination or "热门目的地"]
     days = f"{pref.days}天" if pref.days else ""
     if intent == "hotel":
         if len(cities) == 1:
@@ -2059,6 +2073,52 @@ def _build_queries(pref: Preference, intent: str = "general") -> list[str]:
         return [f"{cities[0]} {days}旅游攻略 行程".strip(),
                 f"{cities[0]} 必去景点 必吃美食推荐"]
     return [f"{c} {days}旅游攻略 必去景点".strip() for c in cities]
+
+
+async def _collect_web_api(cid: str, pref: Preference, queries: list[str],
+                           light: bool = False) -> list[dict] | None:
+    """联网搜索 API 采集（2026-10-15）。多个查询并行（接口限 3 QPS，最多 3 个），结果去重、过滤后
+    转成与浏览器采集同格式的来源。返回 None = 未启用或全部失败（调用方回退浏览器）；[] = 搜到了但没可用的。
+    """
+    from app.agent.cancel import check as _cancel_check
+    from app.agent.source_pages import save_page
+    from app.tools import web_search_api
+
+    if not web_search_api.enabled() or not queries:
+        return None
+    _cancel_check(cid)
+    queries = queries[:1] if light else queries[:3]
+    _progress(cid, "正在联网搜索：" + "；".join(queries)[:48])
+    batches = await asyncio.gather(*(web_search_api.search(q) for q in queries))
+    if not any(batches):
+        return None
+    _cancel_check(cid)
+    sources: list[dict] = []
+    seen_urls: set[str] = set()
+    seen_titles: set[str] = set()
+    limit = 6 if light else 10
+    # 各查询轮流取，避免第一个查询的结果占满名额
+    for rank in range(max(len(b) for b in batches)):
+        for batch in batches:
+            if rank >= len(batch) or len(sources) >= limit:
+                continue
+            it = batch[rank]
+            title, url, text = it["title"], it["url"], it["content"]
+            if url in seen_urls or (title and title in seen_titles) or len(text) < 80:
+                continue
+            if pref.destination and not _is_relevant(pref.destination, title, text):
+                continue
+            seen_urls.add(url)
+            seen_titles.add(title)
+            page_id = save_page(cid, url, title or url, text)
+            src = {"title": title or url, "url": url, "summary": _excerpt(text)}
+            if it.get("published"):
+                src["published"] = it["published"]
+            if page_id:
+                src["page_id"] = page_id
+            sources.append(src)
+    _progress(cid, f"已获取 {len(sources)} 篇网页资料（联网搜索）")
+    return sources
 
 
 def _excerpt(text: str, limit: int = 1500) -> str:
@@ -2099,15 +2159,27 @@ async def _search_and_collect(
 async def _search_and_collect_queries(
     cid: str, pref: Preference, queries: list[str], browser: BrowserTool,
     max_fetch: int = 8, user_id: str = "",
+    deadline: float | None = None, out: list[dict] | None = None,
 ) -> list[dict]:
-    """按给定查询搜索并抓取来源（供主流程与 research 补搜复用）。"""
+    """按给定查询搜索并抓取来源（供主流程与 research 补搜复用）。
+
+    deadline（time.monotonic 时刻）：到点后不再发起新的搜索或抓取，返回已有结果。
+    out：结果直接追加到调用方的列表里，调用方超时取消时也能拿走已抓到的部分。
+    """
+    import time as _time
+
     from app.agent.cancel import check as _cancel_check
+
+    def _late() -> bool:
+        return deadline is not None and _time.monotonic() >= deadline
 
     # 阶段 1：搜索
     results: list[dict] = []
     seen_urls: set[str] = set()
     for i, q in enumerate(queries):
         _cancel_check(cid)  # 停止按钮：搜索前检查
+        if _late():
+            break
         _progress(cid, f"正在搜索：{q}")
         if i > 0:
             await asyncio.sleep(5)  # 拉开间隔降低限流概率（限流时有 360 兜底）
@@ -2129,10 +2201,12 @@ async def _search_and_collect_queries(
         return []
 
     # 阶段 2：抓取
-    sources: list[dict] = []
+    sources: list[dict] = out if out is not None else []
     confirm_state = {"asks": 0, "skip_domains": set()}
     for r in results[:max_fetch]:
         _cancel_check(cid)  # 停止按钮：每个来源抓取前检查
+        if _late():
+            break
         try:
             from app import observability as obs
 
@@ -2285,6 +2359,43 @@ DIRECT_SYSTEM = (
 ) + EXTERNAL_POLICY + HEALTH_POLICY + CURRENT_REQUEST_POLICY
 
 
+_WEATHER_RE = re.compile(r"天气|气温|温度|下雨|下雪|降温|冷不冷|热不热|冷吗|热吗|穿什么|带什么衣服|穿多少")
+
+
+class _WeatherCity(BaseModel):
+    city: str = ""
+
+
+def _live_weather_block(cid: str, user_text: str, context: str) -> str:
+    """直答问天气时，先查高德实时预报，免得模型凭记忆报天气。查不到返回空串，照常直答。"""
+    if not _WEATHER_RE.search(user_text or ""):
+        return ""
+    try:
+        from app.tools.amap import build_amap_source, enabled
+
+        if not enabled():
+            return ""
+        r = get_llm().classify(
+            f"{context[-600:]}\n\n用户问题：{user_text}"[:1200], _WeatherCity,
+            system="提取用户想查天气的城市或地区名（问题里没说就用上文正在聊的目的地），"
+                   "只输出地名；确实无法判断就输出空字符串。",
+        )
+        city = (r.city or "").strip()
+        if not city:
+            return ""
+        _progress(cid, f"正在查询{city}的实时天气…")
+        source = asyncio.run(build_amap_source(city))
+        line = next((ln for ln in (source or {}).get("summary", "").splitlines()
+                     if ln.startswith("未来天气预报")), "")
+        if not line:
+            return ""
+        return (f"<live_weather source=\"高德地图\" city=\"{city}\">\n{line}\n</live_weather>\n"
+                "回答天气时以上面的实时预报为准，注明是高德预报；用户没问的行程不要展开。")
+    except Exception:  # noqa: BLE001 — 查不到天气不该影响直答
+        logger.warning("live weather lookup failed cid=%s", cid, exc_info=True)
+        return ""
+
+
 def run_direct_answer(cid: str, user_text: str, user_id: str) -> None:
     """轻量直答（Phase 22）：无浏览器、无来源，记忆+近几轮历史 → 单次流式生成。
 
@@ -2314,6 +2425,9 @@ def run_direct_answer(cid: str, user_text: str, user_id: str) -> None:
     directive = credibility_directive(user_text)
     if directive:
         user_parts.append(directive.strip())
+    weather = _live_weather_block(cid, user_text, "\n".join(user_parts))
+    if weather:
+        user_parts.append(weather)
     user_parts.append(f"用户问题：{user_text}")
     messages = (
         [{"role": "system", "content": DIRECT_SYSTEM}]
@@ -2505,24 +2619,52 @@ def _ensure_stopped_message(cid: str, text: str = "已停止本轮。") -> None:
     2026-08-13 泛化：停止与**异常失败**共用——异常路径同样可能留下 quick_take 建的
     空 streaming 占位，不终稿的话 `_is_running` 永远判运行中、前端无限转圈。
     """
-    from app.db.models import TravelMessage as _M
-
-    with get_session() as db:
-        last = db.execute(
-            select(_M).where(_M.conversation_id == cid).order_by(_M.created_at.desc()).limit(1)
-        ).scalar_one_or_none()
-        streaming = False
-        last_id = last_content = last_reasoning = None
-        if last is not None and last.role == "assistant":
-            streaming = bool((json.loads(last.meta_json) or {}).get("streaming")) if last.meta_json else False
-            last_id, last_content, last_reasoning = last.id, last.content, last.reasoning
-        need = last is None or last.role != "assistant" or streaming
-    if streaming and last_id:
-        # 占位可能还是空的（guide 快答先行后、collect 阶段被停止/失败）——
-        # 空占位也要就地终稿，否则 streaming 标记残留，前端永远判「运行中」。
-        _finalize_streaming_message(
-            last_id, last_content or text, last_reasoning or "", meta={},
-        )
-    elif need:
+    # 2026-10-15：此前只看**最后一条**消息。快答先行时本轮是「流式占位 → 初步回答 → 进度」，
+    # 停止时最后一条是进度或初步回答，于是另补一条「已停止本轮」而占位仍是 streaming，
+    # `_is_running` 继续判运行中，停止按钮和「正在生成」一直挂着（线上实拍）。
+    # 现在本轮（最后一条 user 之后）所有流式占位都就地终稿，一条都没有才补一条。
+    closed = close_turn_streaming(cid, text)
+    if not closed and not _turn_has_final_answer(cid):
         _add_message(cid, "assistant", text)
     clear_plain_progress(cid)
+
+
+def _turn_messages(db, cid: str) -> list:
+    from app.db.models import TravelMessage as _M
+
+    msgs = db.execute(
+        select(_M).where(_M.conversation_id == cid).order_by(_M.created_at)
+    ).scalars().all()
+    last_user = max((i for i, m in enumerate(msgs) if m.role == "user"), default=-1)
+    return msgs[last_user + 1:]
+
+
+def _meta(m) -> dict:
+    try:
+        return json.loads(m.meta_json) if m.meta_json else {}
+    except ValueError:
+        return {}
+
+
+def _turn_has_final_answer(cid: str) -> bool:
+    with get_session() as db:
+        return any(m.role == "assistant" and not _meta(m).get("streaming") and not _meta(m).get("preliminary")
+                   for m in _turn_messages(db, cid))
+
+
+def close_turn_streaming(cid: str, text: str = "已停止本轮。") -> int:
+    """把本轮仍在流式的 assistant 消息全部终稿（有内容的保留内容，空的写 `text`）。返回终稿条数。
+
+    停止接口会**立即**调用它，不等后台走到取消检查点：轮询下一次就看到本轮结束。
+    后台随后命中检查点时只会就地改写同一条消息（流式增量不碰 meta），不会把它变回流式。
+    """
+    n = 0
+    with get_session() as db:
+        for m in _turn_messages(db, cid):
+            if m.role == "assistant" and _meta(m).get("streaming"):
+                m.content = m.content or text
+                m.meta_json = None
+                n += 1
+        if n:
+            db.commit()
+    return n

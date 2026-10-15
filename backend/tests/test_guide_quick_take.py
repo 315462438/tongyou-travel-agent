@@ -99,28 +99,20 @@ def test_quick_take_respects_cancel(monkeypatch):
     assert calls["added"] == []  # 停止后不再往会话里塞消息
 
 
-# ---------- _ensure_stopped_message（占位空白期停止） ----------
+# ---------- _ensure_stopped_message / close_turn_streaming（停止收尾） ----------
 
-class _FakeLast:
-    def __init__(self, role, meta_json=None, content="", reasoning=None):
-        self.id = "m1"
+class _Msg:
+    def __init__(self, role, meta=None, content="", mid="m1"):
+        self.id = mid
         self.role = role
-        self.meta_json = meta_json
+        self.meta_json = json.dumps(meta) if meta else None
         self.content = content
-        self.reasoning = reasoning
-
-
-class _FakeResult:
-    def __init__(self, last):
-        self._last = last
-
-    def scalar_one_or_none(self):
-        return self._last
+        self.reasoning = None
 
 
 class _FakeSession:
-    def __init__(self, last):
-        self._last = last
+    def __init__(self):
+        self.commits = 0
 
     def __enter__(self):
         return self
@@ -128,69 +120,86 @@ class _FakeSession:
     def __exit__(self, *a):
         return False
 
-    def execute(self, *a, **k):
-        return _FakeResult(self._last)
+    def commit(self):
+        self.commits += 1
 
 
-def _wire_stop(monkeypatch, last):
-    calls = {"finalized": [], "added": [], "cleared": 0}
-    monkeypatch.setattr(orch, "get_session", lambda: _FakeSession(last))
-    monkeypatch.setattr(
-        orch, "_finalize_streaming_message",
-        lambda mid, content, reasoning, meta: calls["finalized"].append((mid, content)),
-    )
+def _wire_stop(monkeypatch, turn):
+    """turn：本轮（最后一条 user 之后）的消息。"""
+    calls = {"added": [], "cleared": 0}
+    monkeypatch.setattr(orch, "get_session", lambda: _FakeSession())
+    monkeypatch.setattr(orch, "_turn_messages", lambda db, cid: turn)
     monkeypatch.setattr(orch, "_add_message",
                         lambda cid, role, content: calls["added"].append(content))
     monkeypatch.setattr(orch, "clear_plain_progress", lambda cid: calls.__setitem__("cleared", 1))
     return calls
 
 
+def _streaming(m):
+    return bool(json.loads(m.meta_json or "{}").get("streaming"))
+
+
 def test_stop_empty_placeholder_finalizes_in_place(monkeypatch):
     """快答先行后、collect 阶段被停止：空占位就地终稿「已停止本轮」，streaming 不残留。"""
-    last = _FakeLast("assistant", json.dumps({"streaming": True}), content="")
-    calls = _wire_stop(monkeypatch, last)
+    placeholder = _Msg("assistant", {"streaming": True})
+    calls = _wire_stop(monkeypatch, [placeholder])
     orch._ensure_stopped_message("c")
-    assert calls["finalized"] == [("m1", "已停止本轮。")]
+    assert placeholder.content == "已停止本轮。" and not _streaming(placeholder)
     assert calls["added"] == []
     assert calls["cleared"] == 1
 
 
-def test_stop_partial_streaming_finalizes_content(monkeypatch):
-    last = _FakeLast("assistant", json.dumps({"streaming": True}), content="已生成一半的内容")
-    calls = _wire_stop(monkeypatch, last)
+def test_stop_placeholder_behind_preliminary_and_progress(monkeypatch):
+    """2026-10-15 线上：占位后面还有初步回答和进度，旧逻辑只看最后一条，另补一条而占位残留流式。"""
+    placeholder = _Msg("assistant", {"streaming": True}, mid="p")
+    turn = [placeholder, _Msg("assistant", {"preliminary": True}, "初步判断", mid="q"), _Msg("progress", None, "正在搜索", mid="r")]
+    calls = _wire_stop(monkeypatch, turn)
     orch._ensure_stopped_message("c")
-    assert calls["finalized"] == [("m1", "已生成一半的内容")]  # 就地保留，不补「已停止」
+    assert not _streaming(placeholder) and placeholder.content == "已停止本轮。"
+    assert calls["added"] == []
+
+
+def test_stop_partial_streaming_finalizes_content(monkeypatch):
+    placeholder = _Msg("assistant", {"streaming": True}, "已生成一半的内容")
+    calls = _wire_stop(monkeypatch, [placeholder])
+    orch._ensure_stopped_message("c")
+    assert placeholder.content == "已生成一半的内容" and not _streaming(placeholder)  # 就地保留，不补「已停止」
     assert calls["added"] == []
 
 
 def test_stop_after_finalize_is_noop(monkeypatch):
-    last = _FakeLast("assistant", json.dumps({"sources": []}), content="完整攻略")
-    calls = _wire_stop(monkeypatch, last)
+    done = _Msg("assistant", {"sources": []}, "完整攻略")
+    calls = _wire_stop(monkeypatch, [done])
     orch._ensure_stopped_message("c")
-    assert calls["finalized"] == []
+    assert done.content == "完整攻略"
     assert calls["added"] == []
 
 
-def test_stop_no_last_adds_message(monkeypatch):
-    calls = _wire_stop(monkeypatch, None)
+def test_stop_no_answer_adds_message(monkeypatch):
+    calls = _wire_stop(monkeypatch, [_Msg("progress", None, "正在搜索")])
     orch._ensure_stopped_message("c")
-    assert calls["finalized"] == []
+    assert calls["added"] == ["已停止本轮。"]
+
+
+def test_stop_only_preliminary_still_adds_message(monkeypatch):
+    """初步回答不算终稿：没有占位时要补一条，否则 _is_running 继续判运行中。"""
+    calls = _wire_stop(monkeypatch, [_Msg("assistant", {"preliminary": True}, "初步判断")])
+    orch._ensure_stopped_message("c")
     assert calls["added"] == ["已停止本轮。"]
 
 
 def test_stop_empty_placeholder_with_custom_text(monkeypatch):
     """2026-08-13 泛化：异常失败路径用自定义文案终稿残留占位（否则前端永远判运行中）。"""
-    last = _FakeLast("assistant", json.dumps({"streaming": True}), content="")
-    calls = _wire_stop(monkeypatch, last)
+    placeholder = _Msg("assistant", {"streaming": True})
+    calls = _wire_stop(monkeypatch, [placeholder])
     orch._ensure_stopped_message("c", "抱歉，处理过程中出错了，请重试。")
-    assert calls["finalized"] == [("m1", "抱歉，处理过程中出错了，请重试。")]
+    assert placeholder.content == "抱歉，处理过程中出错了，请重试。"
     assert calls["added"] == []
 
 
-def test_stop_no_last_with_custom_text(monkeypatch):
-    calls = _wire_stop(monkeypatch, None)
+def test_stop_no_answer_with_custom_text(monkeypatch):
+    calls = _wire_stop(monkeypatch, [])
     orch._ensure_stopped_message("c", "抱歉，处理过程中出错了，请重试。")
-    assert calls["finalized"] == []
     assert calls["added"] == ["抱歉，处理过程中出错了，请重试。"]
 
 

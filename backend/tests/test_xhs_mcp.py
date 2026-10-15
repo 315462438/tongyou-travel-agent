@@ -365,3 +365,98 @@ def test_extraction_prompts_carry_thinking_discipline():
                        ("ontology", ont), ("poster", pos), ("budget", bud)]:
         assert "思考纪律" in sys_, f"{name} 丢了思考纪律"
         assert "两三行" in sys_, f"{name} 纪律内容不完整"
+
+
+# ---------- 笔记页直读（2026-10-14） ----------
+
+def _page(note_id: str, note: dict, extra: str = "") -> str:
+    state = json.dumps({"note": {"noteDetailMap": {note_id: {"note": note}}}}, ensure_ascii=False,
+                       separators=(",", ":"))
+    # 线上状态是 JS 字面量（无空格）：值位置有 undefined、空 Map；正文里的同名单词不能被改。
+    state = state.replace('"comments":null', '"comments":undefined')
+    return (f"<html><script>window.__INITIAL_STATE__={state[:-1]},"
+            f'"AiNoteDetailStore":{{"noteDetailMap":new Map([])}}{extra}}}</script></html>')
+
+
+def test_parse_page_state_reads_the_server_rendered_note():
+    note = {"title": "西安碳水攻略", "desc": "9家老店人均20，写着undefined也不能被改",
+            "comments": None,
+            "imageList": [{"urlDefault": "http://sns-webpic-qc.xhscdn.com/a", "width": 1, "height": 2}]}
+    det = xhs_mcp._parse_page_state(_page("n1", note), "n1")
+    assert det["title"] == "西安碳水攻略"
+    assert det["desc"] == "9家老店人均20，写着undefined也不能被改"
+    assert det["images"][0]["url"] == "https://sns-webpic-qc.xhscdn.com/a"
+
+
+def test_parse_page_state_rejects_other_pages():
+    assert xhs_mcp._parse_page_state("<html>登录</html>", "n1") is None
+    assert xhs_mcp._parse_page_state(_page("other", {"desc": "x"}), "n1") is None
+    assert xhs_mcp._parse_page_state("<script>window.__INITIAL_STATE__={broken</script>", "n1") is None
+
+
+def _serve(monkeypatch, handler):
+    import httpx
+    real = httpx.AsyncClient
+    monkeypatch.setattr(httpx, "AsyncClient",
+                        lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
+
+
+def _cookie_file(tmp_path, monkeypatch):
+    path = tmp_path / "cookies.json"
+    path.write_text(json.dumps([{"name": "web_session", "value": "s1"}, {"name": "a1", "value": "x"}]))
+    monkeypatch.setattr(settings, "xhs_cookie_file", str(path))
+    monkeypatch.setattr(xhs_mcp, "_cookie_cache", None)
+
+
+def test_page_detail_sends_the_mcp_cookie(tmp_path, monkeypatch):
+    import httpx
+    _cookie_file(tmp_path, monkeypatch)
+    seen = {}
+
+    def handler(request):
+        seen["cookie"] = request.headers.get("cookie", "")
+        seen["url"] = str(request.url)
+        return httpx.Response(200, text=_page("n1", {"title": "t", "desc": "正文"}))
+    _serve(monkeypatch, handler)
+    det = asyncio.run(xhs_mcp._detail_via_page("n1", "tok=="))
+    assert det["desc"] == "正文"
+    assert "web_session=s1" in seen["cookie"]
+    assert "xsec_token=tok%3D%3D" in seen["url"]
+
+
+def test_login_redirect_falls_back_to_mcp(tmp_path, monkeypatch):
+    import httpx
+    _cookie_file(tmp_path, monkeypatch)
+    monkeypatch.setattr(settings, "xhs_mcp_url", "http://mcp")
+
+    def handler(request):
+        if request.url.path.startswith("/explore/"):
+            return httpx.Response(302, headers={"location": "https://www.xiaohongshu.com/login?redirectPath=x"})
+        return httpx.Response(200, text="<html>登录</html>")
+    _serve(monkeypatch, handler)
+    calls = []
+
+    async def fake_call(tool, args):
+        calls.append(tool)
+        return json.dumps({"data": {"note": {"title": "t", "desc": "来自MCP"}}})
+    monkeypatch.setattr(xhs_mcp, "_call_tool", fake_call)
+    det = asyncio.run(xhs_mcp.note_detail("n1", "tok"))
+    assert det["desc"] == "来自MCP"
+    assert calls == ["get_feed_detail"]
+
+
+def test_page_success_skips_mcp(tmp_path, monkeypatch):
+    import httpx
+    _cookie_file(tmp_path, monkeypatch)
+    monkeypatch.setattr(settings, "xhs_mcp_url", "http://mcp")
+    _serve(monkeypatch, lambda request: httpx.Response(200, text=_page("n1", {"title": "t", "desc": "直读"})))
+
+    async def fake_call(tool, args):
+        raise AssertionError("MCP must not be called when the page read works")
+    monkeypatch.setattr(xhs_mcp, "_call_tool", fake_call)
+    assert asyncio.run(xhs_mcp.note_detail("n1", "tok"))["desc"] == "直读"
+
+
+def test_no_cookie_file_means_mcp_only(monkeypatch):
+    monkeypatch.setattr(settings, "xhs_cookie_file", "")
+    assert asyncio.run(xhs_mcp._detail_via_page("n1", "tok")) is None

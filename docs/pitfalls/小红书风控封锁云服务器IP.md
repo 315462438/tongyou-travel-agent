@@ -39,3 +39,18 @@ IP at risk. Switch to a secure network and retry.  300012
 - 站点风控页可能长得像正常内容页，**站点直抓的内容必须过相关性校验**，
   不能只信页面类型分类器。
 - 反爬处置要区分「要登录」和「IP 被封」：前者用户能救，后者等多久都没用。
+
+## 2026-10-15 复发：登录态也被拦，小红书整体关闭
+
+- 现象：xhs-mcp 搜索全部卡到它内部 60s 上限后 panic（`search.go` 等 `__INITIAL_STATE__` 等不到）。
+  服务器上带同一份登录 cookie 打开搜索页，直接落到 `website-login/error?error_code=300012`
+  「安全限制 / IP at risk」。7 月靠「登录态会话」绕过的办法这次也失效。
+- 诱因（推断）：10-14 访问量明显变密——多轮测速与线上评估、上线「直读笔记页」（每轮多 6-8 个
+  非浏览器请求、TLS 指纹与浏览器不同）、一次用页面签名函数直调搜索接口的试验（返回过
+  `Account abnormal` 300011）。**线上唯一账号/唯一 IP 上不要做密集试验。**
+- 处置：服务器 `.env` 注释掉 `XHS_MCP_URL` / `XHS_COOKIE_FILE`（备份 `.env.bak-20261015-xhs-off`），
+  `docker stop xhs-mcp`（restart=unless-stopped，手动停后不会自启）。网页资料改走阿里云联网搜索
+  （`app/tools/web_search_api.py`），不再依赖小红书。
+- 若要恢复：只靠等大概率没用（数据中心 IP 段）。可行的是住宅代理——xiaohongshu-mcp 原生支持
+  `XHS_PROXY`。恢复时详情只走 MCP 浏览器，不要再开「直读笔记页」，并按每轮 1 次搜索 + 3 篇限速。
+- 顺带结论：「让 MCP 复用浏览器」实测收益很小（冷启动 Chrome 只要 0.2-1.6s，时间花在等搜索页），未上线。
