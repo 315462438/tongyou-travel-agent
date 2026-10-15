@@ -12,8 +12,9 @@ class FakeLLM:
         self.kind = kind
         self.called = False
 
-    def classify(self, prompt, schema, system=None):
+    def classify(self, prompt, schema, system=None, **kwargs):
         self.called = True
+        self.kwargs = kwargs
         return schema(kind=self.kind)
 
 
@@ -273,3 +274,23 @@ def test_subagent_tracker_has_all_callback_methods():
         "on_agent_action", "on_agent_finish", "on_custom_event", "on_text",
     ):
         assert callable(getattr(t, name)), f"missing callback {name}"
+
+
+def test_route_classify_is_fast_and_bounded():
+    """2026-10-15：路由是判断题，关思考 + 短超时 + 少重试，模型故障时不拖住整轮。"""
+    from app.config import settings
+    llm = FakeLLM("direct")
+    decide_route("拉萨现在冷吗", llm)
+    assert llm.kwargs == {"effort": settings.route_reasoning_effort,
+                          "timeout": settings.llm_route_timeout_s, "retries": 1}
+
+
+def test_route_gives_up_the_turn_when_model_is_unavailable():
+    from app.llm.retry import LLMUnavailableError
+
+    class Down:
+        def classify(self, *a, **k):
+            raise LLMUnavailableError("down")
+
+    with pytest.raises(LLMUnavailableError):
+        decide_route("拉萨3天怎么玩", Down())

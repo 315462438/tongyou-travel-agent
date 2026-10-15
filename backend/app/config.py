@@ -329,6 +329,22 @@ class Settings(BaseSettings):
     # 对照数据，不跟着文本链路一起翻。
     vision_reasoning_effort: str = "none"
     llm_timeout_s: float = 180.0  # 单次 DeepSeek 请求超时（Phase 103；默认 600s 等于没有）
+    # 2026-10-15 超时分层与快速失败（借鉴 deepseek-harness 的 idle watchdog + 可见重试）。
+    # 起因：DeepSeek 故障时一次请求等 180s、重试 5 次且不告诉用户，一轮静默卡十几分钟。
+    llm_connect_timeout_s: float = 8.0     # 建连
+    llm_stream_idle_timeout_s: float = 45.0  # 流式：两块**内容**之间最长等多久
+    # 流式首块截止。⚠️ 不能只靠 httpx 的 read 超时：DeepSeek 排队时流式会持续发 SSE keep-alive
+    # 注释，字节一直在来，read 超时永远不触发，而 SDK 把注释吞掉、我们一块内容都收不到
+    # （2026-10-15 故障时实测挂 330s+ 不返回）。所以由我们自己按「内容块」计时，到点关流。
+    llm_first_token_timeout_s: float = 30.0
+    llm_call_timeout_s: float = 90.0       # 非流式：等整个响应
+    llm_route_timeout_s: float = 20.0      # 路由分类等小调用：拿不到就按默认路线走
+    llm_max_retries: int = 2               # 交互链路的传输层重试次数（原 5 次）
+    # 思考档位（off/low/high/max，none=不发字段）。路由与快答是判断/垫场，不需要长推理；
+    # 直答要快出首字。可在 .env 覆盖，便于对比质量。
+    route_reasoning_effort: str = "off"
+    quick_take_reasoning_effort: str = "off"
+    direct_reasoning_effort: str = "low"
     guide_max_tokens: int = 16000
     guide_max_continuations: int = 2  # 最多续写几轮（16000×3 远超任何真实攻略长度）
     # guide 快答先行（2026-08-13，Phase 71 机制的 guide 版）：parse 后立刻用快模型给

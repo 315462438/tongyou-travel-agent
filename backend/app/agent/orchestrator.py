@@ -468,6 +468,9 @@ def emit_guide_quick_take(cid: str, user_text: str, pref, user_id: str) -> None:
             # 纪律负责让它别想太多，预算负责纪律漂移时仍留得下正文——两条都要。
             # 只留纪律不加预算，是把正确性押在 prompt 遵循上（Phase 89 的教训）。
             max_tokens=1600,
+            # 2026-10-15：快答是垫场，默认关思考（.env QUICK_TAKE_REASONING_EFFORT 可改回）
+            effort=settings.quick_take_reasoning_effort,
+            cid=cid,
         )
         if is_cancelled(cid):  # 生成期间用户点了停止 → 不要再往会话里塞消息
             return
@@ -2379,6 +2382,7 @@ def _live_weather_block(cid: str, user_text: str, context: str) -> str:
             f"{context[-600:]}\n\n用户问题：{user_text}"[:1200], _WeatherCity,
             system="提取用户想查天气的城市或地区名（问题里没说就用上文正在聊的目的地），"
                    "只输出地名；确实无法判断就输出空字符串。",
+            effort="off", timeout=settings.llm_route_timeout_s, retries=1,
         )
         city = (r.city or "").strip()
         if not city:
@@ -2445,6 +2449,7 @@ def run_direct_answer(cid: str, user_text: str, user_id: str) -> None:
         # P0：max_tokens 2000→4000（2000≈1500字，长攻略写到酒店就被截断）
         messages=messages, model=settings.model_direct or settings.model_classifier, max_tokens=4000,
         cid=cid,  # cid：重试退避期间也响应停止
+        effort=settings.direct_reasoning_effort,  # 2026-10-15：直答默认低档思考，首字更快
     ):
         if kind == "finish":
             truncated = delta == "length"  # 触到 max_tokens = 被截断
@@ -2491,6 +2496,9 @@ def run_conversation_turn(
     from app.agent.graph import run_guide_graph
     from app.llm.client import get_llm
 
+    from app.llm.retry import LLMUnavailableError, clear_down
+
+    clear_down(cid)  # 上一轮的「模型不可用」标记不带进新一轮：用户重试时要真的再试
     _mark_inflight(cid, turn_id, user_id)
     # Phase 105：带图消息。**图先变成文本，再走现有路由**——刻意不给路由新增一条
     # 「图片链路」，也不换成开放式 agent（那个我们已经有了，就是 Phase 21 的
@@ -2558,7 +2566,12 @@ def run_conversation_turn(
                 asyncio.run(run_guide_graph(cid, user_text, user_id, turn_id))
     except TurnCancelled:
         _ensure_stopped_message(cid)  # 用户主动停止：已生成部分已终稿，无终稿则补一条
-    except Exception:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
+        if _caused_by(e, LLMUnavailableError):
+            # 2026-10-15：模型服务确认不可用时明说，而不是笼统的「出错了」，更不是一直转圈
+            logger.warning("conversation %s: model unavailable: %s", cid, e)
+            _ensure_stopped_message(cid, "模型服务（DeepSeek）暂时不可用，这一轮没能完成。请稍后再试。")
+            return
         logger.error("conversation %s failed: %s", cid, traceback.format_exc())
         # 2026-08-13：失败也要收尾残留的 streaming 占位（quick_take 提前建的），
         # 否则 `_is_running` 永远判运行中、前端无限转圈、停止按钮形同虚设。
@@ -2567,6 +2580,17 @@ def run_conversation_turn(
         clear_cancel(cid)
         _clear_inflight(cid)
         obs.flush()  # 在后台线程冲刷埋点缓冲，不挡请求
+
+
+def _caused_by(error: BaseException, kind: type) -> bool:
+    """异常链里（含 LangGraph 等包装的 __cause__/__context__）有没有 `kind`。"""
+    seen = 0
+    while error is not None and seen < 10:
+        if isinstance(error, kind):
+            return True
+        error = error.__cause__ or error.__context__
+        seen += 1
+    return False
 
 
 def _image_unreadable(cid: str, *, total: int = 0, ok: int = 0) -> None:

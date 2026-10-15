@@ -47,3 +47,17 @@ def test_weather_lookup_only_for_weather_questions(monkeypatch):
     monkeypatch.setattr(orch, "get_llm", boom)
     assert orch._live_weather_block("c", "布达拉宫几点开门", "") == ""
     assert orch._WEATHER_RE.search("拉萨现在冷不冷")
+
+
+def test_model_unavailable_is_found_through_wrappers():
+    """LangGraph 等会把异常包一层；包过之后也要认出「模型不可用」，给用户明确提示。"""
+    from app.llm.retry import LLMUnavailableError
+
+    try:
+        try:
+            raise LLMUnavailableError("down")
+        except LLMUnavailableError as inner:
+            raise RuntimeError("node failed") from inner
+    except RuntimeError as outer:
+        assert orch._caused_by(outer, LLMUnavailableError)
+    assert not orch._caused_by(ValueError("x"), LLMUnavailableError)

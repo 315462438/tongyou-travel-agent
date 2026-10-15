@@ -10,6 +10,7 @@ import json
 import logging
 from typing import TypeVar
 
+import httpx
 from openai import OpenAI
 from pydantic import BaseModel, ValidationError
 
@@ -68,6 +69,92 @@ def _thinking_kwargs(effort: str | None) -> dict:
     return {}
 
 
+def _timeout(total: float | None = None, *, stream: bool = False) -> httpx.Timeout:
+    """分层超时（2026-10-15）：建连单独短超时；流式的 read 是**两块数据之间**的最长间隔
+    （httpx 语义），正好就是 harness 的 idle watchdog——首块迟迟不来、或中途断流都会触发。"""
+    read = settings.llm_stream_idle_timeout_s if stream else (total or settings.llm_call_timeout_s)
+    return httpx.Timeout(read, connect=settings.llm_connect_timeout_s)
+
+
+# 2026-10-15 停止即断流（借鉴 harness：调用方 signal 与内部 consumer 合并，finally 里 abort 拆 socket）。
+# 协作式取消只在「收到下一块」时才生效：模型卡着不出字时点停止要等到超时，被放弃的请求还在后台
+# 继续烧 token。这里登记每个会话正在读的流，停止接口直接把它关掉。
+import threading
+
+_streams_lock = threading.Lock()
+_open_streams: dict[str, set] = {}
+
+
+def _track(cid: str | None, stream) -> None:
+    if cid:
+        with _streams_lock:
+            _open_streams.setdefault(cid, set()).add(stream)
+
+
+def _untrack(cid: str | None, stream) -> None:
+    if cid:
+        with _streams_lock:
+            group = _open_streams.get(cid)
+            if group is not None:
+                group.discard(stream)
+                if not group:
+                    _open_streams.pop(cid, None)
+
+
+def close_streams(cid: str) -> int:
+    """关闭该会话所有正在读的模型流（停止按钮调用）。返回关闭条数。读流的线程随即收到异常，
+    stream_generate_with_reasoning 把它认成取消（TurnCancelled），不算失败、不重试。"""
+    with _streams_lock:
+        group = list(_open_streams.pop(cid, set()))
+    for stream in group:
+        try:
+            stream.close()
+        except Exception:  # noqa: BLE001 — 关不掉也只是退回协作式取消
+            _logger.debug("close stream failed", exc_info=True)
+    return len(group)
+
+
+class _Watchdog:
+    """按「内容块」计时的看门狗：首块超过 first_s、或两块之间超过 idle_s 就关流。
+
+    心跳（SSE keep-alive 注释）被 SDK 吞掉，不会喂狗——正是要它不算数。
+    关流后读侧收到异常（或迭代提前结束），调用方看 `fired` 判定为超时并按可重试错误处理。
+    """
+
+    def __init__(self, stream, first_s: float, idle_s: float):
+        self._stream = stream
+        self._idle_s = idle_s
+        self.fired = False
+        self._timer: threading.Timer | None = None
+        self._arm(first_s)
+
+    def _arm(self, seconds: float) -> None:
+        if self._timer is not None:
+            self._timer.cancel()
+        self._timer = threading.Timer(seconds, self._fire)
+        self._timer.daemon = True
+        self._timer.start()
+
+    def _fire(self) -> None:
+        self.fired = True
+        try:
+            self._stream.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def kick(self) -> None:
+        if not self.fired:
+            self._arm(self._idle_s)
+
+    def stop(self) -> None:
+        if self._timer is not None:
+            self._timer.cancel()
+
+
+class LLMStreamStalled(TimeoutError):
+    """流式长时间收不到内容（只有心跳或完全无数据）。文本含 timeout，retry 判定为可重试。"""
+
+
 def _abort_of(cid: str | None):
     """把 cid 变成一个「是否该中止」的回调。不传 cid 则退避期间不响应停止（行为同改造前）。"""
     if not cid:
@@ -90,7 +177,9 @@ class LLMClient:
             # Phase 103：显式超时。默认 600s 意味着一个卡住的连接能吃掉整轮预算——
             # 而这条链路上游还有 deep_research_timeout_s(600) 这类兜底，等于白等。
             # 超时会被 retry.is_retryable 认成可重试，所以掐短是安全的。
-            timeout=settings.llm_timeout_s,
+            timeout=_timeout(),
+            # 重试由我们自己的 retry 模块做（可见、可停止、快速失败），SDK 内置重试会叠加成多倍等待
+            max_retries=0,
         )
 
     def parse(
@@ -103,6 +192,8 @@ class LLMClient:
         max_tokens: int = 8000,
         cid: str | None = None,
         effort: str | None = None,
+        timeout: float | None = None,
+        retries: int | None = None,
     ) -> T:
         """结构化输出：返回通过 Pydantic 校验的对象。校验失败带错误信息重试一次。
 
@@ -141,10 +232,13 @@ class LLMClient:
                     messages=messages,
                     max_tokens=max_tokens,
                     response_format={"type": "json_object"},
+                    timeout=_timeout(timeout),
                     **thinking,
                 ),
                 what=f"llm.parse[{model}]",
                 should_abort=_abort_of(cid),
+                max_retries=retries,
+                cid=cid,
             )
             choice = resp.choices[0]
             raw = choice.message.content or ""
@@ -210,11 +304,12 @@ class LLMClient:
     def classify(
         self, prompt: str, schema: type[T], *, system: str | None = None,
         cid: str | None = None, effort: str | None = None,
+        timeout: float | None = None, retries: int | None = None,
     ) -> T:
         """轻量分类：用便宜的模型（v4-flash），如页面类型判定。"""
         return self.parse(
             prompt, schema, model=settings.model_classifier, system=system,
-            max_tokens=1024, cid=cid, effort=effort,
+            max_tokens=1024, cid=cid, effort=effort, timeout=timeout, retries=retries,
         )
 
     def generate(
@@ -254,25 +349,34 @@ class LLMClient:
         messages: list[dict] | None = None,
         max_tokens: int = 8000,
         cid: str | None = None,
+        effort: str | None = None,
     ) -> tuple[str, str]:
         """自由文本生成，同时返回 (正文, 思考过程)。
 
         DeepSeek v4 系列在 message.reasoning_content 里返回推理链，
         用于对话界面「点击展开模型思考过程」（类 GPT/Claude）。
+        正常结束却**什么都没返回**（正文和思考都空）时原样再问一次（harness 的 EMPTY_RESPONSE）。
         """
         from app.llm.retry import call_with_retry
 
-        resp = call_with_retry(
-            lambda: self._client.chat.completions.create(
-                model=model or settings.model_planner,
-                messages=self._build_messages(prompt, system, messages),
-                max_tokens=max_tokens,
-            ),
-            what="llm.generate",
-            should_abort=_abort_of(cid),
-        )
-        msg = resp.choices[0].message
-        return (msg.content or "", getattr(msg, "reasoning_content", None) or "")
+        for _ in range(2):
+            resp = call_with_retry(
+                lambda: self._client.chat.completions.create(
+                    model=model or settings.model_planner,
+                    messages=self._build_messages(prompt, system, messages),
+                    max_tokens=max_tokens,
+                    **_thinking_kwargs(effort),
+                ),
+                what="llm.generate",
+                should_abort=_abort_of(cid),
+                cid=cid,
+            )
+            msg = resp.choices[0].message
+            content, reasoning = msg.content or "", getattr(msg, "reasoning_content", None) or ""
+            if content or reasoning:
+                break
+            _logger.warning("llm.generate returned an empty response, asking once more")
+        return (content, reasoning)
 
     def stream_generate_with_reasoning(
         self,
@@ -283,6 +387,7 @@ class LLMClient:
         messages: list[dict] | None = None,
         max_tokens: int = 8000,
         cid: str | None = None,
+        effort: str | None = None,
     ):
         """流式生成（Phase 11）：逐块 yield ("reasoning"|"content", 增量文本)。
 
@@ -295,12 +400,21 @@ class LLMClient:
         走重试（这正是最常见的失败点：建连/首字节），之后的一律上抛。
         """
         from app.agent.cancel import TurnCancelled
-        from app.llm.retry import MAX_RETRIES, delay_for, is_retryable, sleep_interruptible
+        from app.llm.retry import (
+            LLMUnavailableError, delay_for, is_down, is_retryable, mark_down, notify_retry,
+            retry_limit, sleep_interruptible,
+        )
 
+        if is_down(cid):
+            raise LLMUnavailableError("llm.stream: model marked unavailable for this turn")
         abort = _abort_of(cid)
+        limit = retry_limit()
         attempt = 0
+        empty_retried = False
         while True:
             produced = False
+            stream = None
+            watchdog: _Watchdog | None = None
             try:
                 # ⚠️ 这里**不能**再套 `call_with_retry`：本函数自己就是重试循环，套上去就是
                 # 双层嵌套（内层 5 次 × 外层 5 次 = 36 次请求），503 风暴下会把 provider
@@ -310,10 +424,16 @@ class LLMClient:
                     messages=self._build_messages(prompt, system, messages),
                     max_tokens=max_tokens,
                     stream=True,
+                    timeout=_timeout(stream=True),
+                    **_thinking_kwargs(effort),
                 )
+                _track(cid, stream)
+                watchdog = _Watchdog(stream, settings.llm_first_token_timeout_s,
+                                     settings.llm_stream_idle_timeout_s)
                 for chunk in stream:
                     if not chunk.choices:
                         continue
+                    watchdog.kick()
                     choice = chunk.choices[0]
                     delta = choice.delta
                     rc = getattr(delta, "reasoning_content", None)
@@ -325,20 +445,42 @@ class LLMClient:
                         yield ("content", delta.content)
                     # 末块带 finish_reason：length=触到 max_tokens 被截断（P0，调用方据此提示/续写）
                     if getattr(choice, "finish_reason", None):
+                        if not produced and not empty_retried and choice.finish_reason != "length":
+                            break  # 正常结束却一个字都没有：下面原样再问一次
                         yield ("finish", choice.finish_reason)
+                if watchdog.fired:
+                    raise LLMStreamStalled("stream read timeout: no content from model")
+                # 一个字都没吐（正常结束或空流）：原样再问一次，只此一次（harness 的 EMPTY_RESPONSE）
+                if not produced and not empty_retried:
+                    empty_retried = True
+                    _logger.warning("llm.stream returned an empty response, asking once more")
+                    continue
                 return
-            except (TurnCancelled, GeneratorExit):
+            except (TurnCancelled, GeneratorExit, LLMUnavailableError):
                 raise
             except BaseException as e:  # noqa: BLE001 — 判定完再决定放行还是重试
+                if abort is not None and abort():
+                    raise TurnCancelled() from e  # 停止接口关掉了流：这是取消，不是失败
+                if watchdog is not None and watchdog.fired and not isinstance(e, LLMStreamStalled):
+                    e = LLMStreamStalled(f"stream read timeout: no content from model ({e})")
                 attempt += 1
-                if produced or attempt > MAX_RETRIES or not is_retryable(e):
+                if produced or not is_retryable(e):
                     raise
+                if attempt > limit:
+                    mark_down(cid)
+                    raise LLMUnavailableError(f"llm.stream failed after {limit} retries: {e}") from e
                 wait = delay_for(attempt, e)
                 _logger.warning(
                     "llm.stream failed before first token (%s/%s), retrying in %.1fs: %s",
-                    attempt, MAX_RETRIES, wait, e,
+                    attempt, limit, wait, e,
                 )
+                notify_retry(cid, attempt, limit)
                 sleep_interruptible(wait, abort)
+            finally:
+                if watchdog is not None:
+                    watchdog.stop()
+                if stream is not None:
+                    _untrack(cid, stream)
 
 
 _default_client: LLMClient | None = None

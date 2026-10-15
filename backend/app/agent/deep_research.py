@@ -839,9 +839,18 @@ def decide_route(user_text: str, llm) -> str:
         class _Route(BaseModel):
             kind: str  # direct / guide / research
 
-        r = llm.classify(text[:500], _Route, system=ROUTE_SYSTEM)
+        # 2026-10-15：路由是判断题，关思考 + 短超时；拿不到就走下面的兜底路线，不能拖住整轮
+        r = llm.classify(text[:500], _Route, system=ROUTE_SYSTEM,
+                         effort=settings.route_reasoning_effort,
+                         timeout=settings.llm_route_timeout_s, retries=1)
         kind = (r.kind or "").strip().lower()
-    except Exception:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
+        from app.llm.retry import LLMUnavailableError
+
+        if isinstance(e, LLMUnavailableError):
+            # 2026-10-15：模型服务确认不可用时不要再退 guide——后面每一步都要模型，只会再等一遍。
+            # 上抛给 run_conversation_turn，直接告诉用户「模型服务暂时不可用」。
+            raise
         logger.warning("route classify failed, fallback guide", exc_info=True)
         return "guide"
     return kind if kind in ("direct", "guide", "research") else "guide"

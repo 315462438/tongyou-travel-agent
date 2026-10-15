@@ -197,6 +197,10 @@ def stop_turn(cid: str, db: Session = Depends(get_db), user: TravelUser = Depend
         close_turn_streaming(cid)
     except Exception:  # noqa: BLE001 — 收尾失败不影响取消本身
         logger.warning("stop: close streaming failed cid=%s", cid, exc_info=True)
+    # 正在读的模型流直接断开：不用等下一块数据，也不再继续消耗 token
+    from app.llm.client import close_streams
+
+    close_streams(cid)
     return {"status": "stopping"}
 
 

@@ -37,11 +37,11 @@ from typing import Callable
 
 logger = logging.getLogger(__name__)
 
-MAX_RETRIES = 5
-INITIAL_DELAY_S = 2.0
+MAX_RETRIES = 5  # 仅作上限；实际次数取 settings.llm_max_retries（2026-10-15 交互链路降到 2）
+INITIAL_DELAY_S = 1.0
 BACKOFF_FACTOR = 2.0
 JITTER_FACTOR = 0.25
-MAX_DELAY_NO_HEADERS_S = 30.0
+MAX_DELAY_NO_HEADERS_S = 8.0
 MAX_DELAY_S = 600.0  # 服务端给的 Retry-After 也要有上限，否则一个离谱的头能挂死整轮
 _SLEEP_SLICE_S = 0.5  # 退避切片，每片查一次取消
 
@@ -177,20 +177,74 @@ def sleep_interruptible(seconds: float, should_abort: Callable[[], bool] | None 
         time.sleep(min(_SLEEP_SLICE_S, left))
 
 
+class LLMUnavailableError(RuntimeError):
+    """模型服务这一轮确认不可用（重试用尽仍是超时/5xx/连不上）。
+
+    2026-10-15：DeepSeek 故障时，一轮里的 6-10 次调用每次都要各自等满超时再重试，
+    用户看到的是十几分钟毫无动静。确认一次不可用后，同一会话后续调用直接抛这个错（快速失败），
+    由 run_conversation_turn 统一告诉用户「模型服务暂时不可用」。
+    """
+
+
+# cid → 确认不可用的时刻。同一会话 _DOWN_TTL_S 内的后续调用直接失败；新一轮开始时清掉。
+_down: dict[str, float] = {}
+_DOWN_TTL_S = 300.0
+
+
+def mark_down(cid: str | None) -> None:
+    if cid:
+        _down[cid] = time.monotonic()
+
+
+def clear_down(cid: str | None) -> None:
+    if cid:
+        _down.pop(cid, None)
+
+
+def is_down(cid: str | None) -> bool:
+    ts = _down.get(cid or "")
+    return ts is not None and time.monotonic() - ts < _DOWN_TTL_S
+
+
+def retry_limit() -> int:
+    from app.config import settings
+
+    return max(0, min(MAX_RETRIES, settings.llm_max_retries))
+
+
+def notify_retry(cid: str | None, attempt: int, total: int) -> None:
+    """重试时在对话里播一条进度，让用户知道不是卡死（借鉴 harness 的 llm/retry 事件）。"""
+    if not cid:
+        return
+    try:
+        from app.agent.orchestrator import _progress
+
+        _progress(cid, f"模型服务响应慢，正在第 {attempt}/{total} 次重试…")
+    except Exception:  # noqa: BLE001 — 提示失败不影响重试本身
+        logger.debug("retry notice failed", exc_info=True)
+
+
 def call_with_retry(
     fn: Callable,
     *,
     what: str = "llm",
     should_abort: Callable[[], bool] | None = None,
-    max_retries: int = MAX_RETRIES,
+    max_retries: int | None = None,
+    cid: str | None = None,
 ):
     """执行 fn()，传输层错误按策略重试。不可重试的错误原样抛出。
 
     fn 必须是**可重复执行且无副作用**的（一次 HTTP 请求）。流式生成不能整体套这个函数——
     见 `client.py` 里 `produced` 那段。
+
+    传了 cid：重试时在对话里提示；重试用尽仍是可重试类错误（超时/5xx/连不上）→ 标记该会话
+    模型不可用并抛 LLMUnavailableError；已标记的会话直接快速失败，不再逐个等超时。
     """
     from app.agent.cancel import TurnCancelled
 
+    if is_down(cid):
+        raise LLMUnavailableError(f"{what}: model marked unavailable for this turn")
+    limit = retry_limit() if max_retries is None else max_retries
     attempt = 0
     while True:
         try:
@@ -199,11 +253,16 @@ def call_with_retry(
             raise  # 取消不是失败，别重试
         except BaseException as e:  # noqa: BLE001 — 判定完再决定放行还是重试
             attempt += 1
-            if attempt > max_retries or not is_retryable(e):
+            retryable = is_retryable(e)
+            if not retryable:
                 raise
+            if attempt > limit:
+                mark_down(cid)
+                raise LLMUnavailableError(f"{what} failed after {limit} retries: {e}") from e
             wait = delay_for(attempt, e)
             logger.warning(
                 "%s failed (%s/%s), retrying in %.1fs: %s",
-                what, attempt, max_retries, wait, e,
+                what, attempt, limit, wait, e,
             )
+            notify_retry(cid, attempt, limit)
             sleep_interruptible(wait, should_abort)

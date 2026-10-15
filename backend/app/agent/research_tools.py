@@ -237,6 +237,27 @@ def build_tools(cid: str, user_id: str, session: BrowserSession, sources: list[d
                 "不要再搜索，立即基于已收集的资料进入下一步；确实缺的信息在产出里标注「待核实」即可。")
         used["search"] += 1
         _progress(cid, f"🔎 搜索：{query[:40]}")
+        # 2026-10-15：优先走联网搜索 API（纯 HTTP ~2s，结果自带正文，不占全局稀缺的浏览器）；
+        # 未配置/没结果再回退浏览器搜必应。
+        from app.tools import web_search_api
+
+        api_results = await web_search_api.search(query) if web_search_api.enabled() else []
+        if api_results:
+            titles = [r["title"] for r in api_results if r["title"]]
+            if titles:
+                _found("🔎 搜到 %d 条：%s" % (len(api_results), "、".join(t[:18] for t in titles[:3])))
+            # 结果正文已交给模型读过，算作来源；只记前 5 条，免得来源列表被搜索结果刷屏
+            for r in api_results[:5]:
+                if r["title"]:
+                    sources.append({"title": r["title"][:60], "url": r["url"]})
+            body = "\n\n".join(
+                f"{i}. {r['title']} | {r['url']}" + (f" | {r['published']}" if r["published"] else "")
+                + f"\n{r['content'][:600]}"
+                for i, r in enumerate(api_results, 1)
+            )
+            return _with_budget(
+                _stash_source(body, f"搜索：{query[:30]}")
+                + "\n\n提示：结果已带正文摘录，多数情况够用；确需全文再 fetch_url。")
         results = await session.call("search_web", query, top_n=6)
         if not results:
             return _with_budget("没有搜到结果，换个关键词试试。")
