@@ -776,6 +776,27 @@ textarea { font-family: inherit; }
 }
 .sandbox-toggle:disabled { opacity: 0.55; }
 
+/* 联网搜索开关（2026-10-16）：同款胶囊，天蓝渐变区分 */
+.web-toggle {
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-size: 12px;
+  padding: 6px 12px;
+  border-radius: var(--x-r-pill);
+  border: 1px solid var(--x-n88);
+  color: var(--x-n50);
+  background: var(--x-n100);
+  transition: all 0.18s ease;
+}
+.web-toggle:hover:not(:disabled) { border-color: #9cc8f5; color: var(--x-pine-51); }
+.web-toggle.on {
+  color: var(--x-n100);
+  border-color: transparent;
+  background: linear-gradient(120deg, #60a5fa, #2563eb);
+  box-shadow: 0 3px 10px rgba(37, 99, 235, 0.3);
+}
+.web-toggle:disabled { opacity: 0.55; }
+
 /* 沙箱产物展示（Phase 27c） */
 .sandbox-artifacts { margin-top: 12px; }
 .sandbox-artifacts-head { font-size: 12px; color: var(--x-n60); margin-bottom: 8px; }
@@ -3997,7 +4018,8 @@ body { color: var(--tx-ink); background: var(--tx-bg); }
 }
 .view-mobile .composer-modes::-webkit-scrollbar { display: none; }
 .view-mobile .deep-toggle,
-.view-mobile .sandbox-toggle {
+.view-mobile .sandbox-toggle,
+.view-mobile .web-toggle {
   min-height: 30px;
   padding: 5px 10px;
   font-size: 11px;

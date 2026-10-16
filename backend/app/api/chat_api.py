@@ -37,6 +37,7 @@ class SendMessageRequest(BaseModel):
     content: str
     deep_reasoning: bool = False  # 深度推理开关（Phase 23）：开则本轮强制走研究模式
     sandbox_enabled: bool = False  # 沙箱执行开关（Phase 27c）：本轮深度研究是否给 agent 代码执行能力
+    web_search: bool = False  # 联网搜索开关（2026-10-16）：开则直答/闲聊先联网搜再回答
     # （最终是否生效还要看服务器 docker_sandbox_enabled 是否开启，见 _build_backend）
     image_ids: list[str] = Field(default_factory=list)  # Phase 105：随消息带的图（复用 Phase 74 上传）
 
@@ -177,7 +178,7 @@ def send_message(
     # turn_id = 用户消息 id，作为 checkpoint thread_id（每轮唯一，天然 fresh）
     background.add_task(
         run_conversation_turn, cid, req.content, user.id, user_msg.id,
-        req.deep_reasoning, req.sandbox_enabled, image_ids,
+        req.deep_reasoning, req.sandbox_enabled, image_ids, web_search=req.web_search,
     )
     return {"status": "running", "user_message_id": user_msg.id}
 

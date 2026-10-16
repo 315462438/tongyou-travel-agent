@@ -72,6 +72,7 @@ interface Msg {
   reasoning?: string | null
   meta?: {
     sources?: { title: string; url: string }[]
+    direct?: boolean  // 2026-10-16：联网直答的来源，不是攻略
     images?: string[]  // Phase 105：随用户消息发出的图片（upload id）
     handoff?: {
       site: string
@@ -306,6 +307,14 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
     setSandbox((s) => {
       localStorage.setItem('travel_sandbox', s ? '0' : '1')
       return !s
+    })
+  }, [])
+  // 联网搜索开关（2026-10-16）：开则快速回答/闲聊先联网搜再答。记住上次的选择。
+  const [webSearch, setWebSearch] = useState(() => localStorage.getItem('travel_web_search') === '1')
+  const toggleWebSearch = useCallback(() => {
+    setWebSearch((w) => {
+      localStorage.setItem('travel_web_search', w ? '0' : '1')
+      return !w
     })
   }, [])
   const [showMemories, setShowMemories] = useState(false)
@@ -765,7 +774,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          content, deep_reasoning: requestDeep, sandbox_enabled: sandbox, image_ids: imageIds,
+          content, deep_reasoning: requestDeep, sandbox_enabled: sandbox, web_search: webSearch, image_ids: imageIds,
         }),
       })
       if (res.status === 409) {
@@ -1276,7 +1285,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
             </div>
             )}
             <div className="composer-wrap">
-              <Composer value={input} onChange={setInput} onSend={send} onStop={stop} running={running} deep={deep} onToggleDeep={toggleDeep} sandbox={sandbox} onToggleSandbox={toggleSandbox} chips={starterChips} images={pendingImages} onAddImages={addImages} onRemoveImage={(id) => setPendingImages((cur) => removePendingImage(cur, id))} uploading={uploadingImage} />
+              <Composer value={input} onChange={setInput} onSend={send} onStop={stop} running={running} deep={deep} onToggleDeep={toggleDeep} sandbox={sandbox} onToggleSandbox={toggleSandbox} webSearch={webSearch} onToggleWebSearch={toggleWebSearch} chips={starterChips} images={pendingImages} onAddImages={addImages} onRemoveImage={(id) => setPendingImages((cur) => removePendingImage(cur, id))} uploading={uploadingImage} />
             </div>
             <div className="composer-hint">内容由 AI 生成，价格与营业信息请以平台实时数据为准</div>
           </>
@@ -2721,6 +2730,8 @@ function Composer({
   onToggleDeep,
   sandbox,
   onToggleSandbox,
+  webSearch,
+  onToggleWebSearch,
   chips = CHIPS,
   images = [],
   onAddImages,
@@ -2737,6 +2748,8 @@ function Composer({
   onToggleDeep?: () => void
   sandbox?: boolean
   onToggleSandbox?: () => void
+  webSearch?: boolean
+  onToggleWebSearch?: () => void
   chips?: StarterChip[]
   images?: PendingImage[]
   onAddImages?: (files: File[]) => void
@@ -2869,6 +2882,15 @@ function Composer({
             title="深度推理：多来源对比研究，适合多城市对比/预算测算/签证政策等复杂问题（约 3-6 分钟）"
           >
             🧠 深度推理
+          </button>
+          <button
+            className={`web-toggle${webSearch ? ' on' : ''}`}
+            onClick={() => onToggleWebSearch?.()}
+            disabled={running}
+            aria-pressed={webSearch}
+            title="联网搜索：快速回答前先上网查最新信息（新开的店、近期活动等），回答附来源"
+          >
+            🌐 联网搜索
           </button>
           <button
             className={`sandbox-toggle${sandbox ? ' on' : ''}`}
@@ -3248,7 +3270,7 @@ function Message({
   const preliminary = !!msg.meta?.preliminary
   const saved = msg.meta?.memories_saved?.filter((s) => s.op !== 'delete') ?? []
   // 是行程攻略（有来源且含标题）→ 提供生成手账海报入口
-  const isGuide = !streaming && !!msg.meta?.sources?.length && msg.content.includes('##')
+  const isGuide = !streaming && !msg.meta?.direct && !!msg.meta?.sources?.length && msg.content.includes('##')
   return (
     <div className={`msg-assistant${preliminary ? ' is-preliminary' : ''}`}>
       {preliminary && (

@@ -132,7 +132,7 @@ _IMG_PLACEHOLDER = re.compile(r"\[\[?img[:：]([^\]]{1,60})\]\]?")
 # 模型偶发把工具调用（collect_source 等）以 DeepSeek/Anthropic 标记吐进正文（复杂多城请求时
 # 它以为还在工具循环）。正文永远不该有这些 → 从首个标记处截断剥掉（｜为全角 U+FF5C）。
 _TOOLCALL_LEAK_RE = re.compile(
-    r"<[\s｜|]*(?:DSML|tool[_▁]?calls|function[_▁]?calls)[\s\S]*\Z", re.IGNORECASE
+    r"<[\s｜|]*(?:DSML|tool[_▁]?calls?|function[_▁]?calls?)[\s\S]*\Z", re.IGNORECASE
 )
 
 
@@ -1284,11 +1284,10 @@ def parse_request(cid: str, user_text: str, user_id: str) -> dict:
     _cancel_check_parse(cid)  # 解析期间点的停止在这里立即生效，不再往下跑采集
 
     if not pref.is_travel_request:
-        reply, reasoning = llm.generate_with_reasoning(
-            f"{mem_prefix}对话历史：\n{history}\n\n用户：{user_text}\n\n以旅行助手身份自然回应。",
-            model=settings.model_classifier,
-        )
-        _add_message(cid, "assistant", reply, reasoning=reasoning)
+        # 2026-10-16：非规划类（找本地店、闲聊）改走直答——同一套提示词、联网搜索开关和
+        # 工具调用标记过滤。此前这里是一次裸生成，用户说「帮我查一下」时模型会编造
+        # `<tool_call>web_search` 文本原样展示（线上「合肥洗浴中心」）。
+        run_direct_answer(cid, user_text, user_id)
         return {"route": "chat"}
 
     # 占位词归一 + 空目的地强制反问（Phase 59.2 确定性护栏）：
@@ -2357,8 +2356,11 @@ def _dest_in_page(destination: str, title: str, text: str) -> bool:
 DIRECT_SYSTEM = (
     "你是 17同游 旅行助手。直接、简洁地回答用户的旅行问题，用 Markdown，"
     "篇幅与问题匹配（小问题不要长篇大论）。结合「关于用户的长期记忆」与最近对话上下文。"
-    "如果答案涉及时效性信息（价格、房态、班次、政策细节），给常识参考并注明"
-    "「如需实时信息可以让我联网查询」。不确定的事不要编造。"
+    "如果答案涉及时效性信息（价格、房态、班次、政策细节、新开的店）而本轮没有提供 <web_results>，"
+    "给常识参考，并提示「打开输入框旁的『联网搜索』开关再问，可以查最新信息」。不确定的事不要编造。"
+    "你不能调用任何工具，绝不要输出工具调用/函数调用格式（tool_call、invoke 等），直接写回答。"
+    "提供了 <web_results> 时，以搜索结果为准回答，提到具体店名、地址、价格等信息时在句末标注来源序号如 [1]；"
+    "结果里没有的信息不要编，如实说搜到的有限。"
 ) + EXTERNAL_POLICY + HEALTH_POLICY + CURRENT_REQUEST_POLICY
 
 
@@ -2400,6 +2402,84 @@ def _live_weather_block(cid: str, user_text: str, context: str) -> str:
         return ""
 
 
+# 本轮打开了「联网搜索」开关的会话（2026-10-16）。按 cid 记在进程内而不是层层传参：
+# 闲聊分支在 LangGraph 的 parse 节点里，开关要穿过图状态才能到那儿。
+_WEB_SEARCH_CIDS: set[str] = set()
+
+
+class _SearchQueries(BaseModel):
+    queries: list[str] = []
+
+
+def _run_coro(coro):
+    """在同步代码里跑协程：当前线程已有事件循环（图节点里）时换个线程跑。"""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    import concurrent.futures
+
+    with concurrent.futures.ThreadPoolExecutor(1) as pool:
+        return pool.submit(asyncio.run, coro).result()
+
+
+def _web_search_block(cid: str, user_text: str, context: str) -> tuple[str, list[dict]]:
+    """「联网搜索」开关打开时：按上下文写查询词 → 阿里云联网搜索 → (prompt 块, 来源列表)。
+
+    不需要搜（寒暄等）、没搜到或出错都返回 ("", [])，照常直答。
+    """
+    from app.agent.cancel import check as _cancel_check
+    from app.agent.context_security import wrap_external
+    from app.tools import web_search_api
+
+    if not web_search_api.enabled():
+        return "", []
+    try:
+        r = get_llm().classify(
+            f"{context[-1200:]}\n\n用户最新问题：{user_text}"[:2000], _SearchQueries,
+            system="根据对话上下文和用户最新问题，写 1-2 条搜索引擎查询词，必须带上地点和具体对象"
+                   "（例：「合肥 洗浴中心 新开 口碑」），不要写成句子。寒暄、致谢等不需要查资料的，输出空列表。",
+            effort="off", timeout=settings.llm_route_timeout_s, retries=1,
+        )
+        queries = [q.strip() for q in r.queries if q and q.strip()][:2]
+        if not queries:
+            return "", []
+        _cancel_check(cid)
+        _progress(cid, "正在联网搜索：" + "；".join(queries)[:48])
+
+        async def _all():
+            return await asyncio.gather(*(web_search_api.search(q, top_k=6) for q in queries))
+
+        batches = _run_coro(_all())
+        _cancel_check(cid)
+        results: list[dict] = []
+        seen: set[str] = set()
+        for rank in range(max((len(b) for b in batches), default=0)):  # 各查询轮流取
+            for batch in batches:
+                if rank < len(batch) and batch[rank]["url"] not in seen and len(results) < 8:
+                    seen.add(batch[rank]["url"])
+                    results.append(batch[rank])
+        if not results:
+            _progress(cid, "联网没有搜到相关结果，按已有知识回答")
+            return "", []
+        parts = []
+        for i, it in enumerate(results, 1):
+            head = f"[{i}] {it['title']}" + (f"（{it['published']}）" if it.get("published") else "")
+            parts.append(wrap_external(f"{head}\n{it['content'][:900]}", source="web_search",
+                                       url=it["url"], title=it["title"]))
+        block = ("<web_results>\n" + "\n".join(parts) + "\n</web_results>\n"
+                 "以上是刚刚联网搜索的结果（序号即来源编号），据此回答。")
+        return block, [{"title": it["title"] or it["url"], "url": it["url"]} for it in results]
+    except Exception as e:  # noqa: BLE001 — 搜不到不该让直答失败
+        from app.agent.cancel import TurnCancelled
+        from app.llm.retry import LLMUnavailableError
+
+        if isinstance(e, (TurnCancelled, LLMUnavailableError)):
+            raise
+        logger.warning("direct web search failed cid=%s", cid, exc_info=True)
+        return "", []
+
+
 def run_direct_answer(cid: str, user_text: str, user_id: str) -> None:
     """轻量直答（Phase 22）：无浏览器、无来源，记忆+近几轮历史 → 单次流式生成。
 
@@ -2432,6 +2512,15 @@ def run_direct_answer(cid: str, user_text: str, user_id: str) -> None:
     weather = _live_weather_block(cid, user_text, "\n".join(user_parts))
     if weather:
         user_parts.append(weather)
+    web_sources: list[dict] = []
+    if cid in _WEB_SEARCH_CIDS:
+        recent = "\n".join(str(m.get("content", ""))[:400] for m in history_msgs[-4:])
+        block, web_sources = _web_search_block(cid, user_text, recent)
+        if block:
+            user_parts.append(block)
+        # 开关已经开着：别再叫用户「打开联网搜索」（线上实测模型照着 system 提示照说不误）
+        user_parts.append("（本轮已开启联网搜索，不要再提示用户打开「联网搜索」开关；搜索结果没覆盖的"
+                          "价格、团购、营业状态，建议用户到大众点评/美团等平台核实。）")
     user_parts.append(f"用户问题：{user_text}")
     messages = (
         [{"role": "system", "content": DIRECT_SYSTEM}]
@@ -2463,14 +2552,23 @@ def run_direct_answer(cid: str, user_text: str, user_id: str) -> None:
             )
             raise TurnCancelled()
         if _time.monotonic() - last_flush > settings.streaming_flush_interval_s:
-            _update_streaming_message(msg_id, "".join(content_parts), "".join(reasoning_parts))
+            _update_streaming_message(msg_id, _strip_toolcall_leak("".join(content_parts)),
+                                      "".join(reasoning_parts))
             last_flush = _time.monotonic()
-    answer = "".join(content_parts)
+    raw_answer = "".join(content_parts)
+    answer = _strip_toolcall_leak(raw_answer)
+    if raw_answer.strip() and not answer.strip():
+        # 模型把整段回答写成了工具调用（以为自己能搜）→ 不把这种文本给用户
+        logger.warning("direct answer was tool-call markup cid=%s", cid)
+        answer = ("这个问题需要查最新信息。打开输入框旁的「联网搜索」开关，再发一次就能联网查。"
+                  if cid not in _WEB_SEARCH_CIDS else "这次没能整理出回答，请再发一次。")
     if truncated and answer:  # P0：不静默截断——明确告知并给完整版路径
         answer += ("\n\n---\n> ⚠️ 这是快速回答，内容较长已截断。要**完整攻略**（含全程路线、"
                    "每天酒店、分项预算、注意事项），请打开输入框旁的「深度推理」开关重新提问。")
     saved = extract_and_save(cid, user_text, answer, user_id)  # 有依赖：saved 要进 meta
     direct_meta = {"memories_used": mem_ctx.get("used", []), "memories_saved": saved}
+    if web_sources:  # direct=True：带来源但不是攻略，前端不出预算/海报等攻略按钮
+        direct_meta.update(sources=web_sources, direct=True)
     if mem_ctx.get("announced"):  # 已通知过的记忆变更，下一轮据此跳过
         direct_meta["memories_changed"] = mem_ctx["announced"]
     _finalize_streaming_message(
@@ -2482,7 +2580,7 @@ def run_direct_answer(cid: str, user_text: str, user_id: str) -> None:
 
 def run_conversation_turn(
     cid: str, user_text: str, user_id: str, turn_id: str = "", deep_reasoning: bool = False,
-    sandbox_enabled: bool = False, image_ids: list[str] | None = None,
+    sandbox_enabled: bool = False, image_ids: list[str] | None = None, web_search: bool = False,
 ) -> None:
     """BackgroundTasks 入口：三路路由（Phase 22/23）→ 各链路。
 
@@ -2499,6 +2597,10 @@ def run_conversation_turn(
     from app.llm.retry import LLMUnavailableError, clear_down
 
     clear_down(cid)  # 上一轮的「模型不可用」标记不带进新一轮：用户重试时要真的再试
+    if web_search:
+        _WEB_SEARCH_CIDS.add(cid)
+    else:
+        _WEB_SEARCH_CIDS.discard(cid)
     _mark_inflight(cid, turn_id, user_id)
     # Phase 105：带图消息。**图先变成文本，再走现有路由**——刻意不给路由新增一条
     # 「图片链路」，也不换成开放式 agent（那个我们已经有了，就是 Phase 21 的
@@ -2534,7 +2636,7 @@ def run_conversation_turn(
         # Langfuse turn trace（Phase 24）：本轮所有 LLM 调用/工具 span 都嵌套在其下
         with obs.turn_trace(
             cid=cid, user_id=user_id, input_text=user_text,
-            metadata={"turn_id": turn_id, "deep_reasoning": deep_reasoning},
+            metadata={"turn_id": turn_id, "deep_reasoning": deep_reasoning, "web_search": web_search},
         ) as _trace:
             # 澄清延续护栏（Phase 59.1）：上一条助手消息是澄清式短问句（如「玩几天呢？」）时，
             # 本轮用户消息（如「10天」）是规划流程的**延续**，必须回 guide 走完整采集——
@@ -2554,7 +2656,8 @@ def run_conversation_turn(
                 # hint_prompt 存原问题，前端「一键深度重生成」直接复用，不用重打（批2）
                 _progress(
                     cid,
-                    "已用快速模式作答（未联网检索）。想要联网抓取真实来源、配图和完整"
+                    ("已用快速模式作答。" if web_search else "已用快速模式作答（未联网检索）。")
+                    + "想要联网抓取真实来源、配图和完整"
                     "攻略/研究报告，点下方按钮用深度模式重新回答（约 2-6 分钟）。",
                     meta={"hint": "deep_reasoning", "hint_prompt": user_text},
                 )
@@ -2578,6 +2681,7 @@ def run_conversation_turn(
         _ensure_stopped_message(cid, "抱歉，处理过程中出错了，请重试。")
     finally:
         clear_cancel(cid)
+        _WEB_SEARCH_CIDS.discard(cid)
         _clear_inflight(cid)
         obs.flush()  # 在后台线程冲刷埋点缓冲，不挡请求
 
