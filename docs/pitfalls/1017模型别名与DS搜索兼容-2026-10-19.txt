@@ -1,0 +1,9 @@
+现象：用户请求切换 1017，原项目已经调用 deepseek-flash；盲目替换为 deepseek-flash-1017 会使用官方未公布的 ID。
+原因：官方 2026-10-17 更新是在现有 deepseek-flash 别名下自动提供 V4.1-Flash-1017；该别名未来仍会升级，并非永久版本锁。
+处理：保留官方调用名，核对实际 MODEL_* 配置并做真实模型请求。保留既有 thinking/reasoning_effort 与 JSON 模式。
+搜索兼容：DS query 最长 128 个 Unicode 字符，不截断站点或日期检索条件，超长时留给阿里/浏览器。DS 评分与阿里评分量纲不同，不混排数值。
+补搜合并：阿里即使返回很多短摘要，也不能挤掉 DS 的有效正文；仅有无正文链接不能算资料充足。
+来源契约：新增 published/provider 等证据字段后，应更新原测试的来源字段预期；不丢掉真实日期来迁就旧断言。
+计费：Search 与 Fetch 单独按成功请求计费；旅行后端自行调用 raw JSON API 不属于编程工具服务端搜索的限时免费活动。
+证据：https://api-docs.deepseek.com/updates/?release=deepseek-coder
+https://api-docs.deepseek.com/zh-cn/guides/search/

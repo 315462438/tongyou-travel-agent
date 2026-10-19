@@ -23,6 +23,14 @@ from app.ontology.objects import SCHEMA_VERSION, TripObject
 logger = logging.getLogger(__name__)
 
 
+def _payload(text: str) -> dict:
+    try:
+        data = json.loads(text)
+        return data if isinstance(data, dict) else {}
+    except (ValueError, TypeError):
+        return {}
+
+
 def source_hash(guide: str) -> str:
     return hashlib.sha1((guide or "").encode("utf-8")).hexdigest()
 
@@ -58,6 +66,13 @@ def save_trip_object(
             if row is None:
                 row = TravelGuideObject(message_id=message_id, conversation_id=conversation_id)
                 db.add(row)
+            elif row.source_hash == source_hash(guide) and row.schema_version == SCHEMA_VERSION:
+                # 导入专属的逐天缓存与本体各路共存；海报/预算补写不能把它抹掉。
+                old = _payload(row.payload_json)
+                if old.get("_import_cache"):
+                    data = trip.model_dump()
+                    data["_import_cache"] = old["_import_cache"]
+                    payload = json.dumps(data, ensure_ascii=False)
             row.conversation_id = conversation_id
             row.user_id = user_id or row.user_id or ""
             row.schema_version = SCHEMA_VERSION
@@ -120,6 +135,24 @@ async def ensure_trip_object(
 
     返回 None 表示这份攻略抽不出任何可用结构（调用方据此给友好提示，而不是渲染空面板）。
     """
+    from app.ontology.coordination import source_guard
+    from app.ontology.extract import ALL_LANES
+    from contextlib import AsyncExitStack
+
+    async with AsyncExitStack() as stack:
+        # 同一路只抽一次，不同路仍能并行；固定顺序避免多个消费者互相等待。
+        for lane in sorted(set(need or ALL_LANES)):
+            await stack.enter_async_context(source_guard(f"{message_id}:{lane}"))
+        return await _ensure_trip_object_locked(
+            cid, message_id, llm=llm, user_id=user_id,
+            destination_hint=destination_hint, need=need,
+        )
+
+
+async def _ensure_trip_object_locked(
+    cid: str, message_id: str, *, llm=None, user_id: str = "", destination_hint: str = "",
+    need: tuple[str, ...] | None = None,
+) -> TripObject | None:
     from app.llm.client import get_llm
     from app.ontology.extract import ALL_LANES, build_trip_object
 
@@ -138,13 +171,55 @@ async def ensure_trip_object(
         llm or get_llm(), guide, cid=cid, destination_hint=destination_hint,
         lanes=missing or want,
     )
-    trip = merge_trips(cached, fresh) if cached is not None else fresh
-    # 空图也存：避免每次点按钮都重抽一遍同一份抽不出东西的攻略
-    save_trip_object(
-        trip, message_id=message_id, conversation_id=conv_id or cid,
-        guide=guide, user_id=user_id,
-    )
+    from app.ontology.coordination import source_guard
+    async with source_guard(message_id):
+        # 其他路可能已经完成，提交时重新读取，防止迟到的一路覆盖先完成的缓存。
+        latest = load_trip_object(message_id, guide)
+        base = latest if latest is not None else cached
+        trip = merge_trips(base, fresh) if base is not None else fresh
+        save_trip_object(
+            trip, message_id=message_id, conversation_id=conv_id or cid,
+            guide=guide, user_id=user_id,
+        )
     return None if trip.is_empty() else trip
+
+
+def load_import_cache(message_id: str, guide: str) -> dict:
+    try:
+        with get_session() as db:
+            row = db.execute(select(TravelGuideObject).where(TravelGuideObject.message_id == message_id)).scalar_one_or_none()
+            if row and row.source_hash == source_hash(guide) and row.schema_version == SCHEMA_VERSION:
+                cache = _payload(row.payload_json).get("_import_cache", {})
+                return cache if isinstance(cache, dict) and cache.get("version") == 1 else {}
+    except Exception:
+        logger.warning("import cache read failed", exc_info=True)
+    return {}
+
+
+def save_import_cache(message_id: str, guide: str, cache: dict) -> None:
+    try:
+        with get_session() as db:
+            message = db.get(TravelMessage, message_id)
+            if message is None or source_hash(message.content or "") != source_hash(guide):
+                return
+            row = db.execute(select(TravelGuideObject).where(TravelGuideObject.message_id == message_id)).scalar_one_or_none()
+            valid = row and row.source_hash == source_hash(guide) and row.schema_version == SCHEMA_VERSION
+            data = (_payload(row.payload_json) or TripObject().model_dump()) if valid else TripObject().model_dump()
+            data["_import_cache"] = cache
+            if row is None:
+                row = TravelGuideObject(message_id=message_id, conversation_id=message.conversation_id)
+                db.add(row)
+            row.schema_version = SCHEMA_VERSION
+            row.source_hash = source_hash(guide)
+            row.payload_json = json.dumps(data, ensure_ascii=False)
+            row.destination = data.get("destination", "")[:64]
+            row.days_count = data.get("days_count", 0)
+            from app.db.models import TravelConversation
+            conv = db.get(TravelConversation, message.conversation_id)
+            row.user_id = (conv.user_id if conv else "") or row.user_id or ""
+            db.commit()
+    except Exception:
+        logger.warning("import cache write failed", exc_info=True)
 
 
 def invalidate(message_id: str) -> None:

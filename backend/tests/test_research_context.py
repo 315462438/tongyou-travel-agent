@@ -16,6 +16,13 @@ class FakeSession:
         raise AssertionError("本测试不应触达浏览器")
 
 
+@pytest.fixture(autouse=True)
+def isolate_http_fallback(monkeypatch):
+    # 本文件验证直接 HTTP 路径的上下文/预算行为，不能由本机 .env 开启 DS 网络请求。
+    # DS Fetch 成功、软失败回退和来源隔离由 test_deepseek_web.py 单独覆盖。
+    monkeypatch.setattr(settings, "deepseek_fetch_enabled", False)
+
+
 @pytest.fixture
 def tools(monkeypatch):
     monkeypatch.setattr("app.agent.orchestrator._progress", lambda *a, **kw: None)

@@ -100,6 +100,7 @@ def to_trip_draft(trip: TripObject) -> TripDraft:
             DraftStop(
                 day=s.day, name=s.name, search_name=s.search_name,
                 note=s.note, transport=s.transport,
+                start_time=s.start_time, stay_min=s.stay_min or None,
             )
             for s in trip.stops
             if s.type != "transit"
@@ -114,6 +115,7 @@ def to_trip_draft(trip: TripObject) -> TripDraft:
                 day=d.day, type=d.type,
                 overnight_required=d.overnight_required,
                 overnight_city=d.overnight_city,
+                day_title=d.title,
             )
             for d in trip.days
         ],
@@ -125,6 +127,8 @@ def to_trip_draft(trip: TripObject) -> TripDraft:
             if h.day <= 0
         ],
         budget_items=[BudgetItem(category=c, amount=a) for c, a in by_cat.items() if a > 0],
+        foods=[{"name": f.name, "note": f.note} for f in trip.foods],
+        tips=[{"level": "notice", "content": t} for t in trip.tips if t],
         failed_days=list(trip.failed_days),
     )
 

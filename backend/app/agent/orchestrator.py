@@ -2114,6 +2114,8 @@ async def _collect_web_api(cid: str, pref: Preference, queries: list[str],
             seen_titles.add(title)
             page_id = save_page(cid, url, title or url, text)
             src = {"title": title or url, "url": url, "summary": _excerpt(text)}
+            src.update({k: it[k] for k in ("provider", "content_provider", "retrieved_at", "authority", "rerank_score")
+                        if k in it})
             if it.get("published"):
                 src["published"] = it["published"]
             if page_id:
@@ -2469,7 +2471,9 @@ def _web_search_block(cid: str, user_text: str, context: str) -> tuple[str, list
                                        url=it["url"], title=it["title"]))
         block = ("<web_results>\n" + "\n".join(parts) + "\n</web_results>\n"
                  "以上是刚刚联网搜索的结果（序号即来源编号），据此回答。")
-        return block, [{"title": it["title"] or it["url"], "url": it["url"]} for it in results]
+        return block, [{"title": it["title"] or it["url"], "url": it["url"],
+                       **{k: it[k] for k in ("provider", "content_provider", "retrieved_at", "published", "authority", "rerank_score")
+                          if k in it}} for it in results]
     except Exception as e:  # noqa: BLE001 — 搜不到不该让直答失败
         from app.agent.cancel import TurnCancelled
         from app.llm.retry import LLMUnavailableError

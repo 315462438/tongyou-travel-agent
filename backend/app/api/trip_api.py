@@ -509,12 +509,16 @@ def delete_stop(trip_id: str, stop_id: str,
 # ---------- AI 三件套 ----------
 
 @router.post("/{trip_id}/ai/order")
-async def ai_order(trip_id: str, db: Session = Depends(get_db), user: TravelUser = Depends(get_current_user)):
+async def ai_order(trip_id: str, db: Session = Depends(get_db), user: TravelUser = Depends(get_current_user), day: int | None = None):
     """一键串路线：先给缺坐标的条目补坐标，再纯几何排序（同步，秒级）。"""
     trip = _member(db, trip_id, user)
     stops = db.execute(
         select(TravelTripStop).where(TravelTripStop.trip_id == trip_id)
     ).scalars().all()
+    if day is not None:
+        if not 1 <= day <= trip.days:
+            raise HTTPException(400, "行程日期无效")
+        stops = [stop for stop in stops if stop.day == day]
     if not stops:
         raise HTTPException(400, "行程还没有地点")
     from app.agent.trip_planner import geocode_names, order_stops, route_km
@@ -959,7 +963,7 @@ def _split_guide_day_chunks(guide_md: str) -> list[tuple[int, int, str]]:
 
 
 async def _extract_import_draft(
-    llm, guide_md: str, only_days: set[int] | None = None, on_progress=None,
+    llm, guide_md: str, only_days: set[int] | None = None, on_progress=None, cache: dict | None = None,
 ):
     """全局信息 + 逐日小块并发抽取，合并为现有 TripDraft。
 
@@ -974,22 +978,29 @@ async def _extract_import_draft(
     )
 
     detected_days = _detected_guide_days(guide_md)
-    summary = await asyncio.to_thread(
-        llm.parse,
-        f"攻略摘要材料：\n{_guide_summary_excerpt(guide_md)}",
-        TripImportSummary,
-        system=IMPORT_SUMMARY_SYSTEM,
-        # summary 现在还带美食/避坑清单，4000 会被截断（实测），提到 8000
-        max_tokens=8000,
-        # 判断档：TripImportSummary 带 budget_items（金额），不是纯照抄
-        effort=settings.extract_judgment_reasoning_effort,
-    )
-    total_days = _clamp_trip_days(max(detected_days, summary.days))
+    cache = cache if cache is not None else {}
+    cache.setdefault("version", 1)
+    day_cache = cache.setdefault("days", {})
+    sem = asyncio.Semaphore(4)
+
+    async def extract_summary():
+        if cache.get("summary"):
+            try:
+                return TripImportSummary.model_validate(cache["summary"])
+            except ValueError:
+                pass
+        async with sem:
+            parsed = await asyncio.to_thread(
+                llm.parse, f"攻略摘要材料：\n{_guide_summary_excerpt(guide_md)}", TripImportSummary,
+                system=IMPORT_SUMMARY_SYSTEM, max_tokens=8000,
+                effort=settings.extract_judgment_reasoning_effort,
+            )
+        cache["summary"] = parsed.model_dump()
+        return parsed
     chunks = [
         c for c in _split_guide_day_chunks(guide_md)
         if only_days is None or any(d in only_days for d in range(c[0], c[1] + 1))
     ]
-    sem = asyncio.Semaphore(4)
     done = 0
     total_chunks = len(chunks)
 
@@ -997,7 +1008,15 @@ async def _extract_import_draft(
         nonlocal done
         async with sem:
             try:
-                parsed = await asyncio.to_thread(
+                key = f"{lo}:{hi}"
+                parsed = None
+                if key in day_cache:
+                    try:
+                        parsed = TripImportDays.model_validate(day_cache[key])
+                    except ValueError:
+                        pass
+                if parsed is None:
+                    parsed = await asyncio.to_thread(
                     llm.parse,
                     f"本段只允许提取 Day {lo}–{hi}：\n{text}",
                     TripImportDays,
@@ -1006,7 +1025,10 @@ async def _extract_import_draft(
                     max_tokens=settings.trip_import_chunk_max_tokens,
                     # 机械档：TripImportDays 只有地点/住宿/日计划，没有要推导的数字
                     effort=settings.extract_reasoning_effort,
-                )
+                    )
+                    # 空白返回不固化为成功缓存，下一次仍可恢复。
+                    if parsed.stops or parsed.stays or parsed.day_plans:
+                        day_cache[key] = parsed.model_dump()
             except Exception as exc:  # noqa: BLE001
                 raise ValueError(f"Day {lo}–{hi} 分段抽取失败：{exc}") from exc
             finally:
@@ -1018,9 +1040,12 @@ async def _extract_import_draft(
                         pass
             return lo, hi, parsed
 
-    results = await asyncio.gather(
-        *(extract_chunk(*chunk) for chunk in chunks), return_exceptions=True
+    summary, *results = await asyncio.gather(
+        extract_summary(), *(extract_chunk(*chunk) for chunk in chunks), return_exceptions=True
     )
+    if isinstance(summary, BaseException):
+        raise summary
+    total_days = _clamp_trip_days(max(detected_days, summary.days))
     failed_days: list[int] = []
     parsed_chunks = []
     for chunk, res in zip(chunks, results):
@@ -1043,7 +1068,7 @@ async def _extract_import_draft(
     }.values())
     plans_by_day = {p.day: p for p in day_plans}
     for day, title in _guide_day_titles(guide_md).items():
-        if day > total_days:
+        if day > total_days or (only_days is not None and day not in only_days):
             continue
         if day in plans_by_day:
             plans_by_day[day].day_title = title
@@ -1145,7 +1170,7 @@ async def _geocode_stops_by_city(stops, day_plans, destination: str, geocode_fn)
     for city in route_cities:
         pending = [
             stop for stop in stops
-            if (stop.day, stop.name) not in resolved
+            if getattr(stop, "is_place", True) and (stop.day, stop.name) not in resolved
             and (hints.get(stop.day) or destination) != city
         ]
         if not pending:
@@ -1255,7 +1280,13 @@ def _draft_from_ontology(trip_id: str, guide_md: str):
             return None
         if not set(IMPORT_LANES) <= set(obj.lanes):
             return None
+        # 旧本体 schema 曾刻意省略时间字段；正文明确有时刻时，不能用缺时间的缓存冒充完整导入。
+        if re.search(r"\b\d{1,2}[:：]\d{2}\b", guide_md) and any(not s.start_time for s in obj.stops):
+            return None
         draft = to_trip_draft(obj)
+        titles = _guide_day_titles(guide_md)
+        for plan in draft.day_plans:
+            plan.day_title = titles.get(plan.day, plan.day_title)
         draft.days = _clamp_trip_days(max(_detected_guide_days(guide_md), draft.days))
         draft.stops = [s for s in draft.stops if s.day <= draft.days]
         draft.stays = [s for s in draft.stays if s.day <= draft.days]
@@ -1289,25 +1320,30 @@ def _run_import(trip_id: str, guide_md: str, only_days: set[int] | None = None) 
             logger.warning("import progress update failed", exc_info=True)
 
     async def _go():
-        # only_days 非空 = 按天重试，必须走原路径（对象图是整份的，没有「只重跑某几天」语义）
-        draft = None if only_days else _draft_from_ontology(trip_id, guide_md)
-        if draft is None:
-            draft = await _extract_import_draft(
-                get_llm(), guide_md, only_days=only_days, on_progress=_progress,
-            )
-        located = await _geocode_stops_by_city(
-            draft.stops, draft.day_plans, draft.destination, geocode_names,
-        )
-        # 住宿：按「城市」geocode（拿到城市中心坐标即可，用于住宿面板/地图）
-        stay_cities = list(dict.fromkeys(s.city.strip() for s in draft.stays if s.city.strip()))
-        stay_loc: dict[str, str] = {}
-        # 多城海外行程不能用整个 destination 约束所有住宿；每个住宿城市解析自己的中心点。
-        for city in stay_cities:
-            stay_loc.update(await _geocode_with_cooldown([city], city, geocode_names))
-        return draft, located, stay_loc
+        from app.ontology.coordination import source_guard
+        from app.ontology.store import load_import_cache, save_import_cache
+        with get_session() as db:
+            t = db.get(TravelTrip, trip_id)
+            message_id = t.source_message_id if t else None
+        async with source_guard(f"{message_id or trip_id}:import"):
+            cache = load_import_cache(message_id, guide_md) if message_id else {}
+            # 导入专属缓存保留完整时间/住宿/美食字段；旧本体只作为冷启动兼容路径。
+            draft = None if only_days or cache else _draft_from_ontology(trip_id, guide_md)
+            if draft is None:
+                try:
+                    draft = await _extract_import_draft(
+                        get_llm(), guide_md, only_days=only_days, on_progress=_progress, cache=cache,
+                    )
+                finally:
+                    if message_id and cache:
+                        async with source_guard(message_id):
+                            save_import_cache(message_id, guide_md, cache)
+            return draft
 
     try:
-        draft, located, stay_loc = asyncio.run(_go())
+        draft = asyncio.run(_go())
+        located, stay_loc = {}, {}
+        location_rows = []
         with get_session() as db:
             trip = db.get(TravelTrip, trip_id)
             if trip is None:
@@ -1323,7 +1359,7 @@ def _run_import(trip_id: str, guide_md: str, only_days: set[int] | None = None) 
             raw_rows = [{"day": s.day, "name": s.name,
                          "note": s.note, "location": located.get((s.day, s.name), ""),
                          "transport": s.transport, "start_time": s.start_time,
-                         "stay_min": s.stay_min}
+                         "stay_min": s.stay_min, "is_place": s.is_place}
                         for s in draft.stops]
 
             # 按天分组，天内按 start_time 排序（用户要求「按时间段顺序」）：
@@ -1346,12 +1382,15 @@ def _run_import(trip_id: str, guide_md: str, only_days: set[int] | None = None) 
                     optimized.append(r)
 
             for r in optimized:
-                db.add(TravelTripStop(trip_id=trip_id, day=r["day"], order_no=r["order_no"],
-                                      name=r["name"], note=r["note"] or None,
-                                      location=r["location"] or None,
-                                      transport=(r.get("transport") or "")[:16] or None,
-                                      start_time=r.get("start_time") or None,
-                                      stay_min=r.get("stay_min")))
+                row = TravelTripStop(trip_id=trip_id, day=r["day"], order_no=r["order_no"],
+                                     name=r["name"], note=r["note"] or None,
+                                     location=None, transport=(r.get("transport") or "")[:16] or None,
+                                     start_time=r.get("start_time") or None, stay_min=r.get("stay_min"),
+                                     tags=_with_no_location_tag(None, not r["is_place"]))
+                db.add(row)
+                db.flush()
+                if r["is_place"]:
+                    location_rows.append((row.id, row.day, row.name, ""))
             # 住宿 → 🏨 stop（排当天景点之后 order_no=90+，住宿面板 isStay 识别）
             for s in draft.stays:
                 hotel = (s.hotel or s.city or "").strip()
@@ -1360,22 +1399,25 @@ def _run_import(trip_id: str, guide_md: str, only_days: set[int] | None = None) 
                 note_bits = ["住宿"]
                 if s.source.strip():
                     note_bits.append(s.source.strip())
-                db.add(TravelTripStop(
+                row = TravelTripStop(
                     trip_id=trip_id, day=s.day, order_no=90,
                     name=f"🏨 {hotel}"[:128], note=" · ".join(note_bits),
-                    location=stay_loc.get(s.city, "") or None,
-                    ticket_price=s.price if (s.price and s.price > 0) else None,
-                ))
-            # 预算拆分 → 归一聚合 → budget_breakdown_json；总额未设则填聚合总额
-            breakdown: dict[str, float] = {}
-            for it in draft.budget_items:
-                if it.amount and it.amount > 0:
-                    cat = normalize_budget_category(it.category)
-                    breakdown[cat] = round(breakdown.get(cat, 0.0) + it.amount, 2)
-            if breakdown:
-                trip.budget_breakdown_json = _json.dumps(breakdown, ensure_ascii=False)
-                if not trip.budget:
-                    trip.budget = round(sum(breakdown.values()), 2)
+                    location=None, ticket_price=s.price if (s.price and s.price > 0) else None,
+                )
+                db.add(row)
+                db.flush()
+                location_rows.append((row.id, row.day, row.name, s.city))
+            if not only_days:
+                # 预算拆分 → 归一聚合 → budget_breakdown_json；总额未设则填聚合总额
+                breakdown: dict[str, float] = {}
+                for it in draft.budget_items:
+                    if it.amount and it.amount > 0:
+                        cat = normalize_budget_category(it.category)
+                        breakdown[cat] = round(breakdown.get(cat, 0.0) + it.amount, 2)
+                if breakdown:
+                    trip.budget_breakdown_json = _json.dumps(breakdown, ensure_ascii=False)
+                    if not trip.budget:
+                        trip.budget = round(sum(breakdown.values()), 2)
             # 逐日性质/过夜城市：只保留合法天数和类型；缺天由 day-cities 旧逻辑兜底。
             n_days = _clamp_trip_days(draft.days)
             day_plans: list[dict] = []
@@ -1394,78 +1436,88 @@ def _run_import(trip_id: str, guide_md: str, only_days: set[int] | None = None) 
                 # 保存每天的标题
                 if p.day_title and p.day_title.strip():
                     day_titles[str(p.day)] = p.day_title.strip()[:200]
+            if only_days:
+                day_plans = [p for p in _load_day_plans(trip) if p["day"] not in only_days] + day_plans
+                try:
+                    previous_titles = _json.loads(trip.day_titles_json or "{}")
+                except ValueError:
+                    previous_titles = {}
+                day_titles = {**previous_titles, **day_titles}
             if day_plans:
-                trip.day_plan_json = _json.dumps(day_plans, ensure_ascii=False)
+                trip.day_plan_json = _json.dumps(sorted(day_plans, key=lambda p: p["day"]), ensure_ascii=False)
             if day_titles:
                 trip.day_titles_json = _json.dumps(day_titles, ensure_ascii=False)
-            hotels: list[dict] = []
-            seen_hotels: set[str] = set()
-            for h in draft.hotel_options:
-                name = (h.hotel or "").strip()
-                if not name or name in seen_hotels:
-                    continue
-                seen_hotels.add(name)
-                hotels.append({
-                    "city": (h.city or draft.destination or "").strip()[:60],
-                    "hotel": name[:128],
-                    "price": h.price if h.price and h.price > 0 else None,
-                    "source": (h.source or "").strip()[:80],
-                    "note": (h.note or "").strip()[:250],
-                })
-            if hotels:
-                trip.hotel_recommendations_json = _json.dumps(hotels, ensure_ascii=False)
+            if not only_days:
+                hotels: list[dict] = []
+                seen_hotels: set[str] = set()
+                for h in draft.hotel_options:
+                    name = (h.hotel or "").strip()
+                    if not name or name in seen_hotels:
+                        continue
+                    seen_hotels.add(name)
+                    hotels.append({
+                        "city": (h.city or draft.destination or "").strip()[:60],
+                        "hotel": name[:128],
+                        "price": h.price if h.price and h.price > 0 else None,
+                        "source": (h.source or "").strip()[:80],
+                        "note": (h.note or "").strip()[:250],
+                    })
+                if hotels:
+                    trip.hotel_recommendations_json = _json.dumps(hotels, ensure_ascii=False)
 
-            # 美食清单导入
-            from app.db.models import TravelTripFood
-            db.query(TravelTripFood).filter_by(trip_id=trip_id).delete()
-            for food in draft.foods:
-                name = (food.name or "").strip()
-                if not name:
-                    continue
-                category = food.category if food.category in ("小吃", "正餐", "甜点", "饮品", "其他") else "正餐"
-                meal_type = food.meal_type if food.meal_type in ("早餐", "午餐", "下午茶", "晚餐", "夜宵", "待定") else "待定"
-                recommend_food = []
-                for item in food.recommend_food or []:
-                    dish = (item or "").strip()
-                    if dish and dish not in recommend_food:
-                        recommend_food.append(dish[:40])
-                db.add(TravelTripFood(
-                    trip_id=trip_id,
-                    day=food.day if food.day and food.day > 0 else None,
-                    name=name[:128],
-                    meal_type=meal_type,
-                    category=category,
-                    city=(food.city or draft.destination or "").strip()[:64],
-                    address=(food.address or "").strip()[:200],
-                    price=food.price if food.price and food.price > 0 else None,
-                    rating=round(food.rating, 1) if food.rating and 0 < food.rating <= 5 else None,
-                    business_hours=(food.business_hours or "").strip()[:80],
-                    recommend_food_json=_json.dumps(recommend_food[:12], ensure_ascii=False),
-                    note=(food.note or "").strip()[:500],
-                    status="planned",
-                    created_by="import",
-                ))
+                # 美食清单导入
+                from app.db.models import TravelTripFood
+                db.query(TravelTripFood).filter_by(trip_id=trip_id).delete()
+                for food in draft.foods:
+                    name = (food.name or "").strip()
+                    if not name:
+                        continue
+                    category = food.category if food.category in ("小吃", "正餐", "甜点", "饮品", "其他") else "正餐"
+                    meal_type = food.meal_type if food.meal_type in ("早餐", "午餐", "下午茶", "晚餐", "夜宵", "待定") else "待定"
+                    recommend_food = []
+                    for item in food.recommend_food or []:
+                        dish = (item or "").strip()
+                        if dish and dish not in recommend_food:
+                            recommend_food.append(dish[:40])
+                    db.add(TravelTripFood(
+                        trip_id=trip_id,
+                        day=food.day if food.day and food.day > 0 else None,
+                        name=name[:128],
+                        meal_type=meal_type,
+                        category=category,
+                        city=(food.city or draft.destination or "").strip()[:64],
+                        address=(food.address or "").strip()[:200],
+                        price=food.price if food.price and food.price > 0 else None,
+                        rating=round(food.rating, 1) if food.rating and 0 < food.rating <= 5 else None,
+                        business_hours=(food.business_hours or "").strip()[:80],
+                        recommend_food_json=_json.dumps(recommend_food[:12], ensure_ascii=False),
+                        note=(food.note or "").strip()[:500],
+                        status="planned",
+                        created_by="import",
+                    ))
 
-            # 避坑贴士导入
-            from app.db.models import TravelTripTip
-            db.query(TravelTripTip).filter_by(trip_id=trip_id).delete()
-            for tip in draft.tips:
-                content = (tip.content or "").strip()
-                if not content:
-                    continue
-                level = tip.level if tip.level in ("important", "notice") else "notice"
-                db.add(TravelTripTip(
-                    trip_id=trip_id,
-                    level=level,
-                    content=content[:300],
-                    created_by="import",
-                ))
+                # 避坑贴士导入
+                from app.db.models import TravelTripTip
+                db.query(TravelTripTip).filter_by(trip_id=trip_id).delete()
+                for tip in draft.tips:
+                    content = (tip.content or "").strip()
+                    if not content:
+                        continue
+                    level = tip.level if tip.level in ("important", "notice") else "notice"
+                    db.add(TravelTripTip(
+                        trip_id=trip_id,
+                        level=level,
+                        content=content[:300],
+                        created_by="import",
+                    ))
 
-            trip.title = draft.title[:200] or trip.title
-            # destination/title 来自 summary 那一步，它跟逐天抽取是独立的——哪怕有天失败
-            # 也要落盘，否则板上显示「未定目的地」（线上真实反馈：大理、丽江都识别不出来）
-            trip.destination = draft.destination[:60] or trip.destination
-            trip.days = n_days
+                trip.title = draft.title[:200] or trip.title
+                # destination/title 来自 summary 那一步，它跟逐天抽取是独立的——哪怕有天失败
+                # 也要落盘，否则板上显示「未定目的地」（线上真实反馈：大理、丽江都识别不出来）
+                trip.destination = draft.destination[:60] or trip.destination
+                trip.days = n_days
+            else:
+                n_days = trip.days
             # 失败的天并进已有的失败集合（重试成功的天要从里面摘掉）
             still_failed = sorted(set(draft.failed_days) | (_failed_days_of(trip) - (only_days or set())))
             if still_failed:
@@ -1480,8 +1532,25 @@ def _run_import(trip_id: str, guide_md: str, only_days: set[int] | None = None) 
                 trip.ai_review = ""
             from app.db.models import _now
 
+            final_status, final_review = trip.ai_status, trip.ai_review
+            trip.ai_status = "locating"
+            trip.ai_review = (final_review + "\n" if final_review else "") + "路线已导入，正在补充地图位置。可以先查看和编辑行程。"
+            location_context = (trip.destination, trip.day_plan_json)
             trip.updated_at = _now()
             db.commit()
+        # 解析结果已提交；定位失败不再作废已导入行程。
+        try:
+            asyncio.run(_enrich_import_locations(
+                trip_id, draft, location_rows, location_context, final_status, final_review,
+            ))
+        except Exception:
+            logger.warning("import location enrichment failed trip=%s", trip_id, exc_info=True)
+            with get_session() as db:
+                trip = db.get(TravelTrip, trip_id)
+                if trip and trip.ai_status == "locating":
+                    trip.ai_status = final_status
+                    trip.ai_review = final_review or "行程已导入，部分位置暂未补齐，可稍后重新定位。"
+                    db.commit()
     except Exception as exc:  # noqa: BLE001
         # 走到这里说明是整体性失败（summary 抽取/地理编码炸了），逐天失败不会到这
         logger.warning("trip import failed for %s", trip_id, exc_info=True)
@@ -1505,6 +1574,51 @@ def _run_import(trip_id: str, guide_md: str, only_days: set[int] | None = None) 
             except Exception:  # noqa: BLE001
                 logger.warning("mark trip failed retry %d for %s", attempt + 1, trip_id, exc_info=True)
                 time.sleep(3)
+
+
+async def _enrich_import_locations(trip_id, draft, rows, context, final_status, final_review):
+    from app.agent.trip_planner import geocode_names
+    from sqlalchemy import update
+    try:
+        located = await _geocode_stops_by_city(
+            draft.stops, draft.day_plans, draft.destination, geocode_names,
+        )
+    except Exception:
+        logger.warning("import POI enrichment degraded trip=%s", trip_id, exc_info=True)
+        located = {}
+    sem = asyncio.Semaphore(2)
+    async def city_location(city):
+        async with sem:
+            try:
+                return city, await _geocode_with_cooldown([city], city, geocode_names)
+            except Exception:
+                return city, {}
+    cities = list(dict.fromkeys(city for _, _, _, city in rows if city))
+    stays = dict(await asyncio.gather(*(city_location(city) for city in cities)))
+    with get_session() as db:
+        trip = db.get(TravelTrip, trip_id)
+        if trip is None:
+            return
+        same_context = (trip.destination, trip.day_plan_json) == context
+        missing = 0
+        for stop_id, day, name, city in rows:
+            loc = (stays.get(city, {}).get(city) if city else located.get((day, name))) if same_context else None
+            if not loc:
+                missing += 1
+                continue
+            # 手工重命名、改天、删点或填过坐标时，不得用旧请求覆盖。
+            db.execute(update(TravelTripStop).where(
+                TravelTripStop.id == stop_id, TravelTripStop.trip_id == trip_id,
+                TravelTripStop.day == day, TravelTripStop.name == name,
+                (TravelTripStop.location.is_(None) | (TravelTripStop.location == "")),
+                (TravelTripStop.tags.is_(None) | ~TravelTripStop.tags.contains("no_location")),
+            ).values(location=loc))
+        if trip.ai_status == "locating":
+            trip.ai_status = final_status
+            trip.ai_review = final_review or ("部分位置暂未补齐，可使用地图里的重新定位。" if missing else "")
+        from app.db.models import _now
+        trip.updated_at = _now()
+        db.commit()
 
 
 @router.post("/{trip_id}/import/retry")

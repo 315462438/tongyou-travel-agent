@@ -1,0 +1,60 @@
+import SwiftUI
+
+@main
+struct TongyouApp: App {
+    @State private var session = AppSession()
+    @State private var router = AppRouter()
+
+    var body: some Scene {
+        WindowGroup {
+            RootView()
+                .environment(session)
+                .environment(router)
+                .tint(Palette.sky)
+        }
+    }
+}
+
+struct RootView: View {
+    @Environment(AppSession.self) private var session
+    @Environment(AppRouter.self) private var router
+
+    var body: some View {
+        @Bindable var router = router
+        Group {
+            switch session.state {
+            case .checking:
+                LaunchView()
+            case .signedOut:
+                LoginView().transition(.opacity)
+            case .signedIn:
+                TabView(selection: $router.tab) {
+                    Tab("首页", systemImage: "sparkles", value: AppRouter.TabID.home) { HomeView() }
+                    Tab("行程", systemImage: "map", value: AppRouter.TabID.trips) { TripsView() }
+                    Tab("历史", systemImage: "clock.arrow.circlepath", value: AppRouter.TabID.history) {
+                        HistoryView().id(router.historyVersion)
+                    }
+                    Tab("同游圈", systemImage: "person.2", value: AppRouter.TabID.social) { SocialView() }
+                }
+                .tabBarMinimizeBehavior(.onScrollDown)
+                .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.3), value: session.state)
+        .task { await session.restore() }
+    }
+}
+
+struct LaunchView: View {
+    var body: some View {
+        VStack(spacing: 18) {
+            Image("LaunchMark").resizable().frame(width: 84, height: 84)
+                .clipShape(.rect(cornerRadius: 19, style: .continuous))
+                .shadow(color: Palette.sky.opacity(0.3), radius: 18, y: 8)
+            Text("17同游").font(.title2.weight(.semibold))
+            ProgressView().padding(.top, 4)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .screenBackground()
+    }
+}

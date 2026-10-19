@@ -82,7 +82,9 @@ ssh "$DEPLOY_HOST" 'sudo journalctl -u travel-backend -n 50 --no-pager'
 
 - Backend: Python 3.12 venv at `backend/.venv`（本机 `python3.12`；PyCharm 里显示的 3.9 已过时）
 - Frontend: Node 23 + Vite + React-TS（`frontend/`）
-- LLM: DeepSeek（OpenAI 兼容接口），key 在 `backend/.env`；模型分层 v4-pro（规划/抽取）+ v4-flash（分类）
+- LLM: DeepSeek（OpenAI 兼容接口），key 在 `backend/.env`；规划/抽取/分类/视觉默认均为 `deepseek-flash`，官方于 2026-10-17 将此别名升级到 V4.1-Flash-1017，调用名与价格不变。
+- 联网搜索：`tools/web_search_api.py` 为统一入口，保留阿里 `ops-web-search-001` 优先；有效正文来源不足 3 条时由 `tools/deepseek_web.py` 补搜并去重。研究模式 `fetch_url` 优先 DS Markdown、失败回退直接 HTTP，继续使用原配额与外部内容隔离。`DEEPSEEK_SEARCH_ENABLED` / `DEEPSEEK_FETCH_ENABLED` 可分别关闭，复用模型密钥。
+- 协同行程（2026-10-19）：导入摘要与逐日抽取在总并发 4 下执行，摘要/成功块按正文哈希缓存于对象记录的 `_import_cache`；本体按路防重复、不同路并行且提交时重新合并。导入先提交路线再进入 `locating` 补坐标；前端/iOS 持续轮询，按 stop id/day/name/空位置及 no_location 条件补写，不覆盖手改。重启只终止定位提示，路线保留；失败天重试保留其他天和全局人工资料。网页独立 `TripWorkspace.css` 按容器宽度切换，费用未知不显示免费，当天排序带 `day`；iOS 1.0.2 (3)。
 - DB: 远程 PostgreSQL 16（部署在上面的服务器），**必须走 SSH 隧道**，不能公网直连
   （原因见 `docs/pitfalls/远程PostgreSQL公网直连被重置.md`）
 

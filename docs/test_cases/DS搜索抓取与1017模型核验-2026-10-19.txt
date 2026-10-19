@@ -1,0 +1,12 @@
+自动化验收：backend/tests/test_deepseek_web.py；原有 web_search_api、direct_web_search、research_quota、context_security、deep_research、reasoning_effort 回归。
+1. Search 发送官方 endpoint、Bearer、query/count/need_content，保留日期/提供方/抓取时间/评分，正文缺失使用 summary/snippet。
+2. 空白、超长 query、异常响应、非法 URL 不导致业务崩溃；不调用未配置接口。
+3. 400/401/402/403/404 不盲重试；408/429/5xx 最多重试一次；超时软失败；取消向上抛。
+4. 阿里正文来源充足不调用 DS；不足补搜；跟踪 URL 去重且保留更完整正文；短摘要不挤占有效来源名额。
+5. 两家无结果仍由原调用方回退浏览器。模型默认保持官方 deepseek-flash，未杜撰 1017 snapshot ID。
+6. Fetch 只接受公开 HTTP(S) URL，无登录凭据、无内网/元数据地址；返回 Markdown；失败不阻止原 HTTP 路径。
+7. 研究模式 DS 原文进入 external_content，长文可 read_source，来源带提供方及抓取时间，原每轮配额继续生效。
+8. 普通问答与攻略来源保留日期/提供方；原思考协议、结构化输出不变。
+9. Search / Fetch 独立进程内限速（每种接口保守约 4.5QPS）；多进程或共用账号的其他服务需要共享限流。
+执行：在 backend 目录，用项目 .venv/bin/python -m pytest 指定上述测试文件 -q。
+真实调用仅验证接口可达性和模型调用合同，不能据此声称旅行正确率或耗时提升的百分比。

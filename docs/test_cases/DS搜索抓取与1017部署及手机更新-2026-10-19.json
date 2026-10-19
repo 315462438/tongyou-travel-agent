@@ -1,0 +1,53 @@
+{
+  "deployment": {
+    "release": "ds-search-1017-20261019",
+    "backup": "/home/ubuntu/travel-agent/backups/ds-search-1017-20261019",
+    "files_verified": 12,
+    "local_health": {
+      "status": "ok"
+    },
+    "public_health": {
+      "status": "ok"
+    },
+    "env_preserved": true,
+    "rolled_back": false
+  },
+  "linux_tests": {
+    "returncode": 0,
+    "files": 12,
+    "summary": [
+      "197 passed in 15.42s"
+    ]
+  },
+  "service_active": true,
+  "ios": {
+    "version": "1.0.1",
+    "build": "2",
+    "bundle_id": "com.yuchengjiang.tongyou",
+    "signature_verified": true,
+    "installed": true,
+    "launch_verified": true,
+    "api_base": "https://17tongyou.com/travel/api"
+  },
+  "runtime_smoke": {
+    "aliyun_default": {
+      "results": 3,
+      "provider": "aliyun"
+    },
+    "ds_fallback": {
+      "results": 3,
+      "provider": "deepseek"
+    },
+    "ds_fetch": {
+      "success": true,
+      "content_chars": 520
+    },
+    "model": "deepseek-flash"
+  },
+  "data": {
+    "production_env_preserved": true,
+    "database_replaced": false,
+    "static_assets_replaced": false,
+    "phone_update": "in-place"
+  }
+}

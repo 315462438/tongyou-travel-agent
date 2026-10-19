@@ -1,0 +1,58 @@
+{
+  "date": "2026-10-19",
+  "offline_regression": {
+    "passed": 197,
+    "failed": 0,
+    "scope": [
+      "deepseek_web",
+      "web_search_api",
+      "direct_web_search",
+      "research_quota",
+      "context_security",
+      "deep_research",
+      "reasoning_effort",
+      "realtime_guard",
+      "source_pages",
+      "source_reuse",
+      "research_budget",
+      "graph",
+      "cancel"
+    ]
+  },
+  "live_api_smoke": [
+    {
+      "endpoint": "model",
+      "status": 200,
+      "seconds": 0.88,
+      "model": "deepseek-flash",
+      "json_ok": true
+    },
+    {
+      "endpoint": "search",
+      "status": 200,
+      "seconds": 0.85,
+      "results": 3,
+      "with_content": 3,
+      "with_dates": 1
+    },
+    {
+      "endpoint": "fetch",
+      "status": 200,
+      "seconds": 5.8,
+      "content_chars": 520,
+      "has_title": true
+    }
+  ],
+  "production": {
+    "aliyun_configured": true,
+    "planner": "deepseek-flash",
+    "extractor": "deepseek-flash",
+    "classifier": "deepseek-flash",
+    "modified": false
+  },
+  "limits": [
+    "Single live request per endpoint is not a latency benchmark.",
+    "1017 served via the official rolling alias; no immutable snapshot ID was published.",
+    "Offline tests do not measure travel correctness or full itinerary speed."
+  ]
+}

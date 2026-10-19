@@ -226,6 +226,8 @@ def test_build_agent_real_construction_smoke(monkeypatch):
     mock create_deep_agent 所以没拦住。此后任何 middleware/参数改动必须过这条真实构建。
     """
     monkeypatch.setattr(settings, "deepseek_api_key", "test-key")
+    # ChatDeepSeek 从环境读凭据；隔离环境显式设置空值时也必须能离线构建。
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
 
     class _S:
         async def call(self, *a, **kw): ...

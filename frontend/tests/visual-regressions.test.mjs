@@ -127,12 +127,12 @@ test('desktop trip board uses spending summary, itinerary table, and map columns
   assert.match(trips, /days\.filter\(\(d\) => d === selectedDay\)\.map/)
   assert.match(trips, /className="trip-day-sidebar"/)
   assert.match(trips, /className="trip-budget-summary"/)
-  assert.match(trips, />总支出</)
+  assert.match(trips, />已记录花费</)
   assert.match(trips, /className="trip-table-shell"/)
   assert.match(trips, /className="trip-table-header"/)
   assert.match(trips, /className=\{`trip-table-row/)
   assert.match(trips, /className="trip-table-col-time">时段/)
-  assert.match(trips, /className="trip-table-col-activity">地点与活动/)
+  assert.match(trips, /className="trip-table-col-activity">地点与安排/)
   assert.match(trips, /className="trip-map-card-head"/)
   assert.match(trips, /右：每日地图（桌面固定，参考 HTML 的地图侧栏）/)
   // 三栏宽度是**设计快照**：改了就红，红了不代表坏了，而是提醒确认这次调整是有意的。
@@ -165,7 +165,7 @@ test('trip invite controls stay inside the actions popover', () => {
 test('trip import exposes hotel candidates and unambiguous spending labels', () => {
   assert.match(trips, /攻略推荐酒店/)
   assert.match(trips, /hotel_recommendations/)
-  assert.match(trips, />总支出</)
+  assert.match(trips, />已记录花费</)
   assert.doesNotMatch(trips, />门票合计/)
   assert.match(home, /正在提取地点、酒店与预算/)
 })

@@ -1,0 +1,10 @@
+后端：test_trip_import_speed.py 覆盖摘要/逐日真实重叠、只重跑失败块、完整字段缓存、首次入库先于地理编码、手改地点不被覆盖、地理编码失败不作废、不同本体路并行并安全合并、取消等待不漏锁、失败天重试保留其他日期和用户预算、当天排序不修改其他天。
+既有导入、本体、协同、行程模块、多城市、预算、实时信息、上下文隔离、DS 与图编排回归继续执行。
+前端：保留已有 101 项回归，更新改版后费用与活动标题的设计预期；TypeScript 与正式打包通过。
+浏览器：独立 Chrome + 本地测试数据，不修改真实用户行程。1440×1000 桌面、390×844 手机检查无横向溢出、无 JS 错误；编辑抽屉可打开/关闭、更多菜单可用、手机工具切换和地图入口可用、排序发送 day 参数。截图保存在 QA 目录，不用模拟数据冒充真实地图结果。
+可运行浏览器用例：frontend/tests/workspace-browser.mjs；先运行 npm run preview -- --port 4179，再通过 npm run test:workspace 执行。需要 Playwright（也可用 PLAYWRIGHT_MODULE 指定临时安装路径），不默认修改项目依赖；非 macOS 可用 CHROME_PATH 指定浏览器。
+iOS：Release 通用真机构建、签名验证；保持线上 API 地址与原 Bundle ID，覆盖更新时保留数据；手机离线时记录未安装状态。
+不宣称真实速度提升百分比：需要固定攻略的同版本前后计时；离线测试只证明并行调度和接口正确性。
+
+收尾验收：默认环境执行 backend/.venv/bin/python -m pytest tests/ -q，全量通过；研究上下文旧 HTTP 路径不依赖 DS key/网络，DS 专项继续覆盖。线上需验证文件哈希、服务健康、公开入口及入口资源，生产 .env 与旧资源保留；iOS 安装后核对版本与启动结果。
+无密钥环境验收：DEEPSEEK_API_KEY='' .venv/bin/python -m pytest tests/test_deep_research_context.py tests/test_research_context.py -q，20 项通过；真实构图只用虚拟凭据，不 mock 图构建，也不发起模型调用。

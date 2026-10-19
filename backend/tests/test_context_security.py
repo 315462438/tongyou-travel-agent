@@ -239,6 +239,9 @@ def test_build_guide_messages_no_sources_no_tool_turn(monkeypatch, db):
 
 def test_fetch_url_wraps_body_in_external_tags(monkeypatch):
     from app.agent import research_tools
+    from app.tools import deepseek_web
+
+    monkeypatch.setattr(deepseek_web, "enabled", lambda kind="search": False)
 
     monkeypatch.setattr("app.agent.orchestrator._progress", lambda *a, **kw: None)
 

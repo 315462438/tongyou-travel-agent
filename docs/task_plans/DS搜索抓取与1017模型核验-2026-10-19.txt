@@ -1,0 +1,18 @@
+目标：保留阿里搜索，新增 DeepSeek Search / Fetch；确认 V4.1-Flash-1017 的正式调用名与配置。
+官方证据：
+https://api-docs.deepseek.com/updates/?release=deepseek-coder
+https://api-docs.deepseek.com/zh-cn/guides/search/
+1017 已通过 deepseek-flash 自动提供服务，不使用未经官方公布的 1017 模型 ID。
+方案：
+1. 新增 DS HTTP 适配器，同一密钥、独立 Search/Fetch 限速、短超时、受控重试、响应校验。
+2. 统一搜索入口：阿里优先；有效资料不足时 DS 补搜，合并去重；仍无结果由原调用方回退浏览器。
+3. 研究 fetch_url：URL 校验后先 DS Markdown，失败走现有直接抓取；保持原每轮配额、来源留存和外部内容隔离。
+4. 更新模型说明、配置示例；不改变已有思考档位与 Responses 协议。
+5. 离线测试真实 HTTP 请求体、异常/取消/限速、搜索降级、原链路与模型配置。可用时再跑少量真实 API 冒烟。
+涉及：config.py、tools/web_search_api.py、tools/deepseek_web.py、agent/research_tools.py、模型说明、测试和文档。
+验收：旧阿里主路径正常且无需 DS 请求；阿里为空/不足可补齐；DS 不可用时保留阿里或浏览器降级；Fetch 继承安全与配额；测试全通过。
+不宣称：模型提高旅行正确率的比例、搜索必定优于阿里、付费接口免费、官方永久锁定 1017 版本。
+
+部署与手机更新（用户于 2026-10-19 授权）：
+线上仅更新本次 12 个 backend 文件，先校验全部基线、Linux 回归，再备份、原子替换、重启并检查健康；保留生产 .env、数据库、用户文件与前端静态产物。
+iOS 原生客户端复用线上 API；版本更新为 1.0.1 (2)，使用现有签名构建，覆盖安装到已配对 iPhone，检查版本并启动验证。

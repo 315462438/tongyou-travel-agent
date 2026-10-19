@@ -26,6 +26,15 @@ def repair_interrupted_conversations(db: Session, skip_cids: set[str] | None = N
     skip_cids：正在从 checkpoint 续跑的会话，交给续跑处理，别在这里误判修复。
     """
     skip_cids = skip_cids or set()
+    # 导入正文已提交才进入 locating；重启只结束定位提示，不作废行程。
+    from app.db.models import TravelTrip
+    for trip in db.execute(select(TravelTrip).where(TravelTrip.ai_status == "locating")).scalars():
+        trip.ai_status = "partial" if "部分导入成功" in (trip.ai_review or "") else None
+        trip.ai_review = (trip.ai_review or "").replace(
+            "路线已导入，正在补充地图位置。可以先查看和编辑行程。",
+            "行程已保存，地图补充被服务重启中断，可使用重新定位。",
+        )
+    db.commit()
     convs = db.execute(select(TravelConversation)).scalars().all()
     repaired = 0
     for conv in convs:

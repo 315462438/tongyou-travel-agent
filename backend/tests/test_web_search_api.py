@@ -25,6 +25,7 @@ def test_parse_results_strips_highlight_tags_and_bad_links():
 
 def test_disabled_without_key_or_host(monkeypatch):
     monkeypatch.setattr(settings, "aliyun_search_api_key", "")
+    monkeypatch.setattr(settings, "deepseek_search_enabled", False)
     assert not web_search_api.enabled()
     assert asyncio.run(orch._collect_web_api("c", Preference(destination="成都"), ["成都 攻略"])) is None
 

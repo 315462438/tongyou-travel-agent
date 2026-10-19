@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import html2canvas from 'html2canvas'
+import './TripWorkspace.css'
 import { ChatBody, ChatInput } from '../components/ChatInput'
 import Iridescence from '../components/Iridescence'
 import TripMap from '../components/TripMap'
@@ -1386,17 +1387,25 @@ function TripList({ onOpen }: { onOpen: (id: string) => void }) {
 
   return (
     <div className="trips-list">
+      <header className="trip-list-intro">
+        <small>一起规划，一起出发</small>
+        <h1>把旅程放在一起</h1>
+        <p>从攻略一键导入，或新建行程，邀请同伴一起安排每一天。</p>
+      </header>
       <div className="trip-create">
+        <h2>新建一份行程</h2>
         <div className="trip-create-row">
-          <input placeholder="行程名（可空）" value={title} onChange={(e) => setTitle(e.target.value)} />
-          <input placeholder="目的地，如 开封" value={dest} onChange={(e) => setDest(e.target.value)} />
+          <label>行程名称<input placeholder="例如：杭州的慢周末" value={title} onChange={(e) => setTitle(e.target.value)} /></label>
+          <label>目的地<input placeholder="例如：杭州" value={dest} onChange={(e) => setDest(e.target.value)} /></label>
         </div>
+        <details className="trip-create-ai"><summary>想让 AI 先安排一版？（可选）</summary>
         <textarea
           placeholder="（可选）让 AI 先起草一版：例如「开封两日游，喜欢历史和小吃，节奏轻松」——建好后可随意编辑"
           value={seedPrompt}
           onChange={(e) => setSeedPrompt(e.target.value)}
           rows={2}
         />
+        </details>
         <button className="trip-btn primary" onClick={create} disabled={busy}>
           {seedPrompt.trim() ? '✨ AI 起草并创建' : '＋ 创建空白行程'}
         </button>
@@ -1412,6 +1421,7 @@ function TripList({ onOpen }: { onOpen: (id: string) => void }) {
             <div className="trip-card-sub">
               {t.destination || '未定目的地'} · {t.days} 天 · {t.role === 'owner' ? '我创建的' : '受邀协作'}
             </div>
+            <span className="trip-card-open">打开行程 →</span>
             {t.role === 'owner' && (
               <button className="trip-card-del" title="删除行程"
                 onClick={(e) => { e.stopPropagation(); removeTrip(t) }}>✕</button>
@@ -1817,7 +1827,6 @@ function TripBoard({
   const [mapCollapsed, setMapCollapsed] = useState(false)
   // 头部信息块折叠：顶部展开（看副标题/日期/成员），向下滚动自动收起省垂直空间，
   // 滚回顶部再展开。也可点标题栏的 ▴/▾ 手动切换。
-  const [headerCollapsed, setHeaderCollapsed] = useState(false)
   const [exportingDoc, setExportingDoc] = useState(false)
   const [guideExportOptions, setGuideExportOptions] = useState<ExportOptions>(DEFAULT_EXPORT_OPTIONS)
   const [dateEditorOpen, setDateEditorOpen] = useState(false)
@@ -1837,36 +1846,7 @@ function TripBoard({
   const dayRef = useRef(1)
   const stopRefs = useRef(new Map<string, HTMLDivElement>())
   const scrollWrapRef = useRef<HTMLDivElement>(null)
-  const lastScrollTopRef = useRef(0)
   dayRef.current = selectedDay
-
-  // 向下滚动自动收起头部信息块、滚回顶部再展开——把垂直空间让给内容。
-  // scroll 事件不冒泡但可在捕获阶段拿到：一个监听器即可覆盖内部任意滚动面板。
-  // 仅在窄视口（≤900px，移动端标签栏生效的断点）启用，宽屏三栏不需要。
-  useEffect(() => {
-    const wrap = scrollWrapRef.current
-    if (!wrap) return
-    if (!window.matchMedia('(max-width: 900px)').matches) return
-    let ticking = false
-    const onScroll = (e: Event) => {
-      const el = e.target as HTMLElement | null
-      if (!el || typeof el.scrollTop !== 'number') return
-      const top = el.scrollTop
-      if (ticking) return
-      ticking = true
-      window.requestAnimationFrame(() => {
-        const last = lastScrollTopRef.current
-        // 顶部一律展开；明显下滑（>8px）收起，明显上滑（>8px）展开
-        if (top <= 4) setHeaderCollapsed(false)
-        else if (top - last > 8) setHeaderCollapsed(true)
-        else if (last - top > 8) setHeaderCollapsed(false)
-        lastScrollTopRef.current = top
-        ticking = false
-      })
-    }
-    wrap.addEventListener('scroll', onScroll, { capture: true, passive: true })
-    return () => wrap.removeEventListener('scroll', onScroll, { capture: true } as EventListenerOptions)
-  }, [tripId, mobilePane, workspaceView])
 
   const askConfirm = (action: TripConfirmAction) => setConfirmAction(action)
 
@@ -2723,7 +2703,7 @@ function TripBoard({
     setOptimizingRoute(true)
     setMsg('正在优化路线…')
     try {
-      const res = await authFetch(`${API}/trips/${tripId}/ai/order`, { method: 'POST' })
+      const res = await authFetch(`${API}/trips/${tripId}/ai/order?day=${selectedDay}`, { method: 'POST' })
       const result = await res.json().catch(() => ({}))
       if (!res.ok) {
         setMsg(result.detail || '路线优化失败，请稍后重试')
@@ -2741,17 +2721,8 @@ function TripBoard({
   }
 
   return (
-    <div className="trip-board">
-      <div className={`trip-board-head${headerCollapsed ? ' collapsed' : ''}`}>
-        <button
-          type="button"
-          className="trip-head-toggle"
-          aria-label={headerCollapsed ? '展开行程信息' : '收起行程信息'}
-          aria-expanded={!headerCollapsed}
-          onClick={() => setHeaderCollapsed((v) => !v)}
-        >
-          {headerCollapsed ? '▾' : '▴'}
-        </button>
+    <div className="trip-board trip-workspace-clear">
+      <div className="trip-board-head">
         <button className="trip-btn" onClick={onBack}>← 返回</button>
         <details className="trip-export-menu">
           <summary className="trip-btn">导出攻略</summary>
@@ -2802,6 +2773,7 @@ function TripBoard({
           </div>
         </details>
         <span className="trip-title-stack">
+          <small className="trip-workspace-eyebrow">一起规划 · 一起出发</small>
           <strong className="trip-board-title">
             {trip.title}
             <span className="trip-date-setter">
@@ -2813,7 +2785,7 @@ function TripBoard({
                   setDateEditorOpen((open) => !open)
                 }}
               >
-                {trip.start_date ? `${displayTripDayDate(trip, 1)} 出发` : '+ 设置日期'}
+                {trip.start_date ? `${trip.start_date} 出发` : '+ 设置日期'}
               </button>
               {dateEditorOpen && (
                 <span className="trip-date-popover">
@@ -2839,12 +2811,13 @@ function TripBoard({
             </span>
           </strong>
           <span className="trip-board-sub">
-            {trip.destination || '未定目的地'} · {trip.days} 天{trip.start_date ? ` · ${trip.start_date} 出发` : ''}
+            {trip.destination || '未定目的地'} · {trip.days} 天
           </span>
         </span>
         {trip.ai_status && (
           <span className="trip-ai-status">
             {trip.ai_status === 'seeding' ? `✨ ${trip.ai_review || 'AI 起草中…'}`
+              : trip.ai_status === 'locating' ? '路线已导入 · 正在补充地图位置，可先编辑'
               : trip.ai_status === 'copilot' ? '🤖 AI 思考中…'
                 : trip.ai_status === 'reviewing' ? '🔍 AI 检查中…'
                   : `⚠️ ${trip.ai_review || '上次 AI 任务失败'}`}
@@ -2910,25 +2883,16 @@ function TripBoard({
       </div>
 
       <nav className="trip-workspace-tabs" aria-label="行程日期与工具导航">
-        <div className="trip-day-nav" role="tablist" aria-label="选择行程日期">
-          {days.map((d) => (
-            <button
-              key={d}
-              role="tab"
-              aria-selected={workspaceView === 'day' && selectedDay === d}
-              className={workspaceView === 'day' && selectedDay === d ? 'active' : ''}
-              onClick={() => {
-                setSelectedDay(d)
-                setWorkspaceView('day')
-              }}
-            >
-              Day {d}
-              <small>{timelineStopsOf(d).length}</small>
-            </button>
-          ))}
+        <div className="trip-day-nav" role="tablist" aria-label="行程主视图">
+          <button role="tab" aria-selected={workspaceView === 'day'}
+            className={workspaceView === 'day' ? 'active' : ''}
+            onClick={() => { setWorkspaceView('day'); setMobilePane('timeline') }}>
+            每日行程 <small>{trip.days} 天</small>
+          </button>
         </div>
         <i className="trip-tabs-divider" aria-hidden="true" />
         <div className="trip-feature-nav" role="tablist" aria-label="行程工具">
+          <span className="trip-tools-label">旅行工具</span>
           {TRIP_TOOL_TABS.map((tab) => (
             <button
               key={tab.id}
@@ -2963,27 +2927,21 @@ function TripBoard({
           role="tab"
           aria-selected={mobilePane === 'map'}
           className={mobilePane === 'map' ? 'active' : ''}
-          onClick={() => setMobilePane('map')}
+          onClick={() => { setWorkspaceView('day'); setMobilePane('map'); setMapCollapsed(false) }}
         >
           🗺️ 地图
         </button>
-        {TRIP_TOOL_TABS.map((tab) => (
-          <button
-            key={tab.id}
-            role="tab"
-            aria-selected={mobilePane === 'assistant' && workspaceView === 'tool' && aiTab === tab.id}
-            className={mobilePane === 'assistant' && workspaceView === 'tool' && aiTab === tab.id ? 'active' : ''}
-            onClick={() => {
-              setAiTab(tab.id)
-              setWorkspaceView('tool')
-              setMobilePane('assistant')
-            }}
-          >
-            <span aria-hidden="true">{tab.icon}</span>{tab.label}
-            {tab.id === 'assistant' && issues.length > 0 ? ` · ${issues.length}` : ''}
-          </button>
-        ))}
+        <button role="tab" aria-selected={workspaceView === 'tool' && mobilePane === 'assistant'}
+          className={workspaceView === 'tool' && mobilePane === 'assistant' ? 'active' : ''}
+          onClick={() => { setWorkspaceView('tool'); setMobilePane('assistant') }}>旅行工具</button>
       </div>
+      {workspaceView === 'tool' && <div className="trip-mobile-tool-picker">
+        <label htmlFor="trip-tool-select">选择工具</label>
+        <select id="trip-tool-select" value={aiTab} onChange={(e) => setAiTab(e.target.value as TripToolTab)}>
+          {TRIP_TOOL_TABS.map((tab) => <option key={tab.id} value={tab.id}>{tab.label}</option>)}
+        </select>
+      </div>}
+
 
       <div className="trip-mobile-day-nav" role="tablist" aria-label="选择行程日期">
         {days.map((d) => (
@@ -2999,7 +2957,7 @@ function TripBoard({
             }}
           >
             <b>Day {d}</b>
-            {displayTripDayDate(trip, d) ? <small>{displayTripDayDate(trip, d)}</small> : null}
+            {displayTripDayDate(trip, d) ? <small>{displayTripDayDate(trip, d).replace(/^\d{4}年/, '')}</small> : null}
             <i>{timelineStopsOf(d).length}</i>
           </button>
         ))}
@@ -3009,9 +2967,9 @@ function TripBoard({
         {/* 左：支出概览 + 每天导航（与参考 HTML 一致） */}
         <aside className="trip-day-sidebar" aria-label="支出与行程天数">
           <section className="trip-budget-summary">
-            <span>总支出</span>
+            <span>已记录花费</span>
             <strong>¥{actualTotal.toLocaleString()}</strong>
-            <small>{expenses.length ? `记账本 ${expenses.length} 笔记录` : '还没有记账记录'}</small>
+            <small>{expenses.length ? `${expenses.length} 笔真实记账` : '添加账单后自动汇总'}</small>
           </section>
           <div className="trip-sidebar-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span>行程天数</span>
@@ -3043,7 +3001,7 @@ function TripBoard({
                 className={workspaceView === 'day' && selectedDay === d ? 'active' : ''}
                 onClick={() => { setSelectedDay(d); setWorkspaceView('day') }}
               >
-                <span><b>Day {d}</b><small>{displayTripDayDate(trip, d) || `${timelineStopsOf(d).length} 个事件`}</small></span>
+                <span><b>Day {d}</b><small>{displayTripDayDate(trip, d).replace(/^\d{4}年/, '') || `${timelineStopsOf(d).length} 项安排`}</small></span>
                 <i>{timelineStopsOf(d).length}</i>
               </button>
             ))}
@@ -3098,17 +3056,22 @@ function TripBoard({
                 {formatDayTitle(selectedDay)}
               </h2>
             )}
-            <p>{[displayTripDayDate(trip, selectedDay), `${timelineStopsOf(selectedDay).length} 个事件`].filter(Boolean).join(' · ')}</p>
+            <p>{[displayTripDayDate(trip, selectedDay), `${timelineStopsOf(selectedDay).length} 项安排`, `${mapStops.length} 处已定位`].filter(Boolean).join(' · ')}</p>
+            <div className="trip-day-primary-actions">
+              <button type="button" className="trip-btn primary" disabled={trip.ai_status === 'seeding'} onClick={() => setAddingStopDay(selectedDay)}>＋ 添加地点</button>
+              <button type="button" className="trip-btn" disabled={aiBusy} onClick={() => { setAiTab('assistant'); setWorkspaceView('tool'); setMobilePane('assistant') }}>让 AI 调整</button>
+              <span>点“编辑”修改安排，点“导航”开始出发</span>
+            </div>
           </header>
           <section className="trip-route-summary">
             <div className="trip-route-summary-head">
-              <strong>📍 今日路线</strong>
+              <strong>今日路线</strong>
               <span className="trip-route-actions">
                 <span className="trip-route-plan" title="按当天有坐标的地点计算直线距离，用最近邻把每一天内部重排；无坐标地点会跳过并排在后面。">
-                  当前方案：按坐标距离最短重排
+                  按地点距离调整顺序，请先确认当天安排
                 </span>
                 <button className="trip-btn primary" onClick={optimizeRoute} disabled={optimizingRoute}>
-                  {optimizingRoute ? '优化中…' : '✦ AI 优化路线'}
+                  {optimizingRoute ? '优化中…' : '整理当天顺序'}
                 </button>
               </span>
             </div>
@@ -3135,13 +3098,11 @@ function TripBoard({
                   <div className="trip-table">
                     <div className="trip-table-header">
                       <div className="trip-table-col-time">时段</div>
-                      <div className="trip-table-col-activity">地点与活动</div>
-                      <div className="trip-table-col-transport">交通/备注</div>
-                      <div className="trip-table-col-price">参考花费</div>
+                      <div className="trip-table-col-activity">地点与安排</div>
                       <div className="trip-table-col-ops">操作</div>
                     </div>
                     {timelineStopsOf(d).length === 0 ? (
-                      <div className="trip-table-empty">暂无行程</div>
+                      <div className="trip-table-empty"><strong>这一天，留给新的发现</strong><p>{trip.ai_status === 'seeding' ? '正在解析攻略，每天的安排会在这里显示。' : '添加第一个地点，或让 AI 根据你的想法安排行程。'}</p></div>
                     ) : (
                       timelineStopsOf(d).map((s, i, arr) => (
                         <div
@@ -3172,38 +3133,23 @@ function TripBoard({
                           <div className="trip-table-col-time">
                             {formatTripTimeRange(s.start_time, s.stay_min, arr[i + 1]?.start_time)}
                           </div>
-                          <div className="trip-table-col-activity" onClick={() => { setSelectedDay(d); setFocusStop(s.id) }}>
+                          <div className="trip-table-col-activity">
                             <div className="trip-activity-title">
                               {mapStopIndexById.has(s.id) && (
                                 <i className="trip-stop-map-index">{mapStopIndexById.get(s.id)}</i>
                               )}
-                              <span>{s.name}</span>
+                              <button type="button" className="trip-stop-title-button" onClick={() => { setSelectedDay(d); setFocusStop(s.id) }}>{s.name}</button>
                             </div>
                             {s.note && (
                               <div className="trip-activity-desc">{s.note}</div>
                             )}
-                          </div>
-                          <div className="trip-table-col-transport">
-                            {s.transport || '—'}
-                          </div>
-                          <div className="trip-table-col-price">
-                            {s.ticket_price ? `¥${s.ticket_price}${s.ticket_price < 1000 ? '/人' : ''}` : '免费'}
+                            <div className="trip-stop-facts">
+                              <span className="trip-table-col-transport">{s.transport || '到达方式待定'}</span>
+                              <span className="trip-table-col-price">{s.ticket_price === null ? '费用待补充' : `参考 ¥${s.ticket_price}`}</span>
+                              {!s.location && !s.tags.includes('no_location') && <span className="trip-location-pending">{trip.ai_status === 'locating' ? '位置补充中' : '暂未定位'}</span>}
+                            </div>
                           </div>
                           <div className="trip-table-col-ops">
-                            <button
-                              className="trip-table-btn-move"
-                              onClick={(e) => { e.stopPropagation(); moveStop(s, -1) }}
-                              aria-label={`上移 ${s.name}`}
-                              title="上移"
-                              disabled={i === 0}
-                            >↑</button>
-                            <button
-                              className="trip-table-btn-move"
-                              onClick={(e) => { e.stopPropagation(); moveStop(s, 1) }}
-                              aria-label={`下移 ${s.name}`}
-                              title="下移"
-                              disabled={i === arr.length - 1}
-                            >↓</button>
                             {s.nav && (
                               // 用 <a> 而非 button：deep link 就是普通链接，让浏览器自己
                               // 决定唤起 App 还是落网页版。iOS 优先苹果地图（多数没装高德），
@@ -3223,7 +3169,23 @@ function TripBoard({
                               aria-label={`编辑 ${s.name}`}
                               onClick={(e) => { e.stopPropagation(); setEditing(s) }}
                               title="编辑"
-                            >✏️</button>
+                            >编辑</button>
+                            <details className="trip-stop-more"><summary aria-label={`更多操作 ${s.name}`}>更多</summary>
+                              <div className="trip-stop-more-popover">                            <button
+                              className="trip-table-btn-move"
+                              onClick={(e) => { e.stopPropagation(); moveStop(s, -1) }}
+                              aria-label={`上移 ${s.name}`}
+                              title="上移"
+                              disabled={i === 0}
+                            >上移</button>
+                            <button
+                              className="trip-table-btn-move"
+                              onClick={(e) => { e.stopPropagation(); moveStop(s, 1) }}
+                              aria-label={`下移 ${s.name}`}
+                              title="下移"
+                              disabled={i === arr.length - 1}
+                            >下移</button>
+
                             <button
                               className="trip-table-btn-delete"
                               onClick={(e) => {
@@ -3241,7 +3203,9 @@ function TripBoard({
                               }}
                               aria-label={`删除 ${s.name}`}
                               title="删除"
-                            >🗑️</button>
+                            >删除地点</button>
+                              </div>
+                            </details>
                           </div>
                           {openComments === s.id && (
                             <div className="trip-table-comments">
@@ -3313,7 +3277,7 @@ function TripBoard({
 
         {/* 左侧功能视图：由顶部功能胶囊替换事件列表，地图始终留在右侧 */}
         <div className={`trip-col-ai${mobilePane === 'assistant' ? ' mobile-active' : ''}`}>
-          <button className="trip-return-timeline" onClick={() => setWorkspaceView('day')}>
+          <button className="trip-return-timeline" onClick={() => { setWorkspaceView('day'); setMobilePane('timeline') }}>
             ← 返回 Day {selectedDay} 行程
           </button>
           {/* Phase 87：这里原本还有一套驱动同一个 aiTab 的标签栏，与顶部 trip-workspace-tabs

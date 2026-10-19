@@ -65,7 +65,7 @@ def test_search_on_injects_results_and_sources(direct):
     (content, meta), progress = direct(llm, search_on=True)
     prompt = llm.messages[-1]["content"]
     assert "<web_results>" in prompt and "人均 168 元" in prompt
-    assert meta["sources"] == [{"title": "某某汤泉 新店开业", "url": "https://example.com/a"}]
+    assert meta["sources"] == [{"title": "某某汤泉 新店开业", "url": "https://example.com/a", "published": "2025-09-01"}]
     assert meta["direct"] is True  # 前端据此不出攻略按钮
     assert any("正在联网搜索" in p for p in progress)
 

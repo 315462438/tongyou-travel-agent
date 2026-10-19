@@ -30,6 +30,7 @@ class FakeSession:
 
 @pytest.fixture
 def tools(monkeypatch):
+    monkeypatch.setattr(settings, "deepseek_search_enabled", False)
     monkeypatch.setattr("app.agent.orchestrator._progress", lambda *a, **kw: None)
     session = FakeSession()
     main_tools, sub_tools = research_tools.build_tools("c1", "u1", session, sources=[])
@@ -94,6 +95,7 @@ def test_quota_shared_across_tools_of_one_turn(tools, monkeypatch):
 
 
 def test_new_turn_resets_quota(monkeypatch):
+    monkeypatch.setattr(settings, "deepseek_search_enabled", False)
     """配额按轮计：新一轮 build_tools 重新记账。"""
     monkeypatch.setattr("app.agent.orchestrator._progress", lambda *a, **kw: None)
     monkeypatch.setattr(settings, "deep_research_max_searches", 1)

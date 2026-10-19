@@ -225,7 +225,7 @@ def build_tools(cid: str, user_id: str, session: BrowserSession, sources: list[d
     # ---------- 主 agent：浏览器 ----------
 
     async def web_search(query: str) -> str:
-        """用搜索引擎（必应）搜索网页，返回结果标题和 URL 列表。找资料的第一步（每轮有次数配额）。
+        """搜索网页，返回标题、URL 和正文摘录。阿里优先、DS 补搜，失败回退浏览器（每轮有次数配额）。
 
         不要用于：天气/景点/地点核实（走高德工具）；已知确切 URL（直接 fetch_url）；
         同一个信息缺口换关键词反复搜（一次没搜到就换信息源，别耗配额）。
@@ -249,7 +249,9 @@ def build_tools(cid: str, user_id: str, session: BrowserSession, sources: list[d
             # 结果正文已交给模型读过，算作来源；只记前 5 条，免得来源列表被搜索结果刷屏
             for r in api_results[:5]:
                 if r["title"]:
-                    sources.append({"title": r["title"][:60], "url": r["url"]})
+                    sources.append({"title": r["title"][:60], "url": r["url"],
+                                    **{k: r[k] for k in ("provider", "content_provider", "retrieved_at", "published", "authority", "rerank_score")
+                                       if k in r}})
             body = "\n\n".join(
                 f"{i}. {r['title']} | {r['url']}" + (f" | {r['published']}" if r["published"] else "")
                 + f"\n{r['content'][:600]}"
@@ -348,6 +350,8 @@ def build_tools(cid: str, user_id: str, session: BrowserSession, sources: list[d
                 "全轮共享）。来源已经足够，请汇总现有资料进入下一步。")
         used["fetch"] += 1
         parsed = urlparse(url)
+        if len(url) > 8192 or parsed.username or parsed.password:
+            return "该地址不可访问（URL 过长或带有登录凭据）。换一个公开网页。"
         # Phase 69：统一走 url_guard（比原来的 _is_private_host 多挡 link-local 云元数据
         # 169.254.169.254，并且会解析 DNS 后再判一次，防「域名解析到内网」绕过）
         try:
@@ -355,6 +359,15 @@ def build_tools(cid: str, user_id: str, session: BrowserSession, sources: list[d
         except UnsafeURLError as e:
             return f"该地址不可访问（{e}）。换一个公开网页。"
         _progress(cid, f"📄 读取：{(parsed.hostname or '')[:30]}")
+        from app.tools import deepseek_web
+
+        page = await deepseek_web.fetch(url)
+        cancel_check(cid)
+        if page and len(page["content"].strip()) >= 120:
+            title = page["title"] or parsed.hostname or url
+            sources.append({"title": title[:60], "url": url, "provider": "deepseek",
+                            "retrieved_at": page["retrieved_at"]})
+            return _with_budget(_stash_source(page["content"], title, url=url))
         try:
             async with httpx.AsyncClient(
                 trust_env=False, follow_redirects=True,

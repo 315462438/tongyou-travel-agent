@@ -8,10 +8,8 @@ class Settings(BaseSettings):
     deepseek_api_key: str = ""
     deepseek_base_url: str = "https://api.deepseek.com"
 
-    # 2026-09-14 全部切到 V4.1 Flash：官方称其性能/费用/速度全面超过 V4 Pro，且 V4.1 Pro 上线前
-    # 对 v4-pro 的请求会被全部路由到 V4.1 Flash。extract_eval 对照：5/5 通过、快 10–20 倍；
-    # 开销条目数变少是粒度变了（抽分类预算表而非每顿饭），总额反而更贴正文
-    # （见 docs/task_plans/切换DeepSeek-V4.1与视觉切片重校准-2026-09-14.md）。
+    # 2026-10-17 官方将 deepseek-flash 升级到 V4.1-Flash-1017，调用名/价格不变。
+    # 这是跟随官方升级的别名，并非固定快照；不要编造 deepseek-flash-1017 之类的 ID。
     model_planner: str = "deepseek-flash"
     model_extractor: str = "deepseek-flash"
     # 2026-09-10 起 V4 Flash 下线，`deepseek-v4-flash` 只是临时转发到 V4.1 Flash 的别名，
@@ -87,6 +85,12 @@ class Settings(BaseSettings):
     aliyun_search_host: str = ""  # 控制台「公网 API 域名」，如 https://default-xxxx.platform-cn-shanghai.opensearch.aliyuncs.com
     web_search_api_timeout_s: float = 15
     web_search_api_top_k: int = 8
+    # 阿里优先，资料不足再用 DS 补搜；关闭后恢复原阿里/浏览器链路。
+    deepseek_search_enabled: bool = True
+    deepseek_fetch_enabled: bool = True
+    deepseek_web_base_url: str = "https://api.deepseek.com"
+    deepseek_web_timeout_s: float = 8
+    web_search_min_results: int = 3
     amap_key: str = ""
     amap_secret: str = ""  # key 的数字签名私钥
     # Phase 62：海外地理编码。生产服务器直连 OSMF Nominatim 超时，默认改用实测可达的

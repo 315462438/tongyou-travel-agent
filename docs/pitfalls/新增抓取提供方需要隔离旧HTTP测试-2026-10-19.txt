@@ -1,0 +1,8 @@
+现象：全量测试 1547 通过、7 失败，test_research_context.py 中 FakeClient 缺少 post。
+原因：新增 DS Fetch 默认启用，本地 .env 存在 API key；旧测试只模拟原 HTTP GET 路径，共用 httpx 模块导致 DS POST 也进入旧 FakeClient。
+解决：该测试文件用自动 fixture 明确关闭 DS Fetch，保持原 HTTP 路径的上下文分页与预算提醒断言。DS 功能继续由 test_deepseek_web.py 覆盖，不改变生产开关或业务异常处理来迁就 mock。
+验收：默认环境下后端全量测试通过，DS 专项测试仍执行；线上 .env 保留。
+
+部署验收补充：将 Linux 验证从指定测试扩大到全量时，原临时目录仅复制 app/tests，会因缺失 evals/scripts 导致收集失败。临时目录需补齐这两个源码目录及 YAML 等测试资料，但排除 evals/samples、evals/runs 和 .env，避免复制生产评估状态。此错误发生在隔离测试阶段，尚未替换线上文件。
+macOS 沙箱内 codesign 报 CSSMERR_TP_NOT_TRUSTED 时，先通过正常权限流程在本机重新验证；本次完整信任环境下签名通过，无需重新签名或降低验证标准。
+Linux 无密钥全量验证另暴露真实构图测试只 patch settings、未 patch 环境变量：_build_agent 使用 setdefault，已有空的 DEEPSEEK_API_KEY 不会被覆盖，ChatDeepSeek 因此拒绝创建客户端。该测试同时 monkeypatch.setenv 虚拟 test-key，仍真实构图但不调用模型；不更改生产凭据。

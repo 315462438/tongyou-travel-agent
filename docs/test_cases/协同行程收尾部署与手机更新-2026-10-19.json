@@ -1,0 +1,126 @@
+{
+  "release": "trip-final-20261019",
+  "completed_at": "2026-10-19T13:16:08.563858+08:00",
+  "status": "deployed_and_ios_updated",
+  "backend_local": {
+    "passed": 1554,
+    "failed": 0,
+    "seconds": 35.04,
+    "final_test_isolation_followup": {
+      "passed": 20,
+      "failed": 0,
+      "empty_deepseek_env": true
+    }
+  },
+  "backend_linux": {
+    "returncode": 0,
+    "files": 8,
+    "summary": [
+      "1554 passed, 27 warnings in 69.10s (0:01:09)"
+    ]
+  },
+  "frontend": {
+    "passed": 101,
+    "failed": 0,
+    "typescript_and_production_build": true,
+    "dist_synced_to_backend_static": true
+  },
+  "browser": {
+    "desktop": "1440x1000",
+    "phone": "390x844",
+    "overflow": false,
+    "page_errors": [],
+    "edit_drawer": true,
+    "more_actions": true,
+    "phone_tools_and_map": true,
+    "business_api": "mocked"
+  },
+  "deployment": {
+    "release": "trip-final-20261019",
+    "backup": "/home/ubuntu/travel-agent/backups/trip-final-20261019",
+    "backend_files_verified": 8,
+    "static_files_verified": 37,
+    "public_trip_assets_verified": 2,
+    "public_entry_assets": 3,
+    "local_health": {
+      "status": "ok"
+    },
+    "public_health": {
+      "status": "ok"
+    },
+    "env_preserved": true,
+    "old_chunks_preserved": true,
+    "rolled_back": false
+  },
+  "public_smoke": {
+    "health": {
+      "status": 200,
+      "body": {
+        "status": "ok"
+      }
+    },
+    "trips": {
+      "status": 401
+    }
+  },
+  "ios": {
+    "version": "1.0.2",
+    "build": "3",
+    "bundle_id": "com.yuchengjiang.tongyou",
+    "release_build": true,
+    "sources_match_built_candidate": true,
+    "signature_verified": true,
+    "installed": true,
+    "in_place_update": true,
+    "launch_verified": true,
+    "previous_version": "1.0.1",
+    "previous_build": "2",
+    "api_base": "https://17tongyou.com/travel/api"
+  },
+  "backend_manifest": [
+    {
+      "path": "backend/app/api/trip_api.py",
+      "before": "ca423f36067515a5229dcb13801e2b94cdbc788a3b5ee84a3282a008d242e675",
+      "after": "1835d0bef6d001a1cab6011547d94f2ff7d774ab0e5bcc62a1455fb893ac1308"
+    },
+    {
+      "path": "backend/app/ontology/store.py",
+      "before": "033e4e228f6d711f68e7db44c7727bbcb90e5ec2439cdbf7435d611e4b44c028",
+      "after": "23d57d38b0a68dac269e32f72a95fc8fc5431bfd687743fa76bb1cb616b86208"
+    },
+    {
+      "path": "backend/app/ontology/coordination.py",
+      "before": null,
+      "after": "58a3d45d2b51fda1ef076cd3708b03c0371aa3c841e11715b210dc701f750a44"
+    },
+    {
+      "path": "backend/app/ontology/projections.py",
+      "before": "1b344de428b848e3f3c1cef61850164a1003bdd35ba53ad1ed9883d3403ac695",
+      "after": "a6b317bbbe5cc885680f9f714ac3ac4b972b37f5ec092f9cdda9121a0ebe639b"
+    },
+    {
+      "path": "backend/app/db/maintenance.py",
+      "before": "523ad83618b017dcf531cadc34ceac1234801911bb2c68d2beb703b37b9f2713",
+      "after": "f7ae9d73129a43cb1367efea2d6b067d28d4e27f9cd0a993b1b0ec4bcfb7fb8d"
+    },
+    {
+      "path": "backend/tests/test_trip_import_speed.py",
+      "before": null,
+      "after": "22606afbb8cb8a3a38493555fe461b2d52799cb367ae2bc0df32b7bf276d3737"
+    },
+    {
+      "path": "backend/tests/test_research_context.py",
+      "before": "dba3aae3efb8a0c16fcff13e5eb1dc11c0d095780032db21fbc211adf06845b4",
+      "after": "6790d70ba8d1b5c62a3f2c7cdd0a2f70a58a9547e395daa18653f0fba4409204"
+    },
+    {
+      "path": "backend/tests/test_deep_research_context.py",
+      "before": "cb180f3d4ef91c16b05d6d094c8dde3863d877da30e51f5368d4469a901a28d3",
+      "after": "c393a71df6af926ab3fbd68f0fcfcb8e9413cc7c3e8602607b6a81c4571148e8"
+    }
+  ],
+  "limits": [
+    "生产冒烟检查未创建或修改真实用户行程。",
+    "浏览器交互验证使用模拟业务数据；手机验证包括安装、版本与进程启动，未自动操作真实账号行程。"
+  ]
+}
