@@ -312,19 +312,38 @@ def delete_trip(trip_id: str, db: Session = Depends(get_db), user: TravelUser = 
     trip = _member(db, trip_id, user)
     if trip.owner_id != user.id:
         raise HTTPException(403, "只有创建者能删除行程")
-    for s in db.execute(select(TravelTripStop).where(TravelTripStop.trip_id == trip_id)).scalars():
-        db.delete(s)
-    for m in db.execute(select(TravelTripMember).where(TravelTripMember.trip_id == trip_id)).scalars():
-        db.delete(m)
-    for message in db.execute(
-        select(TravelTripChatMessage).where(TravelTripChatMessage.trip_id == trip_id)
-    ).scalars():
-        db.delete(message)
+    # 这些历史表没有 FK cascade，必须在同一事务内完整清理。
+    from app.db.models import (
+        TravelTripExpense, TravelTripFood, TravelTripPackingItem,
+        TravelTripPackingState, TravelTripTip,
+    )
+    from sqlalchemy import delete
+    for model in (TravelTripPackingState, TravelTripPackingItem, TravelTripFood,
+                  TravelTripTip, TravelTripExpense, TravelTripComment, TravelTripSuggestion,
+                  TravelTripEvent, TravelTripChatMessage, TravelTripStop, TravelTripMember):
+        db.execute(delete(model).where(model.trip_id == trip_id))
     # Phase 97：行程没了，指向它的群聊通知也要撤销，否则点开通知跳到一个 404 的行程
     from app.api.notification_api import delete_target_notifications
 
     delete_target_notifications(db, "trip", trip_id)
     db.delete(trip)
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/{trip_id}/leave")
+def leave_trip(trip_id: str, db: Session = Depends(get_db), user: TravelUser = Depends(get_current_user)):
+    trip = _member(db, trip_id, user)
+    if trip.owner_id == user.id:
+        raise HTTPException(403, "创建者不能退出，请使用删除行程")
+    db.delete(db.get(TravelTripMember, (trip_id, user.id)))
+    from sqlalchemy import delete
+    db.execute(delete(TravelNotification).where(
+        TravelNotification.user_id == user.id,
+        TravelNotification.target_kind == "trip", TravelNotification.target_id == trip_id,
+    ))
+    _log_event(db, trip_id, user, "退出了行程")
+    _touch(db, trip)
     db.commit()
     return {"ok": True}
 

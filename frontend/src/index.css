@@ -3121,11 +3121,12 @@ body { color: var(--tx-ink); background: var(--tx-bg); }
 /* Phase 49：行程卡删除 */
 .trip-card { position: relative; }
 .trip-card-del {
-  position: absolute; top: 8px; right: 8px; width: 22px; height: 22px;
+  position: absolute; top: 8px; right: 8px; min-width: 44px; min-height: 44px; padding: 8px;
   border-radius: var(--x-r-sm); color: var(--x-n68); background: transparent; border: none;
-  display: none; align-items: center; justify-content: center; font-size: 12px; line-height: 1;
+  display: flex; align-items: center; justify-content: center; font-size: 13px; line-height: 1;
 }
-.trip-card:hover .trip-card-del { display: flex; }
+.trip-card-title { padding-right: 58px; }
+.trip-card-del:focus-visible { outline: 2px solid var(--x-pine-44); outline-offset: 2px; }
 .trip-card-del:hover { background: var(--x-cinnabar-96); color: var(--x-cinnabar-51); }
 @media (max-width: 720px) { .trip-card-del { display: flex; } }
 
@@ -3784,7 +3785,7 @@ body { color: var(--tx-ink); background: var(--tx-bg); }
   right: 0;
   bottom: 0;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   min-height: calc(62px + env(safe-area-inset-bottom));
   padding: 6px 8px max(6px, env(safe-area-inset-bottom));
   /* chrome 用墨、内容用纸：底栏后退，内容前进。原来底栏与内容同为白，

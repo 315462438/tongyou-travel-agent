@@ -2,7 +2,7 @@ import SwiftUI
 
 @MainActor @Observable
 final class AppRouter {
-    enum TabID: Hashable { case home, trips, history, social }
+    enum TabID: Hashable { case home, trips, ledger, history, social }
     var tab: TabID = .home
     var socialDestination: String?
     var openTripID: String?

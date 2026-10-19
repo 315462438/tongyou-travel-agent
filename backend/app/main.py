@@ -23,6 +23,7 @@ from app.api.notification_api import router as notification_router
 from app.api.support_api import admin_support_router, support_router
 from app.api.upload_api import router as upload_router
 from app.api.trip_api import router as trip_router
+from app.api.ledger_api import router as ledger_router
 from app.api.trip_modules_api import router as trip_modules_router
 from app.db.models import Base
 from app.db.session import engine
@@ -100,6 +101,7 @@ app.include_router(img_router)
 app.include_router(staticmap_router)
 app.include_router(trace_router)
 app.include_router(trip_router)
+app.include_router(ledger_router)
 app.include_router(trip_modules_router)
 app.include_router(support_router)
 app.include_router(admin_support_router)

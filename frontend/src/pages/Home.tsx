@@ -49,6 +49,7 @@ import {
 } from '../interaction'
 
 const TripsOverlay = lazy(() => import('./Trips'))
+const Ledger = lazy(() => import('./Ledger'))
 const SocialHub = lazy(() => import('../components/SocialHub'))
 
 interface SubagentRun {
@@ -319,6 +320,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
   }, [])
   const [showMemories, setShowMemories] = useState(false)
   // 协同板开关/当前 board 存进 URL hash，刷新后恢复（否则回主对话）
+  const [showLedger, setShowLedger] = useState(false)
   const [showTrips, setShowTrips] = useState(() => window.location.hash.startsWith('#trips'))
   const [tripsBoard, setTripsBoard] = useState<string | null>(() => {
     const m = window.location.hash.match(/^#trips=(.+)$/)
@@ -645,6 +647,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
 
   // 移动底栏是一级导航，不是叠加按钮：切换入口时必须关闭上一层全屏视图。
   const openMobileChat = useCallback(() => {
+    setShowLedger(false)
     setShowSocial(false)
     setShowTrips(false)
     setTripsBoard(null)
@@ -657,6 +660,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
   }, [newChat])
 
   const openMobileTrips = useCallback(() => {
+    setShowLedger(false)
     setShowSocial(false)
     setShowMemories(false)
     setShowSkills(false)
@@ -666,7 +670,15 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
     setShowTrips(true)
   }, [])
 
+  const openLedger = () => {
+    setShowTrips(false); setShowSocial(false); setShowMemories(false)
+    setShowSkills(false); setShowAdmin(false); setTraceFor(null)
+    if (layoutMode === 'mobile') setCollapsed(true)
+    setShowLedger(true)
+  }
+
   const openMobileHistory = useCallback(() => {
+    setShowLedger(false)
     setShowSocial(false)
     setShowTrips(false)
     setTripsBoard(null)
@@ -678,6 +690,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
   }, [])
 
   const openMobileSocial = useCallback(() => {
+    setShowLedger(false)
     setShowTrips(false)
     setTripsBoard(null)
     setShowMemories(false)
@@ -1015,6 +1028,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
             </svg>
             <span>协同行程</span>
           </button>
+          <button className="nav-item" onClick={openLedger}><NavIcon name="ledger" /><span>旅行记账</span></button>
           <button className="nav-item" onClick={() => setShowMemories(true)}>
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
@@ -1077,6 +1091,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
         </button>
       )}
 
+      {showLedger && <Suspense fallback={<div className="overlay-loading" role="status">正在打开记账本…</div>}><Ledger onClose={() => setShowLedger(false)} /></Suspense>}
       {showTrips && (
         <Suspense fallback={<div className="overlay-loading" role="status"><span className="spinner" /> 正在打开协同行程…</div>}>
           <TripsOverlay
@@ -1302,7 +1317,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
         </Suspense>
       )}
       <nav className="mobile-bottom-nav" aria-label="移动端主导航">
-        <button className={empty && !showTrips && !showMemories && !showSocial ? 'active' : ''} onClick={openMobileChat}>
+        <button className={empty && !showTrips && !showMemories && !showSocial && !showLedger ? 'active' : ''} onClick={openMobileChat}>
           <NavIcon name="chat" />
           <small>新对话</small>
         </button>
@@ -1310,7 +1325,8 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
           <NavIcon name="trip" />
           <small>行程</small>
         </button>
-        <button className={!collapsed && !showTrips && !showSocial ? 'active' : ''} onClick={openMobileHistory}>
+        <button className={showLedger ? 'active' : ''} onClick={openLedger}><NavIcon name="ledger" /><small>记账</small></button>
+        <button className={!collapsed && !showTrips && !showSocial && !showLedger ? 'active' : ''} onClick={openMobileHistory}>
           <NavIcon name="history" />
           <small>历史</small>
         </button>
@@ -1326,10 +1342,11 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
 
 /** 底栏图标：统一 24 网格、1.7 描边、currentColor。
  *  原来是 ✦ / 🗺 / ☰ / ⌁ —— 彩色 emoji 与单色字符混用，且 ⌁ 无法辨认。 */
-function NavIcon({ name }: { name: 'chat' | 'trip' | 'history' | 'social' }) {
+function NavIcon({ name }: { name: 'chat' | 'trip' | 'ledger' | 'history' | 'social' }) {
   const path = {
     chat: <><path d="M12 3v18M3 12h18" /><circle cx="12" cy="12" r="9" /></>,
     trip: <><path d="M9 4 3 6.5v13L9 17l6 2.5 6-2.5v-13L15 7 9 4z" /><path d="M9 4v13M15 7v12.5" /></>,
+    ledger: <><rect x="3" y="5" width="18" height="14" rx="3" /><path d="M3 10h18M7 15h4" /></>,
     history: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3.5 2" /></>,
     social: (
       <>

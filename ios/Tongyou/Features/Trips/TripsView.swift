@@ -7,6 +7,8 @@ struct TripsView: View {
     @State private var creating = false
     @State private var newTitle = ""
     @State private var trips: [TripSummary] = []
+    @State private var removal: TripSummary?
+    @State private var removing = false
     @State private var loading = true
     @State private var error: String?
 
@@ -19,8 +21,17 @@ struct TripsView: View {
                         Label(error, systemImage: "wifi.exclamationmark").font(.footnote).foregroundStyle(.secondary)
                     }
                     ForEach(trips) { trip in
-                        NavigationLink(value: TripRef(id: trip.id)) { TripRow(trip: trip) }
-                            .buttonStyle(.plain)
+                        HStack(spacing: 6) {
+                            NavigationLink(value: TripRef(id: trip.id)) { TripRow(trip: trip) }
+                                .buttonStyle(.plain)
+                            Button { removal = trip } label: {
+                                Image(systemName: trip.role == "owner" ? "trash" : "rectangle.portrait.and.arrow.right")
+                                    .frame(width: 44, height: 44)
+                            }
+                            .tint(trip.role == "owner" ? .red : Palette.sky)
+                            .accessibilityLabel(trip.role == "owner" ? "删除行程 \(trip.title)" : "退出行程 \(trip.title)")
+                            .disabled(removing)
+                        }
                     }
                 }
                 .padding(16)
@@ -32,7 +43,7 @@ struct TripsView: View {
                 }
             }
             .navigationTitle("行程")
-            .navigationDestination(for: TripRef.self) { TripDetailView(tripID: $0.id) }
+            .navigationDestination(for: TripRef.self) { TripDetailView(tripID: $0.id).onDisappear { Task { await load() } } }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { newTitle = ""; creating = true } label: { Image(systemName: "plus") }.accessibilityLabel("新建行程")
@@ -43,12 +54,33 @@ struct TripsView: View {
                 Button("取消", role: .cancel) {}
                 Button("创建") { create() }
             }
+            .confirmationDialog(removal?.role == "owner" ? "删除这份行程？" : "退出这份行程？", isPresented: Binding(get: { removal != nil }, set: { if !$0 { removal = nil } }), titleVisibility: .visible) {
+                if let target = removal {
+                    Button(target.role == "owner" ? "删除行程" : "退出行程", role: .destructive) { remove(target) }
+                }
+                Button("取消", role: .cancel) { removal = nil }
+            } message: {
+                Text(removal?.role == "owner" ? "所有成员都将失去此行程及其共同账单，无法恢复。" : "只从你的列表移除，不影响其他成员和已有共同账单。")
+            }
             .onChange(of: router.openTripID, initial: true) { _, id in
                 if let id { path.append(TripRef(id: id)); router.openTripID = nil }
             }
             .refreshable { await load() }
             .task { await load() }
             .screenBackground()
+        }
+    }
+
+    private func remove(_ trip: TripSummary) {
+        guard !removing else { return }
+        removing = true
+        Task {
+            defer { removing = false }
+            do {
+                _ = try await API.shared.request(trip.role == "owner" ? "DELETE" : "POST", "trips/\(trip.id)" + (trip.role == "owner" ? "" : "/leave"))
+                trips.removeAll { $0.id == trip.id }
+                error = nil
+            } catch { self.error = error.localizedDescription }
         }
     }
 
@@ -113,6 +145,9 @@ struct TripDetailView: View {
     @State private var sheet: Sheet?
     @State private var showingMap = false
     @State private var retryingImport = false
+    @State private var confirmingRemoval = false
+    @State private var removing = false
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
     @Environment(AppSession.self) private var session
 
@@ -191,9 +226,27 @@ struct TripDetailView: View {
                     Divider()
                     Button("成员与邀请", systemImage: "person.2") { sheet = .members }
                     Button("行程设置", systemImage: "gearshape") { sheet = .settings }
+                    Divider()
+                    Button(isOwner ? "删除行程" : "退出行程", systemImage: isOwner ? "trash" : "rectangle.portrait.and.arrow.right", role: .destructive) { confirmingRemoval = true }
+                        .disabled(removing)
                 } label: { Image(systemName: "ellipsis") }
                 .disabled(trip == nil)
             }
+        }
+        .confirmationDialog(isOwner ? "删除这份行程？" : "退出这份行程？", isPresented: $confirmingRemoval, titleVisibility: .visible) {
+            Button(isOwner ? "删除行程" : "退出行程", role: .destructive) {
+                guard !removing else { return }
+                removing = true
+                Task {
+                    defer { removing = false }
+                    do {
+                        _ = try await API.shared.request(isOwner ? "DELETE" : "POST", "trips/\(tripID)" + (isOwner ? "" : "/leave"))
+                        dismiss()
+                    } catch { self.error = error.localizedDescription }
+                }
+            }
+        } message: {
+            Text(isOwner ? "行程及共同账单会对所有成员删除，无法恢复。" : "退出不影响其他成员和已有共同账单。")
         }
         .sheet(isPresented: $adding) {
             if let trip { StopEditor(tripID: tripID, dayCount: trip.dayCount, defaultDay: day) { Task { await load() } } }

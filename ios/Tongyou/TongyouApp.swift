@@ -31,6 +31,7 @@ struct RootView: View {
                 TabView(selection: $router.tab) {
                     Tab("首页", systemImage: "sparkles", value: AppRouter.TabID.home) { HomeView() }
                     Tab("行程", systemImage: "map", value: AppRouter.TabID.trips) { TripsView() }
+                    Tab("记账", systemImage: "creditcard", value: AppRouter.TabID.ledger) { LedgerView() }
                     Tab("历史", systemImage: "clock.arrow.circlepath", value: AppRouter.TabID.history) {
                         HistoryView().id(router.historyVersion)
                     }

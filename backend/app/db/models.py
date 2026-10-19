@@ -433,6 +433,30 @@ class TravelTripExpense(Base):
     created_at: Mapped[datetime] = mapped_column(default=_now)
 
 
+class TravelLedger(Base):
+    """独立个人旅行账本，不授予行程成员访问权。"""
+    __tablename__ = "travel_ledger"
+    target_currency: Mapped[str] = mapped_column(String(3), default="CNY")
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(String(32), index=True)
+    title: Mapped[str] = mapped_column(String(80))
+    created_at: Mapped[datetime] = mapped_column(default=_now)
+    updated_at: Mapped[datetime] = mapped_column(default=_now, onupdate=_now)
+
+
+class TravelLedgerEntry(Base):
+    __tablename__ = "travel_ledger_entry"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    ledger_id: Mapped[str] = mapped_column(ForeignKey("travel_ledger.id", ondelete="CASCADE"), index=True)
+    title: Mapped[str] = mapped_column(String(80))
+    amount_minor: Mapped[int] = mapped_column(Integer)
+    currency: Mapped[str] = mapped_column(String(3))
+    category: Mapped[str] = mapped_column(String(16))
+    spent_at: Mapped[str] = mapped_column(String(10))
+    note: Mapped[str] = mapped_column(String(500), default="")
+    created_at: Mapped[datetime] = mapped_column(default=_now)
+
+
 class TravelSupportMessage(Base):
     """客服会话消息（Phase 73）：每个用户与管理员之间**一条常驻会话**，不做工单状态流转。
 

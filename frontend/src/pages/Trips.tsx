@@ -1343,15 +1343,17 @@ function TripList({ onOpen }: { onOpen: (id: string) => void }) {
   }, [notify])
 
   const removeTrip = async (t: TripSummary) => {
-    if (!window.confirm(`删除行程「${t.title}」？此操作不可恢复。`)) return
-    const res = await authFetch(`${API}/trips/${t.id}`, { method: 'DELETE' })
-    if (res.ok) {
+    const owned = t.role === 'owner'
+    if (!window.confirm(owned ? `删除行程「${t.title}」及共同账单？所有成员将无法访问，且不可恢复。` : `退出「${t.title}」？不影响其他成员及已有共同账单。`)) return
+    try {
+      const res = await authFetch(`${API}/trips/${t.id}${owned ? '' : '/leave'}`, { method: owned ? 'DELETE' : 'POST' })
+      if (!res.ok) {
+        const body = await res.json().catch(() => null)
+        throw new Error(body?.detail || '操作失败，请重试')
+      }
       setTrips((list) => (list || []).filter((x) => x.id !== t.id))
-      notify('行程已删除', 'success')
-    } else {
-      const body = await res.json().catch(() => null)
-      notify(body?.detail || '删除失败', 'error')
-    }
+      notify(owned ? '行程已删除' : '已退出行程', 'success')
+    } catch (error) { notify(error instanceof Error ? error.message : '网络异常，请重试', 'error') }
   }
 
   const create = async () => {
@@ -1422,10 +1424,10 @@ function TripList({ onOpen }: { onOpen: (id: string) => void }) {
               {t.destination || '未定目的地'} · {t.days} 天 · {t.role === 'owner' ? '我创建的' : '受邀协作'}
             </div>
             <span className="trip-card-open">打开行程 →</span>
-            {t.role === 'owner' && (
-              <button className="trip-card-del" title="删除行程"
-                onClick={(e) => { e.stopPropagation(); removeTrip(t) }}>✕</button>
-            )}
+            <button className="trip-card-del" title={t.role === 'owner' ? '删除行程' : '退出行程'}
+              aria-label={`${t.role === 'owner' ? '删除行程' : '退出行程'} ${t.title}`}
+              onKeyDown={(e) => e.stopPropagation()}
+              onClick={(e) => { e.stopPropagation(); removeTrip(t) }}>{t.role === 'owner' ? '删除' : '退出'}</button>
           </div>
         ))}
       </div>

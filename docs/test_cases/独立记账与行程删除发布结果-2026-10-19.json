@@ -1,0 +1,87 @@
+{
+  "date": "2026-10-19",
+  "release": "ledger-20261019",
+  "local_backend": {
+    "passed": 1579,
+    "new_cases": 25
+  },
+  "linux_backend": {
+    "returncode": 0,
+    "files": 7,
+    "summary": [
+      "1579 passed, 27 warnings in 71.09s (0:01:11)"
+    ]
+  },
+  "frontend": {
+    "passed": 101,
+    "production_build": "passed",
+    "browser_sizes": [
+      "1440x1000",
+      "390x844"
+    ],
+    "browser_checks": [
+      "ledger CRUD",
+      "failed save retains input",
+      "retry same UUID",
+      "MYR to CNY and USD",
+      "refresh rates",
+      "delete/leave trip",
+      "no page errors",
+      "no horizontal overflow"
+    ],
+    "browser_result": "passed"
+  },
+  "ios": {
+    "version": "1.0.3",
+    "build": "4",
+    "release_build": "passed",
+    "signature": "verified",
+    "install": "passed",
+    "launch": "passed",
+    "terminate_existing": true
+  },
+  "deployment": {
+    "release": "ledger-20261019",
+    "backup": "/home/ubuntu/travel-agent/backups/ledger-20261019",
+    "backend_files_verified": 7,
+    "static_files_verified": 39,
+    "public_trip_assets_verified": 4,
+    "public_entry_assets": 3,
+    "local_health": {
+      "status": "ok"
+    },
+    "public_health": {
+      "status": "ok"
+    },
+    "env_preserved": true,
+    "old_chunks_preserved": true,
+    "rolled_back": false
+  },
+  "ledger_tables_verified": true,
+  "production_smoke": {
+    "production_fx": {
+      "target_currency": "CNY",
+      "total_minor": 16373,
+      "items": [
+        {
+          "currency": "MYR",
+          "original_minor": 10000,
+          "converted_minor": 16373,
+          "rate": "1.637304342131115331717859716",
+          "rate_date": "2026-10-19"
+        }
+      ],
+      "missing": [],
+      "stale": false,
+      "source": "Frankfurter",
+      "fetched_at": "2026-10-19T05:39:05.316600+00:00"
+    },
+    "health": 200,
+    "ledger": 401
+  },
+  "limits": [
+    "汇率为最新每日参考价，不是秒级成交价。",
+    "生产验证未增删用户真实行程和账单。",
+    "iOS 已构建、签名、真机覆盖安装和启动；未进行原生 UI 自动化。"
+  ]
+}
