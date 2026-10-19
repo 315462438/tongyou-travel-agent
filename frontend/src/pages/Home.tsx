@@ -320,7 +320,10 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
   }, [])
   const [showMemories, setShowMemories] = useState(false)
   // 协同板开关/当前 board 存进 URL hash，刷新后恢复（否则回主对话）
-  const [showLedger, setShowLedger] = useState(false)
+  const [showLedger, setShowLedger] = useState(() => !!localStorage.getItem('travel_open_ledger'))
+  const [ledgerBookID, setLedgerBookID] = useState(() => localStorage.getItem('travel_open_ledger'))
+  useEffect(() => { localStorage.removeItem('travel_open_ledger') }, [])
+  const [ledgerTrip, setLedgerTrip] = useState<{id: string; title: string} | null>(null)
   const [showTrips, setShowTrips] = useState(() => window.location.hash.startsWith('#trips'))
   const [tripsBoard, setTripsBoard] = useState<string | null>(() => {
     const m = window.location.hash.match(/^#trips=(.+)$/)
@@ -671,6 +674,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
   }, [])
 
   const openLedger = () => {
+    setLedgerTrip(null); setLedgerBookID(null)
     setShowTrips(false); setShowSocial(false); setShowMemories(false)
     setShowSkills(false); setShowAdmin(false); setTraceFor(null)
     if (layoutMode === 'mobile') setCollapsed(true)
@@ -1091,7 +1095,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
         </button>
       )}
 
-      {showLedger && <Suspense fallback={<div className="overlay-loading" role="status">正在打开记账本…</div>}><Ledger onClose={() => setShowLedger(false)} /></Suspense>}
+      {showLedger && <Suspense fallback={<div className="overlay-loading" role="status">正在打开记账本…</div>}><Ledger initialBookID={ledgerBookID} initialTrip={ledgerTrip} onClose={() => setShowLedger(false)} /></Suspense>}
       {showTrips && (
         <Suspense fallback={<div className="overlay-loading" role="status"><span className="spinner" /> 正在打开协同行程…</div>}>
           <TripsOverlay
@@ -1100,6 +1104,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
             initialBoardId={tripsBoard}
             openChatSignal={openChatSignal}
             onChatRead={refreshSocialUnread}
+            onOpenLedger={(trip) => { openLedger(); setLedgerTrip(trip) }}
             onBoardChange={setTripsBoard}
             onClose={() => { setShowTrips(false); setTripsBoard(null) }}
             onOpenConversation={(convId) => {

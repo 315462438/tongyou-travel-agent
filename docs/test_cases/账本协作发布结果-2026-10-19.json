@@ -1,0 +1,95 @@
+{
+  "date": "2026-10-19",
+  "release": "ledger-collab-20261019",
+  "local_backend": {
+    "passed": 1593,
+    "new_cases": 14
+  },
+  "linux_backend": {
+    "returncode": 0,
+    "files": 8,
+    "summary": [
+      "1593 passed, 27 warnings in 73.42s (0:01:13)"
+    ]
+  },
+  "frontend": {
+    "passed": 101,
+    "build": "passed",
+    "browser_sizes": [
+      "1440x1000",
+      "390x844"
+    ],
+    "basic_browser": [
+      "ledger CRUD",
+      "optional trip association/change/unlink",
+      "trip-to-ledger entry preselect",
+      "currency conversion",
+      "failure retry/idempotency",
+      "trip delete/leave",
+      "no overflow/errors"
+    ],
+    "collaboration_browser": [
+      "owner invitations/role management",
+      "failed invite retains form",
+      "viewer read only",
+      "editor entry actions only",
+      "accept invitation",
+      "leave ledger",
+      "share generation/rotation/revocation",
+      "preview before join",
+      "login retains invite context",
+      "mixed trip/ledger URL does not join trip",
+      "invalid token blocked",
+      "no page errors/overflow"
+    ],
+    "browser_result": "passed"
+  },
+  "ios": {
+    "version": "1.0.4",
+    "build": "5",
+    "release_build": "passed",
+    "signature": "verified",
+    "install": "passed",
+    "cold_launch": "passed"
+  },
+  "deployment": {
+    "release": "ledger-collab-20261019",
+    "backup": "/home/ubuntu/travel-agent/backups/ledger-collab-20261019",
+    "backend_files_verified": 8,
+    "static_files_verified": 40,
+    "public_trip_assets_verified": 4,
+    "public_entry_assets": 3,
+    "local_health": {
+      "status": "ok"
+    },
+    "public_health": {
+      "status": "ok"
+    },
+    "env_preserved": true,
+    "old_chunks_preserved": true,
+    "rolled_back": false
+  },
+  "schema": {
+    "member_and_share_tables": "verified",
+    "optional_trip_column": "verified",
+    "entry_author_and_version_columns": "verified"
+  },
+  "production_smoke": {
+    "api_status": {
+      "/health": 200,
+      "/ledger": 401,
+      "/ledger/invites/pending": 401,
+      "/ledger/nonexistent/members": 401,
+      "/ledger/shared/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx": 404,
+      "POST /ledger/join": 401
+    },
+    "lazy_assets_verified": 5,
+    "local_static_verified": 40,
+    "production_user_data_mutated": false
+  },
+  "limits": [
+    "原生 iOS 已构建、签名、真机安装和冷启动；未做原生 UI 自动化。",
+    "生产测试未向真实用户发邀请，也未创建或修改真实账单。",
+    "未登录用户先登录或按现有平台注册规则注册，确认后才加入账本。"
+  ]
+}

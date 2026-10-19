@@ -93,6 +93,10 @@ def migrate_and_bootstrap(engine: Engine) -> None:
         # 抢不到锁就放弃这一轮迁移（下次启动重来），不要把用户那一轮拖进死锁
         if not is_sqlite:
             conn.execute(text(f"SET LOCAL lock_timeout = '{_DDL_LOCK_TIMEOUT}'"))
+        _add_column_if_missing(conn, "travel_ledger", "trip_id", "VARCHAR(32) REFERENCES travel_trip(id) ON DELETE SET NULL")
+        _add_column_if_missing(conn, "travel_ledger_entry", "created_by", "VARCHAR(32)")
+        _add_column_if_missing(conn, "travel_ledger_entry", "updated_by", "VARCHAR(32)")
+        _add_column_if_missing(conn, "travel_ledger_entry", "version", "INTEGER NOT NULL DEFAULT 1")
         # 存量表补 user_id 列
         _add_column_if_missing(conn, "travel_conversation", "user_id", "VARCHAR(32)")
         _add_column_if_missing(conn, "travel_memory", "user_id", "VARCHAR(32)")

@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { API, authFetch, clearToken, getToken, setUnauthorizedHandler } from './api'
 
 const Home = lazy(() => import('./pages/Home'))
+const LedgerJoin = lazy(() => import('./pages/LedgerJoin'))
 const Auth = lazy(() => import('./Auth'))
 
 interface AuthedUser {
@@ -14,12 +15,24 @@ interface AuthedUser {
 
 export default function App() {
   const [user, setUser] = useState<AuthedUser | null>(null)
+  const [ledgerJoin, setLedgerJoin] = useState(() => new URLSearchParams(window.location.search).get('ledger_join') || localStorage.getItem('travel_pending_ledger_join'))
+  const [joinLogin, setJoinLogin] = useState(false)
   const [ready, setReady] = useState(false)
 
   // Phase 42：分享链接落地（?join=token）——暂存到 localStorage 撑过注册/登录流程，
   // 由 Home 挂载后消费；随后清理地址栏参数
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
+    const ledgerToken = params.get('ledger_join')
+    if (ledgerToken) {
+      // A ledger invite never consumes a separate trip invite, even in a mixed URL.
+      params.delete('join')
+      localStorage.removeItem('travel_pending_join')
+      localStorage.setItem('travel_pending_ledger_join', ledgerToken)
+      params.delete('ledger_join')
+      const qs = params.toString()
+      window.history.replaceState(null, '', window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash)
+    }
     const join = params.get('join')
     if (join) {
       localStorage.setItem('travel_pending_join', join)
@@ -57,7 +70,7 @@ export default function App() {
   if (!ready) return <AppLoading label="正在确认登机信息…" />
   return (
     <Suspense fallback={<AppLoading label="正在准备你的旅程…" />}>
-      {!user ? <Auth onAuthed={setUser} /> : (
+      {ledgerJoin && (user || !joinLogin) ? <LedgerJoin token={ledgerJoin} loggedIn={!!user} onLogin={() => setJoinLogin(true)} onCancel={() => {localStorage.removeItem('travel_pending_ledger_join'); setLedgerJoin(null)}} onJoined={id => {localStorage.removeItem('travel_pending_ledger_join'); localStorage.removeItem('travel_pending_join'); localStorage.setItem('travel_open_ledger', id); setLedgerJoin(null)}} /> : !user ? <Auth onAuthed={setUser} /> : (
         <Home
           user={user}
           onLogout={logout}

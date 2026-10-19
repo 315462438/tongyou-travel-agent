@@ -434,8 +434,9 @@ class TravelTripExpense(Base):
 
 
 class TravelLedger(Base):
-    """独立个人旅行账本，不授予行程成员访问权。"""
+    """账本创建者与行程关联；协作成员使用独立授权。"""
     __tablename__ = "travel_ledger"
+    trip_id: Mapped[str | None] = mapped_column(ForeignKey("travel_trip.id", ondelete="SET NULL"), nullable=True)
     target_currency: Mapped[str] = mapped_column(String(3), default="CNY")
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
     user_id: Mapped[str] = mapped_column(String(32), index=True)
@@ -444,8 +445,28 @@ class TravelLedger(Base):
     updated_at: Mapped[datetime] = mapped_column(default=_now, onupdate=_now)
 
 
+class TravelLedgerMember(Base):
+    __tablename__ = "travel_ledger_member"
+    ledger_id: Mapped[str] = mapped_column(ForeignKey("travel_ledger.id", ondelete="CASCADE"), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    role: Mapped[str] = mapped_column(String(16), default="viewer")
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    created_at: Mapped[datetime] = mapped_column(default=_now)
+
+
+class TravelLedgerShare(Base):
+    __tablename__ = "travel_ledger_share"
+    ledger_id: Mapped[str] = mapped_column(ForeignKey("travel_ledger.id", ondelete="CASCADE"), primary_key=True)
+    token: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
+    role: Mapped[str] = mapped_column(String(16), default="viewer")
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class TravelLedgerEntry(Base):
     __tablename__ = "travel_ledger_entry"
+    created_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    updated_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     ledger_id: Mapped[str] = mapped_column(ForeignKey("travel_ledger.id", ondelete="CASCADE"), index=True)
     title: Mapped[str] = mapped_column(String(80))

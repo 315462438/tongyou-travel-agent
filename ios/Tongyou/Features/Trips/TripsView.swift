@@ -144,6 +144,7 @@ struct TripDetailView: View {
     @State private var adding = false
     @State private var sheet: Sheet?
     @State private var showingMap = false
+    @State private var showingLedger = false
     @State private var retryingImport = false
     @State private var confirmingRemoval = false
     @State private var removing = false
@@ -213,6 +214,7 @@ struct TripDetailView: View {
         .screenBackground()
         .navigationTitle(trip?.title ?? "行程")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showingLedger) { LedgerView(initialTrip: LedgerTrip(id: tripID, title: trip?.title ?? "行程")) }
         .toolbar(.hidden, for: .tabBar)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
@@ -222,7 +224,8 @@ struct TripDetailView: View {
                     Button("让 AI 改行程", systemImage: "wand.and.stars") { sheet = .copilot }
                     Button("添加地点", systemImage: "plus") { adding = true }
                     Button("调整当天顺序", systemImage: "arrow.up.arrow.down") { sheet = .reorder }
-                    Button("记一笔账", systemImage: "creditcard") { sheet = .expense }
+                    Button("旅行账本", systemImage: "book.closed") { showingLedger = true }
+                    Button("记一笔共同账单", systemImage: "creditcard") { sheet = .expense }
                     Divider()
                     Button("成员与邀请", systemImage: "person.2") { sheet = .members }
                     Button("行程设置", systemImage: "gearshape") { sheet = .settings }

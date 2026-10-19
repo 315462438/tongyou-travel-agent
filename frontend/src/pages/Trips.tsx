@@ -1265,7 +1265,7 @@ function buildTripDocxBlob(
 
 export default function TripsOverlay({
   username, layoutMode = 'desktop', initialBoardId = null, openChatSignal = 0, onChatRead,
-  onBoardChange, onClose, onOpenConversation, onAskInChat,
+  onBoardChange, onClose, onOpenConversation, onAskInChat, onOpenLedger,
 }: {
   username: string
   layoutMode?: 'desktop' | 'mobile'
@@ -1274,6 +1274,7 @@ export default function TripsOverlay({
   openChatSignal?: number
   /** 群聊已读上报后回调，让主页铃铛立刻掉未读 */
   onChatRead?: () => void
+  onOpenLedger?: (trip: {id: string; title: string}) => void
   onBoardChange?: (id: string | null) => void
   onClose: () => void
   onOpenConversation?: (cid: string) => void
@@ -1310,6 +1311,7 @@ export default function TripsOverlay({
       ) : (
         <TripBoard
           tripId={boardId}
+          onOpenLedger={onOpenLedger}
           username={username}
           onBack={() => setBoardId(null)}
           onOpenConversation={onOpenConversation}
@@ -1790,11 +1792,12 @@ function SourceGuideDrawer({
 }
 
 function TripBoard({
-  tripId, username, onBack, onOpenConversation, onAskInChat, openChatSignal = 0, onChatRead,
+  tripId, username, onBack, onOpenConversation, onAskInChat, openChatSignal = 0, onChatRead, onOpenLedger,
 }: {
   tripId: string
   username: string
   onBack: () => void
+  onOpenLedger?: (trip: {id: string; title: string}) => void
   onOpenConversation?: (cid: string) => void
   onAskInChat?: (text: string) => void
   openChatSignal?: number
@@ -2774,6 +2777,7 @@ function TripBoard({
             </label>
           </div>
         </details>
+        {onOpenLedger && <button className="trip-btn" onClick={() => onOpenLedger({id: trip.id, title: trip.title})}>旅行账本</button>}
         <span className="trip-title-stack">
           <small className="trip-workspace-eyebrow">一起规划 · 一起出发</small>
           <strong className="trip-board-title">

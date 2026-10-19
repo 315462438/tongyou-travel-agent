@@ -170,3 +170,27 @@ def test_index_registry_matches_reality_after_create_all(engine):
     tables = set(inspect(engine).get_table_names())
     for tbl, idx in _EXPECTED_INDEXES:
         assert tbl in tables, f"{idx} 登记的表 {tbl} 不存在"
+
+
+def test_existing_ledger_gains_optional_trip_without_data_loss(engine, monkeypatch):
+    monkeypatch.setattr("app.db.migrate._bootstrap_admin_and_backfill", lambda _: None)
+    monkeypatch.setattr("app.db.migrate.settings.admin_username", "")
+    monkeypatch.setattr("app.db.migrate.settings.admin_password", "")
+    with engine.begin() as conn:
+        for column in ("created_by", "updated_by", "version"):
+            conn.execute(text(f"ALTER TABLE travel_ledger_entry DROP COLUMN {column}"))
+        conn.execute(text("DROP TABLE travel_ledger"))
+        conn.execute(text("CREATE TABLE travel_ledger (id VARCHAR(32) PRIMARY KEY, user_id VARCHAR(32), title VARCHAR(80), target_currency VARCHAR(3), created_at TIMESTAMP, updated_at TIMESTAMP)"))
+        conn.execute(text("INSERT INTO travel_ledger (id,user_id,title,target_currency,created_at,updated_at) VALUES ('existing','a','原有账本','MYR',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)"))
+    with engine.begin() as conn:
+        conn.execute(text("INSERT INTO travel_ledger_entry (id,ledger_id,title,amount_minor,currency,category,spent_at,note,created_at) VALUES ('old-entry','existing','午餐',1234,'MYR','餐饮','2026-10-19','',CURRENT_TIMESTAMP)"))
+    assert "travel_ledger.trip_id" in pending_schema_changes(engine)
+    migrate_and_bootstrap(engine)
+    migrate_and_bootstrap(engine)
+    with engine.connect() as conn:
+        row=conn.execute(text("SELECT title,target_currency,trip_id FROM travel_ledger WHERE id='existing'")).one()
+        assert tuple(row)==('原有账本','MYR',None)
+        columns = {c["name"] for c in inspect(conn).get_columns("travel_ledger_entry")}
+        assert {"created_by", "updated_by", "version"} <= columns
+        assert tuple(conn.execute(text("SELECT amount_minor,currency,version,created_by FROM travel_ledger_entry WHERE id='old-entry'")).one()) == (1234, "MYR", 1, None)
+    assert pending_schema_changes(engine)==[]

@@ -10,7 +10,8 @@
     "test": "node --no-warnings --test tests/*.test.mjs",
     "preview": "vite preview",
     "test:workspace": "node tests/workspace-browser.mjs",
-    "test:ledger": "node tests/ledger-browser.mjs"
+    "test:ledger": "node tests/ledger-browser.mjs",
+    "test:ledger:collaboration": "node tests/ledger-collaboration-browser.mjs"
   },
   "dependencies": {
     "@amap/amap-jsapi-loader": "^1.0.1",

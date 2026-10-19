@@ -312,6 +312,9 @@ def delete_trip(trip_id: str, db: Session = Depends(get_db), user: TravelUser = 
     trip = _member(db, trip_id, user)
     if trip.owner_id != user.id:
         raise HTTPException(403, "只有创建者能删除行程")
+    from app.db.models import TravelLedger
+    from sqlalchemy import update
+    db.execute(update(TravelLedger).where(TravelLedger.trip_id == trip_id).values(trip_id=None))
     # 这些历史表没有 FK cascade，必须在同一事务内完整清理。
     from app.db.models import (
         TravelTripExpense, TravelTripFood, TravelTripPackingItem,
@@ -336,6 +339,9 @@ def leave_trip(trip_id: str, db: Session = Depends(get_db), user: TravelUser = D
     trip = _member(db, trip_id, user)
     if trip.owner_id == user.id:
         raise HTTPException(403, "创建者不能退出，请使用删除行程")
+    from app.db.models import TravelLedger
+    from sqlalchemy import update
+    db.execute(update(TravelLedger).where(TravelLedger.trip_id == trip_id, TravelLedger.user_id == user.id).values(trip_id=None))
     db.delete(db.get(TravelTripMember, (trip_id, user.id)))
     from sqlalchemy import delete
     db.execute(delete(TravelNotification).where(

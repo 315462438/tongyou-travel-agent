@@ -112,3 +112,58 @@ def test_leave_and_delete_complete_children(ctx):
     with maker() as db:
         assert db.get(m.TravelTrip,tid) is None
         for model in children+[m.TravelTripExpense,m.TravelTripEvent,m.TravelTripMember]:assert not db.scalars(select(model).where(model.trip_id==tid)).all()
+
+def test_optional_trip_link_and_legacy_rename(ctx):
+    c,current,maker=ctx
+    tid=c.post('/api/trips',json={'title':'马来西亚','days':3}).json()['id']
+    linked=c.post('/api/ledger',json={'title':'旅行花费','trip_id':tid}).json()
+    bid=linked['id'];path=f'/api/ledger/{bid}'
+    assert linked['trip']=={'id':tid,'title':'马来西亚'}
+    independent=book(c)
+    assert len(c.get('/api/ledger',params={'trip_id':tid}).json())==1
+    assert c.patch(path,json={'title':'旧客户端改名'}).status_code==200
+    assert c.get(path).json()['trip']['id']==tid
+    current[0]='b'
+    assert c.post('/api/ledger',json={'title':'越权关联','trip_id':tid}).status_code==404
+    assert c.get('/api/ledger',params={'trip_id':tid}).status_code==404
+    assert c.patch(path,json={'title':'越权','trip_id':None}).status_code==404
+    with maker() as db:
+        db.add(m.TravelTripMember(trip_id=tid,user_id='b',role='editor',status='pending'));db.commit()
+    assert c.post('/api/ledger',json={'title':'待接受','trip_id':tid}).status_code==404
+    current[0]='a'
+    assert c.patch(path,json={'title':'解除关联','trip_id':None}).status_code==200
+    assert c.get(path).json()['trip'] is None
+    assert c.get('/api/ledger',params={'trip_id':tid}).json()==[]
+    assert c.get(f'/api/ledger/{independent}').json()['trip'] is None
+
+
+def test_linked_personal_books_survive_exit_and_trip_deletion(ctx):
+    c,current,maker=ctx
+    tid=c.post('/api/trips',json={'title':'同行','days':2}).json()['id']
+    with maker() as db:
+        db.add(m.TravelTripMember(trip_id=tid,user_id='b',role='editor',status='accepted'));db.commit()
+    bids={}
+    for uid in ('a','b'):
+        current[0]=uid
+        bids[uid]=c.post('/api/ledger',json={'title':'私人花费','trip_id':tid}).json()['id']
+        assert c.post(f'/api/ledger/{bids[uid]}/entries',json=body()).status_code==200
+        assert len(c.get('/api/ledger',params={'trip_id':tid}).json())==1
+    assert c.get(f'/api/ledger/{bids["a"]}').status_code==404
+    assert c.post(f'/api/trips/{tid}/leave').status_code==200
+    assert c.get(f'/api/ledger/{bids["b"]}').json()['trip'] is None
+    current[0]='a'
+    assert c.get(f'/api/ledger/{bids["a"]}').json()['trip']['id']==tid
+    assert c.delete(f'/api/trips/{tid}').status_code==200
+    for uid,bid in bids.items():
+        current[0]=uid;result=c.get(f'/api/ledger/{bid}').json()
+        assert result['trip'] is None and result['count']==1 and result['totals']=={'MYR':1234}
+
+
+def test_hidden_trip_after_membership_revoked(ctx):
+    c,_,maker=ctx
+    tid=c.post('/api/trips',json={'title':'已移除权限','days':1}).json()['id']
+    bid=c.post('/api/ledger',json={'title':'个人','trip_id':tid}).json()['id']
+    with maker() as db:
+        db.delete(db.get(m.TravelTripMember,(tid,'a')));db.commit()
+    assert c.get(f'/api/ledger/{bid}').json()['trip'] is None
+    assert c.get('/api/ledger').json()[0]['trip'] is None
