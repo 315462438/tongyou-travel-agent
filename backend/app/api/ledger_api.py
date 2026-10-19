@@ -37,7 +37,8 @@ class LinkedBookBody(BookBody):
     trip_id: str | None = Field(default=None, min_length=1, max_length=32)
 
 
-class EntryBody(BookBody):
+class EntryBody(BaseModel):
+    title: str | None = Field(default=None, max_length=80)
     version: int | None = Field(default=None, ge=1)
     amount: Decimal = Field(gt=0, le=Decimal("9999999.99"), max_digits=9, decimal_places=2, allow_inf_nan=False)
     currency: str = "CNY"
@@ -111,7 +112,7 @@ def _entry(db, book_id, entry_id):
 
 
 def _values(body):
-    return dict(title=body.title, amount_minor=int(body.amount * 100), currency=body.currency,
+    return dict(title=(body.title or "").strip() or body.category, amount_minor=int(body.amount * 100), currency=body.currency,
                 category=body.category, spent_at=body.spent_at.isoformat(), note=body.note.strip())
 
 

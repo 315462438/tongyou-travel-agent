@@ -8,7 +8,7 @@ try {
 for(const [name,width,height,mobile] of [['desktop',1440,1000,false],['phone',390,844,true]]) {
  const ctx=await browser.newContext({viewport:{width,height},isMobile:mobile,reducedMotion:'reduce'});
  await ctx.addInitScript(m=>{localStorage.setItem('travel_token','qa-only');localStorage.setItem('travel_layout_mode',m?'mobile':'desktop')},mobile);
- let book=null,entries=[],failSave=true;const sentIDs=[],calls=[];let trips=[{id:'owned',title:'我的杭州行程',role:'owner',days:2,destination:'杭州'},{id:'invited',title:'朋友的旅行',role:'editor',days:3,destination:'上海'}];
+ let book=null,entries=[],failSave=true,fxMode="normal";const sentIDs=[],calls=[];let trips=[{id:'owned',title:'我的杭州行程',role:'owner',days:2,destination:'杭州'},{id:'invited',title:'朋友的旅行',role:'editor',days:3,destination:'上海'}];
  const summary=()=>{
   const totals={},cats={};for(const e of entries){totals[e.currency]=(totals[e.currency]||0)+e.amount_minor;const k=e.currency+'|'+e.category;cats[k]=(cats[k]||0)+e.amount_minor}
   return {...book,count:entries.length,totals,by_category:Object.entries(cats).map(([k,amount_minor])=>({currency:k.split('|')[0],category:k.split('|')[1],amount_minor})),entries};
@@ -26,16 +26,19 @@ for(const [name,width,height,mobile] of [['desktop',1440,1000,false],['phone',39
   else if(path==='/ledger/b1')data=summary();
   else if(path==='/ledger/b1/currency'){book.target_currency=body.target_currency;data={ok:true}}
   else if(path==='/ledger/b1/conversion'){
+   if(fxMode==='error')return route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({detail:'汇率暂不可用'})});
    const totals=summary().totals,target=book.target_currency,items=Object.entries(totals).map(([currency,n])=>{const rate=currency===target?1:target==='CNY'?1.6:0.2;return {currency,rate:String(rate),rate_date:'2026-10-19',converted_minor:Math.round(n*rate)}});
    data={target_currency:target,total_minor:items.reduce((s,i)=>s+i.converted_minor,0),items,missing:[],stale:false,source:'Frankfurter',fetched_at:'2026-10-19T05:00:00Z'};
+   if(fxMode==='missing'){data.total_minor=null;data.missing=['MYR']}
+   if(fxMode==='stale')data.stale=true;
   } else if(path==='/ledger/b1/entries'&&method==='POST'){
    sentIDs.push(body.id);
    if(failSave){failSave=false;return route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({detail:'网络暂时不可用，请重试'})})}
-   const entry={...body,version:1,id:body.id.replaceAll('-',''),amount_minor:Math.round(Number(body.amount)*100)};entries.push(entry);data=entry;
+   const entry={...body,title:(body.title||'').trim()||body.category,version:1,id:body.id.replaceAll('-',''),amount_minor:Math.round(Number(body.amount)*100)};entries.push(entry);data=entry;
   } else if(path.startsWith('/ledger/b1/entries/')){
    const id=path.split('/').pop();
    if(method==='DELETE')entries=entries.filter(e=>e.id!==id);
-   else entries=entries.map(e=>e.id===id?{...e,...body,id,amount_minor:Math.round(Number(body.amount)*100)}:e);
+   else entries=entries.map(e=>e.id===id?{...e,...body,title:(body.title||'').trim()||body.category,id,amount_minor:Math.round(Number(body.amount)*100)}:e);
    data={ok:true};
   } else if(path==='/trips/owned'&&method==='GET')data={...trips[0],updated_at:'2026-10-19T12:00:00Z',stops:[],members:[{username:'demo',role:'owner'}],day_titles:{},day_plans:[],budget_breakdown:{},hotel_recommendations:[]};
   else if(path==='/trips/owned/issues')data={issues:[],ticket_total:0};
@@ -53,25 +56,34 @@ for(const [name,width,height,mobile] of [['desktop',1440,1000,false],['phone',39
  await page.getByLabel('账本名称').fill('马来西亚旅行');await page.getByLabel('关联行程',{exact:true}).selectOption('owned');await page.getByRole('button',{name:'保存',exact:true}).click();
  await page.getByRole('button',{name:/马来西亚旅行/}).click();
  await page.getByText('关联行程：我的杭州行程',{exact:false}).waitFor();
- await page.getByRole('button',{name:'编辑账本',exact:true}).click();await page.getByLabel('关联行程',{exact:true}).selectOption('invited');await page.getByRole('button',{name:'保存',exact:true}).click();await page.getByText('关联行程：朋友的旅行',{exact:false}).waitFor();
- await page.getByRole('button',{name:'编辑账本',exact:true}).click();await page.getByLabel('关联行程',{exact:true}).selectOption('');await page.getByRole('button',{name:'保存',exact:true}).click();await page.getByText('独立账本 · 未关联行程',{exact:false}).waitFor();
+ await page.getByText('更多',{exact:true}).click();await page.getByRole('button',{name:'编辑账本',exact:true}).click();await page.getByLabel('关联行程',{exact:true}).selectOption('invited');await page.getByRole('button',{name:'保存',exact:true}).click();await page.getByText('关联行程：朋友的旅行',{exact:false}).waitFor();
+ await page.getByText('更多',{exact:true}).click();await page.getByRole('button',{name:'编辑账本',exact:true}).click();await page.getByLabel('关联行程',{exact:true}).selectOption('');await page.getByRole('button',{name:'保存',exact:true}).click();await page.getByText('独立账本 · 未关联行程',{exact:false}).waitFor();
  await page.getByRole('button',{name:'＋ 记一笔'}).click();
- await page.getByLabel('金额',{exact:true}).fill('100.01');await page.getByLabel('币种',{exact:true}).selectOption('MYR');await page.getByLabel('花了什么').fill('海鲜晚餐');
+ await page.getByLabel('金额',{exact:true}).fill('100.01');await page.getByLabel('币种',{exact:true}).selectOption('MYR');await page.getByLabel('分类',{exact:true}).selectOption('交通');assert.equal(await page.getByLabel('花了什么（选填）').inputValue(),'');assert.equal(await page.getByRole('button',{name:'保存',exact:true}).isEnabled(),true);
  await page.getByRole('button',{name:'保存',exact:true}).click();await page.getByRole('alert').filter({hasText:'网络暂时不可用'}).waitFor();
- assert.equal(await page.getByLabel('金额',{exact:true}).inputValue(),'100.01');
+ assert.equal(await page.getByLabel('金额',{exact:true}).inputValue(),'100.01');assert.equal(await page.getByLabel('花了什么（选填）').inputValue(),'');
  await page.getByRole('button',{name:'保存',exact:true}).click();
  await page.locator('.ledger-total h2').filter({hasText:'CNY 160.02'}).waitFor();assert.equal(sentIDs[0],sentIDs[1]);assert.equal(entries.length,1);
- await page.getByRole('button',{name:'编辑账单 海鲜晚餐',exact:true}).click();await page.getByLabel('金额',{exact:true}).fill('120.50');await page.getByRole('button',{name:'保存',exact:true}).click();
+ await page.getByRole('button',{name:'编辑账单 交通',exact:true}).click();await page.getByLabel('花了什么（选填）').fill('海鲜晚餐');await page.getByLabel('金额',{exact:true}).fill('120.50');await page.getByRole('button',{name:'保存',exact:true}).click();
  await page.locator('.ledger-total h2').filter({hasText:'CNY 192.80'}).waitFor();
  await page.getByLabel('汇总币种',{exact:true}).selectOption('USD');await page.locator('.ledger-total h2').filter({hasText:'USD 24.10'}).waitFor();
  await page.getByLabel('汇总币种',{exact:true}).selectOption('CNY');await page.locator('.ledger-total h2').filter({hasText:'CNY 192.80'}).waitFor();
- await page.getByRole('button',{name:'刷新汇率',exact:true}).click();await page.locator('.ledger-total h2').filter({hasText:'CNY 192.80'}).waitFor();
+ assert.equal(await page.locator('details.ledger-rate').evaluate(e=>e.open),false);assert.ok((await page.locator('.ledger-summary').boundingBox()).height<240);
+ await page.getByText('汇率与原币明细',{exact:true}).click();await page.getByRole('button',{name:'刷新汇率',exact:true}).click();await page.locator('.ledger-total h2').filter({hasText:'CNY 192.80'}).waitFor();
  assert.ok(calls.some(c=>c[1].endsWith('/conversion')&&c[2]==='?refresh=true'));
+ await page.getByText('汇率与原币明细',{exact:true}).click();
+ for(const [mode,message] of [['missing','未获得 MYR 汇率'],['stale','当前使用上次查询的汇率'],['error','汇率暂不可用']]){
+  fxMode=mode;await page.getByRole('button',{name:'刷新账本',exact:true}).click();await page.getByRole('alert').filter({hasText:message}).waitFor();assert.equal(await page.locator('details.ledger-rate').evaluate(e=>e.open),false);
+ }
+ fxMode='normal';await page.getByRole('button',{name:'刷新账本',exact:true}).click();await page.locator('.ledger-total h2').filter({hasText:'CNY 192.80'}).waitFor();
+ await page.locator('.ledger-shell').evaluate(el=>el.scrollTop=0);
+ if(mobile){const bounds=await page.locator('.ledger-entry').first().boundingBox();assert.ok(bounds.y<height-180,'first entry must appear in the initial phone viewport')}
+
  await page.screenshot({path:`${output}/${name}.png`,fullPage:true});
  assert.equal(await page.locator('.ledger-shell').evaluate(el=>el.scrollWidth>el.clientWidth+1),false);
  await page.getByRole('button',{name:'删除账单 海鲜晚餐',exact:true}).click();await page.getByRole('button',{name:'取消',exact:true}).click();assert.equal(entries.length,1);
  await page.getByRole('button',{name:'删除账单 海鲜晚餐',exact:true}).click();await page.getByRole('button',{name:'确认删除',exact:true}).click();await page.getByText('还没有账单，先记下今天的第一笔花费吧。').waitFor();
- await page.getByRole('button',{name:'删除账本',exact:true}).click();await page.getByRole('button',{name:'确认删除',exact:true}).click();await page.getByText('还没有账本，为下一趟旅行建一个吧。').waitFor();
+ await page.getByText('更多',{exact:true}).click();await page.getByRole('button',{name:'删除账本',exact:true}).click();await page.getByRole('button',{name:'确认删除',exact:true}).click();await page.getByText('还没有账本，为下一趟旅行建一个吧。').waitFor();
  await page.getByRole('button',{name:'关闭旅行记账'}).click();
  if(mobile)await page.getByRole('navigation',{name:'移动端主导航'}).getByRole('button',{name:'行程',exact:true}).click();else await page.getByRole('button',{name:'协同行程',exact:true}).click();
  await page.locator('.trips-overlay').waitFor();
@@ -80,7 +92,7 @@ for(const [name,width,height,mobile] of [['desktop',1440,1000,false],['phone',39
  await page.getByRole('button',{name:'删除行程 我的杭州行程',exact:true}).click();await page.getByText('我的杭州行程',{exact:true}).waitFor({state:'hidden'});
  await page.getByRole('button',{name:'退出行程 朋友的旅行',exact:true}).click();await page.getByText('朋友的旅行',{exact:true}).waitFor({state:'hidden'});
  assert.deepEqual(trips,[]);assert.deepEqual(errors,[]);
- console.log(JSON.stringify({name,errors,entryCRUD:true,failedSaveRetained:true,retrySameID:true,currencyConversion:true,deleteAndLeave:true,overflow:false}));
+ console.log(JSON.stringify({name,errors,entryCRUD:true,categoryOnlySave:true,optionalTitle:true,compactSummary:true,collapsedFxWarnings:true,failedSaveRetained:true,retrySameID:true,currencyConversion:true,deleteAndLeave:true,overflow:false}));
  await ctx.close();
 }
 }finally{await browser.close()}

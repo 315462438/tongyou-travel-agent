@@ -49,7 +49,7 @@ def test_crud_precision_idempotency_currency(ctx):
     assert c.delete(path+'/entries/'+eid).status_code==200
     assert c.get(path).json()['totals']=={}
 
-@pytest.mark.parametrize('field,value',[('amount','0'),('amount','-2'),('amount','1.001'),('amount','NaN'),('amount','Infinity'),('amount','10000000'),('title','  '),('spent_at','2026-02-30'),('currency','XXX'),('category','xx'),('note','x'*501)])
+@pytest.mark.parametrize('field,value',[('amount','0'),('amount','-2'),('amount','1.001'),('amount','NaN'),('amount','Infinity'),('amount','10000000'),('title','x'*81),('spent_at','2026-02-30'),('currency','XXX'),('category','xx'),('note','x'*501)])
 def test_invalid_entry(ctx,field,value):
     c,_,_=ctx;b=book(c);data=body();data[field]=value
     assert c.post(f'/api/ledger/{b}/entries',json=data).status_code==422
@@ -167,3 +167,26 @@ def test_hidden_trip_after_membership_revoked(ctx):
         db.delete(db.get(m.TravelTripMember,(tid,'a')));db.commit()
     assert c.get(f'/api/ledger/{bid}').json()['trip'] is None
     assert c.get('/api/ledger').json()[0]['trip'] is None
+
+
+@pytest.mark.parametrize('title',[None,'','  \n\t  ','omitted'])
+def test_quick_entry_uses_category_without_typing(ctx,title):
+    c,_,_=ctx;b=book(c);path=f'/api/ledger/{b}';data=body();data['category']='交通'
+    if title=='omitted':data.pop('title')
+    else:data['title']=title
+    first=c.post(path+'/entries',json=data);assert first.status_code==200
+    saved=first.json();assert saved['title']=='交通' and saved['amount_minor']==1234
+    assert c.post(path+'/entries',json=data).json()==saved
+    assert c.get(path).json()['count']==1
+    data['category']='住宿';data['title']='';data['version']=saved['version']
+    assert c.patch(path+'/entries/'+saved['id'],json=data).json()['title']=='住宿'
+    data['title']='  海景酒店  ';data['version']+=1
+    assert c.patch(path+'/entries/'+saved['id'],json=data).json()['title']=='海景酒店'
+
+
+def test_book_title_still_required_and_default_category_title(ctx):
+    c,_,_=ctx
+    for data in ({},{'title':''},{'title':'  '}):assert c.post('/api/ledger',json=data).status_code==422
+    b=book(c);data=body();data.pop('title');data.pop('category')
+    r=c.post(f'/api/ledger/{b}/entries',json=data)
+    assert r.status_code==200 and r.json()['title']=='其他'

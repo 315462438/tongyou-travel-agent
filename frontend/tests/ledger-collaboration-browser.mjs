@@ -43,7 +43,7 @@ try { for(const mobile of [false,true]) {
  console.log('Invite UI',mobile);await page.getByLabel('完整用户名').fill('bob');await page.getByLabel('邀请权限',{exact:true}).selectOption('editor');await page.getByRole('button',{name:'发送邀请',exact:true}).click();
  await page.getByRole('alert').filter({hasText:'邀请暂时失败'}).waitFor();assert.equal(await page.getByLabel('完整用户名').inputValue(),'bob');
  await page.getByRole('button',{name:'发送邀请',exact:true}).click();await page.getByText('待接受邀请',{exact:true}).waitFor();assert.equal(member.role,'editor');
- await page.getByLabel('bob的权限').selectOption('viewer');assert.equal(member.role,'viewer');
+ const permissionSaved=page.waitForResponse(r=>r.url().endsWith('/ledger/b1/members/b')&&r.request().method()==='PATCH');await page.getByLabel('bob的权限').selectOption('viewer');await permissionSaved;assert.equal(member.role,'viewer');
  await page.getByRole('button',{name:'生成分享链接',exact:true}).click();await page.getByLabel('分享链接',{exact:true}).waitFor();assert.equal(share.role,'viewer');
  const old=share.token;await page.getByLabel('链接加入权限',{exact:true}).selectOption('editor');await page.getByRole('button',{name:'重新生成链接',exact:true}).click();await page.getByText('当前链接：可编辑',{exact:false}).waitFor();assert.equal(share.role,'editor');
  await page.screenshot({path:`${output}/${mobile?'phone':'desktop'}-members.png`,fullPage:true});
@@ -54,7 +54,7 @@ try { for(const mobile of [false,true]) {
  assert.equal(await page.getByRole('button',{name:'＋ 记一笔',exact:true}).count(),0);assert.equal(await page.getByRole('button',{name:'编辑账单 同行晚餐',exact:true}).count(),0);assert.equal(await page.getByLabel('汇总币种',{exact:true}).isDisabled(),true);
  await page.screenshot({path:`${output}/${mobile?'phone':'desktop'}-viewer.png`,fullPage:true});
  member.role='editor';await openLedger();await openBook();await page.getByRole('button',{name:'＋ 记一笔',exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'编辑账本',exact:true}).count(),0);
- await page.getByRole('button',{name:'退出账本',exact:true}).click();await page.getByRole('button',{name:'确认退出',exact:true}).click();await page.getByText('还没有账本，为下一趟旅行建一个吧。').waitFor();assert.equal(member.status,'left');
+ await page.getByText('更多',{exact:true}).click();await page.getByRole('button',{name:'退出账本',exact:true}).click();await page.getByRole('button',{name:'确认退出',exact:true}).click();await page.getByText('还没有账本，为下一趟旅行建一个吧。').waitFor();assert.equal(member.status,'left');
  // Public link explicitly previews before join and preserves context through login.
  console.log('Link UI',mobile);share={token:old,role:'viewer',expires_at:'2026-10-26T12:00:00Z'};member=null;
  signedOut=true;await page.goto(base+'?ledger_join='+share.token+'&join=unrelated-trip-invite');await page.getByRole('button',{name:'登录或注册后加入'}).waitFor();assert.equal(joins,0);await page.getByRole('button',{name:'登录或注册后加入'}).click();await page.getByPlaceholder('用户名',{exact:true}).fill('bob');await page.locator('input[autocomplete=\"current-password\"]').fill('test-password');await page.getByRole('button',{name:'登机',exact:true}).click();await page.getByRole('button',{name:'确认加入账本'}).waitFor();assert.equal(joins,0);await page.screenshot({path:`${output}/${mobile?'phone':'desktop'}-join.png`,fullPage:true});

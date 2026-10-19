@@ -106,21 +106,23 @@ export default function Ledger({onClose, initialTrip, initialBookID}: {onClose: 
       </> : book && <>
         <p className="ledger-link-info">{book.trip ? `关联行程：${book.trip.title}` : '独立账本 · 未关联行程'} · {roleName(book.role)} · 仅账本成员可见</p>
         <div className="ledger-summary">
-          <div className="ledger-total"><label>汇总币种<select aria-label="汇总币种" value={book.target_currency} disabled={!isOwner || busy || fxBusy} onChange={e => void setCurrency(e.target.value)}>{currencies.map(c => <option key={c} value={c}>{c} · {currencyNames[c]}</option>)}</select></label>
-            <h2 aria-live="polite">{fxBusy ? '正在换算…' : fx?.total_minor != null ? money(fx.total_minor, fx.target_currency) : '暂无法完整换算'}</h2>
-            <p>累计 {book.count} 笔支出 · 按最新参考汇率估算</p>
-            <div className="ledger-original">原币合计：{book.count ? totals(book) : '暂无支出'}</div>
-          </div>
-          <div className="ledger-rate"><div className="ledger-actions"><strong>汇率查询</strong><button disabled={fxBusy || busy} onClick={() => void refreshFx(book.id, true)}>刷新汇率</button></div>
-            {fxError && <p role="alert">{fxError}</p>}
-            {fx?.items.filter(i => i.currency !== fx.target_currency).map(i => <p key={i.currency}>1 {i.currency} ≈ {Number(i.rate).toFixed(6)} {fx.target_currency}<small>行情日期 {i.rate_date}</small></p>)}
+          <div className="ledger-total">
+            <div className="ledger-total-head"><span>累计支出 · {book.count} 笔</span><select aria-label="汇总币种" value={book.target_currency} disabled={!isOwner || busy || fxBusy} onChange={e => void setCurrency(e.target.value)}>{currencies.map(c => <option key={c} value={c}>{c} · {currencyNames[c]}</option>)}</select></div>
+            <div className="ledger-total-main"><h2 aria-live="polite">{fxBusy ? '正在换算…' : fx?.total_minor != null ? money(fx.total_minor, fx.target_currency) : '暂无法完整换算'}</h2>{canEdit && <button className="ledger-primary" onClick={() => setEntryForm('new')}>＋ 记一笔</button>}</div>
+            <p>按最新参考汇率估算</p>
+            {fxError && <p role="alert">{fxError}，可展开明细重试。</p>}
             {fx?.stale && <p role="alert">更新暂不可用，当前使用上次查询的汇率。</p>}
             {!!fx?.missing.length && <p role="alert">未获得 {fx.missing.join('、')} 汇率，暂不显示完整总额。</p>}
-            {fx?.fetched_at && <small>Frankfurter · 查询于 {new Date(fx.fetched_at).toLocaleString('zh-CN')}</small>}
-            <small>参考汇率按日更新，实际换汇或刷卡金额可能不同。</small>
+            <details className="ledger-rate"><summary>汇率与原币明细</summary><div className="ledger-rate-content">
+              <div className="ledger-original">原币合计：{book.count ? totals(book) : '暂无支出'}</div>
+              {fx?.items.filter(i => i.currency !== fx.target_currency).map(i => <p key={i.currency}>1 {i.currency} ≈ {Number(i.rate).toFixed(6)} {fx.target_currency}<small>行情日期 {i.rate_date}</small></p>)}
+              {fx?.fetched_at && <small>Frankfurter · 查询于 {new Date(fx.fetched_at).toLocaleString('zh-CN')}</small>}
+              <small>参考汇率按日更新，实际换汇或刷卡金额可能不同。</small>
+              <button disabled={fxBusy || busy} onClick={() => void refreshFx(book.id, true)}>刷新汇率</button>
+            </div></details>
           </div>
         </div>
-        <div className="ledger-actions ledger-toolbar">{canEdit && <button className="ledger-primary" onClick={() => setEntryForm('new')}>＋ 记一笔</button>}<button onClick={() => setShowMembers(true)}>成员与分享</button>{isOwner ? <><button onClick={() => setBookForm({id: book.id, title: book.title, trip: book.trip})}>编辑账本</button><button className="ledger-danger" onClick={() => setConfirm({title: '删除账本及全部账单？所有成员将失去访问权，此操作不可恢复。', path: `/${book.id}`, wholeBook: true})}>删除账本</button></> : <button onClick={() => setConfirm({title: '退出此账本？已有账单将保留，你将失去访问权限。', path: `/${book.id}/leave`, method: 'POST', wholeBook: true})}>退出账本</button>}</div>
+        <div className="ledger-actions ledger-toolbar"><h3>支出明细</h3><button onClick={() => setShowMembers(true)}>成员与分享</button><details className="ledger-more"><summary>更多</summary><div className="ledger-more-menu">{isOwner ? <><button onClick={e => { e.currentTarget.closest('details')?.removeAttribute('open'); setBookForm({id: book.id, title: book.title, trip: book.trip}) }}>编辑账本</button><button className="ledger-danger" onClick={e => { e.currentTarget.closest('details')?.removeAttribute('open'); setConfirm({title: '删除账本及全部账单？所有成员将失去访问权，此操作不可恢复。', path: `/${book.id}`, wholeBook: true}) }}>删除账本</button></> : <button onClick={e => { e.currentTarget.closest('details')?.removeAttribute('open'); setConfirm({title: '退出此账本？已有账单将保留，你将失去访问权限。', path: `/${book.id}/leave`, method: 'POST', wholeBook: true}) }}>退出账本</button>}</div></details></div>
         <div className="ledger-detail-grid"><section>
           {!book.entries?.length && <div className="ledger-empty">还没有账单，先记下今天的第一笔花费吧。</div>}
           {dates.map(date => <section key={date} className="ledger-day"><h3>{date}</h3>{book.entries?.filter(e => e.spent_at === date).map(e => <article key={e.id} className="ledger-entry"><div><h4>{e.title}</h4><p>{e.category}{e.note && ` · ${e.note}`}</p></div><b>{money(e.amount_minor, e.currency)}</b>{canEdit && <div className="ledger-actions"><button aria-label={`编辑账单 ${e.title}`} onClick={() => setEntryForm(e)}>编辑</button><button aria-label={`删除账单 ${e.title}`} className="ledger-danger" onClick={() => setConfirm({title: `删除「${e.title}」？`, path: `/${book.id}/entries/${e.id}?version=${e.version || 1}`, wholeBook: false})}>删除</button></div>}</article>)}</section>)}
@@ -168,9 +170,9 @@ function EntryEditor({bookID, defaultCurrency, entry, onClose, onSaved}: {bookID
   }}>
     <h2>{entry ? '编辑账单' : '记一笔'}</h2>
     <div className="ledger-form-row"><label>金额<input autoFocus inputMode="decimal" required value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" /></label><label>币种<select aria-label="币种" value={currency} onChange={e => setCurrency(e.target.value)}>{currencies.map(c => <option key={c} value={c}>{c} · {currencyNames[c]}</option>)}</select></label></div>
-    <label>花了什么<input required maxLength={80} value={title} onChange={e => setTitle(e.target.value)} placeholder="比如：海鲜晚餐" /></label>
     <div className="ledger-form-row"><label>分类<select aria-label="分类" value={category} onChange={e => setCategory(e.target.value)}>{categories.map(c => <option key={c}>{c}</option>)}</select></label><label>发生日期<input required type="date" value={date} onChange={e => setDate(e.target.value)} /></label></div>
+    <label>花了什么（选填）<input maxLength={80} value={title} onChange={e => setTitle(e.target.value)} placeholder="不填则使用分类名称，比如：餐饮" /></label>
     <label>备注<textarea maxLength={500} value={note} onChange={e => setNote(e.target.value)} placeholder="选填" rows={3} /></label>
-    {error && <p role="alert">{error}</p>}<div className="ledger-actions"><button type="button" disabled={busy} onClick={onClose}>取消</button><button className="ledger-primary" disabled={busy || !title.trim()}>{busy ? '保存中…' : '保存'}</button></div>
+    {error && <p role="alert">{error}</p>}<div className="ledger-actions"><button type="button" disabled={busy} onClick={onClose}>取消</button><button className="ledger-primary" disabled={busy || !amount.trim()}>{busy ? '保存中…' : '保存'}</button></div>
   </form></div>
 }

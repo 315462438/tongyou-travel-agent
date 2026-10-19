@@ -163,42 +163,53 @@ private struct LedgerDetailView: View {
                 if let error { Text(error).foregroundStyle(.red) }
                 if let book {
                     Text((book.trip.map { "关联行程：\($0.title)" } ?? "独立账本") + " · " + ledgerRoleName(book.role)).font(.footnote).foregroundStyle(.secondary)
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("累计支出 · \(book.count) 笔").font(.subheadline)
-                        Picker("汇总币种", selection: Binding(get: { book.targetCurrency }, set: { setCurrency($0) })) {
-                            ForEach(ledgerCurrencies, id: \.self) { Text("\($0) · \(ledgerCurrencyNames[$0] ?? $0)").tag($0) }
-                        }.disabled(!isOwner || busy || fxBusy)
-                        if fxBusy { ProgressView("正在查询汇率…") }
-                        else if let total = fx?.totalMinor {
-                            Text(ledgerMoney(total, book.targetCurrency)).font(.largeTitle.bold()).foregroundStyle(Palette.sky).minimumScaleFactor(0.6).lineLimit(1)
-                        } else { Text("暂无法完整换算").foregroundStyle(.secondary) }
-                        Text("原币合计").font(.caption).foregroundStyle(.secondary)
-                        TotalsView(totals: book.totals)
-                        DisclosureGroup("汇率与更新时间") {
-                            if let fx {
-                                ForEach(fx.items.filter { $0.currency != fx.targetCurrency }, id: \.currency) { quote in
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text("1 \(quote.currency) ≈ \(String(format: "%.6f", Double(quote.rate) ?? 0)) \(fx.targetCurrency)")
-                                        Text("行情日期 \(quote.rateDate)").font(.caption).foregroundStyle(.secondary)
-                                    }.padding(.vertical, 4)
-                                }
-                                if fx.stale { Text("更新暂不可用，当前使用上次查询汇率。").foregroundStyle(.orange) }
-                                if !fx.missing.isEmpty { Text("未获得 \(fx.missing.joined(separator: "、")) 汇率，暂不显示完整总额。").foregroundStyle(.orange) }
-                                if !fx.fetchedAt.isEmpty { Text("Frankfurter · 查询于 \(fx.fetchedAt)").font(.caption).foregroundStyle(.secondary) }
-                            }
-                            if let fxError { Text(fxError).foregroundStyle(.red) }
-                            Text("参考汇率按日更新，实际换汇或刷卡金额可能不同。").font(.caption).foregroundStyle(.secondary)
-                            Button("刷新汇率", systemImage: "arrow.clockwise") { Task { await refreshFx(true) } }.disabled(fxBusy)
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Text("累计支出 · \(book.count) 笔").font(.subheadline).foregroundStyle(.secondary)
+                            Spacer()
+                            Picker("汇总币种", selection: Binding(get: { book.targetCurrency }, set: { setCurrency($0) })) {
+                                ForEach(ledgerCurrencies, id: \.self) { Text("\($0) · \(ledgerCurrencyNames[$0] ?? $0)").tag($0) }
+                            }.pickerStyle(.menu).labelsHidden().disabled(!isOwner || busy || fxBusy)
+                                .accessibilityLabel("汇总币种")
                         }
-                        if canEdit { Button("记一笔", systemImage: "plus") { adding = true }.buttonStyle(.glassProminent) }
-                        Button("成员与分享", systemImage: "person.2") { showingMembers = true }
-                    }.padding(18).frame(maxWidth: .infinity, alignment: .leading).glassCard(cornerRadius: 22)
-                    if !book.byCategory.isEmpty {
-                        DisclosureGroup("分类汇总") {
-                            ForEach(Array(book.byCategory.enumerated()), id: \.offset) { _, total in
-                                HStack { Text(total.category); Spacer(); Text(ledgerMoney(total.amountMinor, total.currency)).monospacedDigit() }.padding(.vertical, 4)
-                            }
-                        }.padding(16).glassCard(cornerRadius: 18)
+                        HStack(alignment: .center, spacing: 12) {
+                            Group {
+                                if fxBusy { ProgressView("正在换算…") }
+                                else if let total = fx?.totalMinor {
+                                    Text(ledgerMoney(total, book.targetCurrency)).font(.system(size: 30, weight: .bold)).foregroundStyle(Palette.sky).minimumScaleFactor(0.55).lineLimit(1)
+                                } else { Text("暂无法完整换算").font(.headline).foregroundStyle(.secondary) }
+                            }.frame(maxWidth: .infinity, alignment: .leading)
+                            if canEdit { Button("记一笔", systemImage: "plus") { adding = true }.buttonStyle(.glassProminent) }
+                        }
+                        Text("按最新参考汇率估算").font(.caption).foregroundStyle(.secondary)
+                        if let fxError { Text(fxError + "，可展开明细重试。").font(.footnote).foregroundStyle(.red) }
+                        if fx?.stale == true { Text("更新暂不可用，当前使用上次查询汇率。").font(.footnote).foregroundStyle(.orange) }
+                        if let fx, !fx.missing.isEmpty { Text("未获得 \(fx.missing.joined(separator: "、")) 汇率，暂不显示完整总额。").font(.footnote).foregroundStyle(.orange) }
+                        Divider()
+                        DisclosureGroup("汇率与原币明细") {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("原币合计").font(.caption).foregroundStyle(.secondary)
+                                ForEach(book.totals.keys.sorted(), id: \.self) { currency in
+                                    Text(ledgerMoney(book.totals[currency] ?? 0, currency)).font(.subheadline).monospacedDigit()
+                                }
+                                if let fx {
+                                    ForEach(fx.items.filter { $0.currency != fx.targetCurrency }, id: \.currency) { quote in
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            Text("1 \(quote.currency) ≈ \(String(format: "%.6f", Double(quote.rate) ?? 0)) \(fx.targetCurrency)")
+                                            Text("行情日期 \(quote.rateDate)").font(.caption).foregroundStyle(.secondary)
+                                        }
+                                    }
+                                    if !fx.fetchedAt.isEmpty { Text("Frankfurter · 查询于 \(fx.fetchedAt)").font(.caption).foregroundStyle(.secondary) }
+                                }
+                                Text("参考汇率按日更新，实际换汇或刷卡金额可能不同。").font(.caption).foregroundStyle(.secondary)
+                                Button("刷新汇率", systemImage: "arrow.clockwise") { Task { await refreshFx(true) } }.disabled(fxBusy)
+                            }.frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
+                        }.font(.subheadline)
+                    }.padding(16).frame(maxWidth: .infinity, alignment: .leading).glassCard(cornerRadius: 20)
+                    HStack {
+                        Text("支出明细").font(.headline)
+                        Spacer()
+                        Button("成员与分享", systemImage: "person.2") { showingMembers = true }.font(.subheadline)
                     }
                     if (book.entries ?? []).isEmpty { Text("还没有账单，先记下今天的第一笔花费吧。").foregroundStyle(.secondary) }
                     let grouped = Dictionary(grouping: book.entries ?? [], by: \.spentAt)
@@ -221,6 +232,13 @@ private struct LedgerDetailView: View {
                                     .tint(.red).accessibilityLabel("删除账单 \(entry.title)") }
                             }.padding(16).glassCard(cornerRadius: 18)
                         }
+                    }
+                    if !book.byCategory.isEmpty {
+                        DisclosureGroup("分类汇总") {
+                            ForEach(Array(book.byCategory.enumerated()), id: \.offset) { _, total in
+                                HStack { Text(total.category); Spacer(); Text(ledgerMoney(total.amountMinor, total.currency)).monospacedDigit() }.padding(.vertical, 4)
+                            }
+                        }.padding(16).glassCard(cornerRadius: 18)
                     }
                 } else if error == nil { ProgressView() }
             }.padding(16)
@@ -358,8 +376,8 @@ private struct LedgerEntryEditor: View {
                 Section("支出") {
                     TextField("金额", text: $amount).keyboardType(.decimalPad)
                     Picker("币种", selection: $currency) { ForEach(ledgerCurrencies, id: \.self) { Text("\($0) · \(ledgerCurrencyNames[$0] ?? $0)").tag($0) } }
-                    TextField("花了什么？比如：海鲜晚餐", text: $title)
                     Picker("分类", selection: $category) { ForEach(ledgerCategories, id: \.self) { Text($0).tag($0) } }
+                    TextField("花了什么（选填，默认使用分类）", text: $title)
                     DatePicker("发生日期", selection: $date, displayedComponents: .date)
                     TextField("备注（选填）", text: $note, axis: .vertical).lineLimit(2...5)
                 }
@@ -368,7 +386,7 @@ private struct LedgerEntryEditor: View {
             .navigationTitle(entry == nil ? "记一笔" : "编辑账单")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() }.disabled(busy) }
-                ToolbarItem(placement: .confirmationAction) { Button(busy ? "保存中…" : "保存") { save() }.disabled(busy || title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || amount.isEmpty) }
+                ToolbarItem(placement: .confirmationAction) { Button(busy ? "保存中…" : "保存") { save() }.disabled(busy || amount.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
             }
             .interactiveDismissDisabled(busy)
             .onAppear {

@@ -1,0 +1,99 @@
+{
+  "date": "2026-10-19",
+  "scope": [
+    "说明选填，按分类命名",
+    "紧凑汇总卡与折叠汇率明细",
+    "账单优先及管理菜单收纳"
+  ],
+  "backend_local": {
+    "passed": 1598,
+    "warnings": 27
+  },
+  "backend_linux": {
+    "returncode": 0,
+    "files": 2,
+    "summary": [
+      "1598 passed, 27 warnings in 76.26s (0:01:16)"
+    ]
+  },
+  "frontend_unit": {
+    "passed": 101,
+    "failed": 0
+  },
+  "browser": {
+    "viewports": [
+      "1440x1000",
+      "390x844"
+    ],
+    "basic_ledger": "passed",
+    "collaboration": "passed",
+    "optional_title_and_retry": "passed",
+    "compact_summary_under_240px": "passed",
+    "first_entry_visible_on_phone": "passed",
+    "collapsed_fx_error_stale_missing_visible": "passed",
+    "real_data_mutated": false
+  },
+  "ios": {
+    "version": "1.0.5",
+    "build": "6",
+    "release_build": "passed",
+    "codesign": "passed",
+    "device_install": "success",
+    "cold_launch": "success",
+    "installed_version_verified": true,
+    "native_ui_automation": false
+  },
+  "deployment": {
+    "release": "ledger-quick-20261019",
+    "backup": "/home/ubuntu/travel-agent/backups/ledger-quick-20261019",
+    "backend_files_verified": 2,
+    "static_files_verified": 40,
+    "public_trip_assets_verified": 4,
+    "public_entry_assets": 3,
+    "local_health": {
+      "status": "ok"
+    },
+    "public_health": {
+      "status": "ok"
+    },
+    "env_preserved": true,
+    "old_chunks_preserved": true,
+    "rolled_back": false
+  },
+  "public_smoke": {
+    "checks": [
+      {
+        "method": "GET",
+        "path": "api/health",
+        "status": 200,
+        "expected": 200
+      },
+      {
+        "method": "GET",
+        "path": "api/ledger",
+        "status": 401,
+        "expected": 401
+      },
+      {
+        "method": "GET",
+        "path": "api/ledger/invites/pending",
+        "status": 401,
+        "expected": 401
+      },
+      {
+        "method": "GET",
+        "path": "api/ledger/shared/invalid-quick-check",
+        "status": 404,
+        "expected": 404
+      },
+      {
+        "method": "POST",
+        "path": "api/ledger/join",
+        "status": 401,
+        "expected": 401
+      }
+    ],
+    "lazy_assets_verified": 5,
+    "real_user_data_mutated": false
+  }
+}
