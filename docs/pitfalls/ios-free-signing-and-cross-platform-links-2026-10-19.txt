@@ -1,0 +1,24 @@
+iOS 免费签名与跨端分享链接
+
+问题：把分享地址改成私有协议，会让没装 App 的朋友和其他平台打不开；只配置网站也不会
+让旧 iOS App 自动支持 HTTPS 唤起。免费个人团队不能直接使用 Associated Domains。
+
+处理：对外仍分享 HTTPS 账本 URL，Android App Links 根据域名 + release 证书验证。
+iOS 只在网页邀请页提供用户主动点击的 tongyou:// 入口，App 注册 URL Type 严格验证
+host/path/token；登录前缓存邀请，登录后仍需确认。没有定时跳转或“检测已安装”的假判定。
+微信内置浏览器只提示从菜单转 Safari；没装 App/旧包时仍可继续网页流程。
+
+测试：四种接收端浏览器用例；Swift URL/parser/persistence 自动化；模拟器真实 openurl；
+个人团队真机签名构建与安装。iOS、Android、Web 发布记录分别保存。
+
+环境坑：新建 iOS 26.3 模拟器首次 bootstatus 完成后，LaunchServices 的 openurl 与
+get_app_container 曾持续等待。只重启本次专用 QA 模拟器后恢复；不关闭用户原有模拟器。
+simctl openurl 返回成功不代表 URL 已交给 App：首次可能还停在系统确认框。最终用项目
+XCTest UI target 点击“打开”，验证冷/热启动与取消；后续 iOS 可能记住确认，不再弹框，
+测试应接受直接进入邀请的正确结果。UI target 不包含在发布 App 中。
+Android Release WebView 的 UIAutomator 树可能没有网页子节点，不能把空树误判成白屏；
+用实际截图及专用模拟器本地存储校验验证覆盖安装保留邀请，debug 仪器测试检查 DOM。
+
+参考：Apple 自定义 URL 方案
+https://developer.apple.com/documentation/xcode/defining-a-custom-url-scheme-for-your-app
+https://developer.apple.com/documentation/xcode/adding-capabilities-to-your-app

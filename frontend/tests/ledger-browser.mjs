@@ -81,7 +81,14 @@ for(const [name,width,height,mobile] of [['desktop',1440,1000,false],['phone',39
 
  await page.screenshot({path:`${output}/${name}.png`,fullPage:true});
  assert.equal(await page.locator('.ledger-shell').evaluate(el=>el.scrollWidth>el.clientWidth+1),false);
- await page.getByRole('button',{name:'删除账单 海鲜晚餐',exact:true}).click();await page.getByRole('button',{name:'取消',exact:true}).click();assert.equal(entries.length,1);
+ const cdp=await ctx.newCDPSession(page);
+ await cdp.send('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-transparency',value:'reduce'}]});
+ await page.waitForFunction(()=>[...document.querySelectorAll('.ledger-header,.ledger-total,.ledger-entry')].every(e=>getComputedStyle(e).backdropFilter==='none'));
+ assert.ok(await page.locator('.ledger-header,.ledger-total,.ledger-entry').evaluateAll(els=>els.every(e=>getComputedStyle(e).backdropFilter==='none')));
+ await page.getByRole('button',{name:'删除账单 海鲜晚餐',exact:true}).click();
+ assert.equal(await page.locator('.ledger-modal').evaluate(e=>getComputedStyle(e).backdropFilter),'none');
+ await page.getByRole('button',{name:'取消',exact:true}).click();assert.equal(entries.length,1);
+ await cdp.send('Emulation.setEmulatedMedia',{features:[]});
  await page.getByRole('button',{name:'删除账单 海鲜晚餐',exact:true}).click();await page.getByRole('button',{name:'确认删除',exact:true}).click();await page.getByText('还没有账单，先记下今天的第一笔花费吧。').waitFor();
  await page.getByText('更多',{exact:true}).click();await page.getByRole('button',{name:'删除账本',exact:true}).click();await page.getByRole('button',{name:'确认删除',exact:true}).click();await page.getByText('还没有账本，为下一趟旅行建一个吧。').waitFor();
  await page.getByRole('button',{name:'关闭旅行记账'}).click();

@@ -1,0 +1,14 @@
+自动化 frontend/tests/android-modules-browser.mjs：7组（320/390/430浅深+844横屏），假API，不读写真实业务数据。
+- 首页基线：390浅深分别读取0.4.1 APK解包预览（4183），比较标题/说明/输入框/textarea/接力条/底栏的位置尺寸、字号字重颜色；完全相等。
+- 行程：深浅字体/背景、长标题、最后一条删除按钮44px且可点；editor退出POST与owner删除DELETE保持各自协议。
+- 历史：12条长标题分隔列表、搜索、打开攻略、删除，末行可滚动到可点位置。
+- 记账：三币种逐行显示；详情/快速记账弹层前景与背景均跟随系统色；只读账本无新增入口。
+- 同游圈：目的地→标题说明→阶段筛选→发布动作→动态；过期提示可读；任意目的地搜索，发布route映射returned，好友/个人主页入口可用，系统返回逐层关闭。
+- 7组均截图，页宽无溢出，脚本无pageerror。
+既有 android-layout-browser.mjs：3安卓+Web手机/桌面预览共5组，7页与空说明记账/键盘布局回归。
+android-trip-browser.mjs：最终APK快照跑320/390/430/横屏四组CRUD/日期/地图/编辑/邀请/导出/大字/权限/返回；另加390深色，检查board背景/编辑弹层实底/前景，不再只检查文字颜色。
+HostInstrumentedTest：新增allModuleColorsFollowSystemAndKeepNavigation，真实WebView逐一切换4模块、深浅系统主题、退出同游圈；连同原启动/键盘/返回/导出/PDF等共11项。
+前端101单测、构建/lint；Android4单测、lint、签名与APK内置资源SHA核验；0.4.1覆盖到0.5.0并验证公网200/Range206/哈希。
+运行：PLAYWRIGHT_MODULE=<playwright路径> ANDROID_QA_URL=http://127.0.0.1:4182/travel/ node frontend/tests/android-modules-browser.mjs
+行程测试使用WORKSPACE_QA_URL和WORKSPACE_QA_OUTPUT（不是ANDROID_QA_URL）。
+结果：android-modules-ios-style-results-2026-10-19.json。

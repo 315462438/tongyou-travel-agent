@@ -1,0 +1,125 @@
+{
+  "status": "passed",
+  "version": "Android 0.3.1 (5)",
+  "typography": {
+    "home_title_px": 26,
+    "page_title_px": 24,
+    "trip_title_px": 18,
+    "day_title_px": 16,
+    "stop_title_px": 14,
+    "stop_note_px": 13,
+    "form_px": 14,
+    "max_heading_weight": 600,
+    "min_primary_touch_target_px": 44
+  },
+  "snapshot_trip_cases": [
+    {
+      "name": "android-320",
+      "firstStop": {
+        "x": 16,
+        "y": 495.765625,
+        "width": 288,
+        "height": 191.59375
+      },
+      "layout": true,
+      "CRUD": true,
+      "map": true,
+      "tools": true,
+      "sheets": true,
+      "nativeBack": true,
+      "longTrip": true,
+      "errors": []
+    },
+    {
+      "name": "android-390",
+      "firstStop": {
+        "x": 16,
+        "y": 464.765625,
+        "width": 358,
+        "height": 191.59375
+      },
+      "layout": true,
+      "CRUD": true,
+      "map": true,
+      "tools": true,
+      "sheets": true,
+      "nativeBack": true,
+      "longTrip": true,
+      "errors": []
+    },
+    {
+      "name": "android-430",
+      "firstStop": {
+        "x": 16,
+        "y": 464.765625,
+        "width": 398,
+        "height": 191.59375
+      },
+      "layout": true,
+      "CRUD": true,
+      "map": true,
+      "tools": true,
+      "sheets": true,
+      "nativeBack": true,
+      "longTrip": true,
+      "errors": []
+    },
+    {
+      "name": "android-landscape",
+      "firstStop": {
+        "x": 16,
+        "y": 464.765625,
+        "width": 812,
+        "height": 170.796875
+      },
+      "layout": true,
+      "CRUD": true,
+      "map": true,
+      "tools": true,
+      "sheets": true,
+      "nativeBack": true,
+      "longTrip": true,
+      "errors": []
+    }
+  ],
+  "snapshot_other_pages": [
+    "android-small: passed",
+    "android: passed",
+    "android-large: passed",
+    "web-phone: passed",
+    "web-preview: passed"
+  ],
+  "native_instrumentation": {
+    "tests": 5,
+    "status": "passed",
+    "screenshots": [
+      "/tmp/android-compact-native.png",
+      "/tmp/android-compact-keyboard.png"
+    ]
+  },
+  "android_unit_tests": 4,
+  "android_lint": "passed",
+  "frontend_build": "passed",
+  "frontend_lint": "passed with existing warnings",
+  "upgrade": {
+    "from": "0.3.0 (4)",
+    "to": "0.3.1 (5)",
+    "same_signature": true,
+    "install_r": "Success"
+  },
+  "release": {
+    "apk": "17tongyou-android-0.3.1-5.apk",
+    "bytes": 2822204,
+    "sha256": "6abf57cfcec61d7cf87be21e9851259cc3ffc34f3c8af275a0fa8b4e2156d197"
+  },
+  "download": {
+    "url": "https://17tongyou.com/downloads/android/0.3.1-5/17tongyou-android-0.3.1-5.apk",
+    "bytes": 2822204,
+    "sha256": "6abf57cfcec61d7cf87be21e9851259cc3ffc34f3c8af275a0fa8b4e2156d197",
+    "https_download": "passed",
+    "range": "passed",
+    "web_entry": "passed"
+  },
+  "scope": "Android APK only; no Web/iOS/backend deploy",
+  "physical_phone_tested": false
+}

@@ -43,6 +43,27 @@ struct RootView: View {
         }
         .animation(.easeOut(duration: 0.3), value: session.state)
         .task { await session.restore() }
+        .onOpenURL { url in
+            if router.ledgerLinks.receive(url) { router.tab = .ledger }
+        }
+        .safeAreaInset(edge: .top) {
+            if session.state == .signedOut, router.ledgerLinks.pending != nil {
+                HStack {
+                    Text("登录后继续查看账本邀请").font(.subheadline)
+                    Spacer()
+                    Button("取消邀请") { router.ledgerLinks.pending = nil }
+                }.padding().background(.regularMaterial)
+            }
+        }
+        .sheet(item: Binding(get: { session.state == .signedIn ? router.ledgerLinks.pending : nil }, set: { value in
+            if session.state == .signedIn { router.ledgerLinks.pending = value }
+        })) { invite in
+            LedgerJoinEditor(initialToken: invite.token) { id in
+                router.tab = .ledger
+                router.openLedgerID = id
+                router.ledgerLinks.pending = nil
+            }.id(invite.id)
+        }
     }
 }
 

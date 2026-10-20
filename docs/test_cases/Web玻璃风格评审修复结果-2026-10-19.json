@@ -1,0 +1,100 @@
+{
+  "date": "2026-10-19",
+  "scope": "网页 iOS 风格评审五项修复及编辑抽屉遮挡",
+  "build": "passed",
+  "unit_tests": {
+    "passed": 100,
+    "failed": 0
+  },
+  "browser": {
+    "glass": [
+      {
+        "width": 390,
+        "logoLoaded": true,
+        "brandContrast": true,
+        "registrationError": true,
+        "reducedTransparency": true,
+        "overflow": false,
+        "errors": []
+      },
+      {
+        "width": 1440,
+        "logoLoaded": true,
+        "brandContrast": true,
+        "registrationError": true,
+        "reducedTransparency": true,
+        "overflow": false,
+        "errors": []
+      }
+    ],
+    "workspace": [
+      {
+        "name": "desktop",
+        "overflow": false,
+        "errors": [],
+        "editDrawer": true,
+        "moreActions": true,
+        "datePopover": true,
+        "dateSave": true,
+        "drawerControlsVisible": true
+      },
+      {
+        "name": "phone",
+        "overflow": false,
+        "errors": [],
+        "editDrawer": true,
+        "moreActions": true,
+        "datePopover": true,
+        "dateSave": true,
+        "drawerControlsVisible": true
+      }
+    ],
+    "ledger": [
+      {
+        "name": "desktop",
+        "errors": [],
+        "entryCRUD": true,
+        "categoryOnlySave": true,
+        "optionalTitle": true,
+        "compactSummary": true,
+        "collapsedFxWarnings": true,
+        "failedSaveRetained": true,
+        "retrySameID": true,
+        "currencyConversion": true,
+        "deleteAndLeave": true,
+        "overflow": false
+      },
+      {
+        "name": "phone",
+        "errors": [],
+        "entryCRUD": true,
+        "categoryOnlySave": true,
+        "optionalTitle": true,
+        "compactSummary": true,
+        "collapsedFxWarnings": true,
+        "failedSaveRetained": true,
+        "retrySameID": true,
+        "currencyConversion": true,
+        "deleteAndLeave": true,
+        "overflow": false
+      }
+    ]
+  },
+  "manual_screenshot_review": [
+    "phone login",
+    "desktop date popover",
+    "desktop edit drawer",
+    "phone edit drawer"
+  ],
+  "limits": [
+    "Chromium 模拟接口验收，未做 iPhone Safari 真机键盘测试"
+  ],
+  "deployment": {
+    "release": "tongyou-web-glass-20261019",
+    "static_files_verified": 38,
+    "health": "ok",
+    "old_chunks_preserved": true,
+    "backend_restarted": false,
+    "backup": "/home/ubuntu/travel-agent/backups/tongyou-web-glass-20261019"
+  }
+}

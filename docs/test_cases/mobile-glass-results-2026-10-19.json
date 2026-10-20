@@ -1,0 +1,145 @@
+{
+  "scope": "Mobile glass material and lightweight motion",
+  "date": "2026-10-19",
+  "build": "passed",
+  "unit_tests": {
+    "passed": 100,
+    "failed": 0
+  },
+  "browser": {
+    "browser": [
+      {
+        "width": 320,
+        "liveGlass": true,
+        "singleSlidingLens": true,
+        "longListNoBlur": true,
+        "lastCardReachable": true,
+        "sheetReachable": true,
+        "reducedMotion": true,
+        "reducedTransparency": true,
+        "errors": []
+      },
+      {
+        "width": 390,
+        "liveGlass": true,
+        "singleSlidingLens": true,
+        "longListNoBlur": true,
+        "lastCardReachable": true,
+        "sheetReachable": true,
+        "reducedMotion": true,
+        "reducedTransparency": true,
+        "errors": []
+      },
+      {
+        "width": 430,
+        "liveGlass": true,
+        "singleSlidingLens": true,
+        "longListNoBlur": true,
+        "lastCardReachable": true,
+        "sheetReachable": true,
+        "reducedMotion": true,
+        "reducedTransparency": true,
+        "errors": []
+      }
+    ],
+    "mobile": [
+      {
+        "width": 320,
+        "pages": 7,
+        "historySearchAndOpen": true,
+        "creationToggle": true,
+        "modalReachable": true,
+        "keyboardViewport": true,
+        "errors": []
+      },
+      {
+        "width": 390,
+        "pages": 7,
+        "historySearchAndOpen": true,
+        "creationToggle": true,
+        "modalReachable": true,
+        "keyboardViewport": true,
+        "errors": []
+      },
+      {
+        "width": 430,
+        "pages": 7,
+        "historySearchAndOpen": true,
+        "creationToggle": true,
+        "modalReachable": true,
+        "keyboardViewport": true,
+        "errors": []
+      }
+    ],
+    "workspace": [
+      {
+        "name": "desktop",
+        "overflow": false,
+        "errors": [],
+        "editDrawer": true,
+        "moreActions": true,
+        "datePopover": true,
+        "dateSave": true,
+        "drawerControlsVisible": true
+      },
+      {
+        "name": "phone",
+        "overflow": false,
+        "errors": [],
+        "editDrawer": true,
+        "moreActions": true,
+        "datePopover": true,
+        "dateSave": true,
+        "drawerControlsVisible": true
+      }
+    ],
+    "ledger": [
+      {
+        "name": "desktop",
+        "errors": [],
+        "entryCRUD": true,
+        "categoryOnlySave": true,
+        "optionalTitle": true,
+        "compactSummary": true,
+        "collapsedFxWarnings": true,
+        "failedSaveRetained": true,
+        "retrySameID": true,
+        "currencyConversion": true,
+        "deleteAndLeave": true,
+        "overflow": false
+      },
+      {
+        "name": "phone",
+        "errors": [],
+        "entryCRUD": true,
+        "categoryOnlySave": true,
+        "optionalTitle": true,
+        "compactSummary": true,
+        "collapsedFxWarnings": true,
+        "failedSaveRetained": true,
+        "retrySameID": true,
+        "currencyConversion": true,
+        "deleteAndLeave": true,
+        "overflow": false
+      }
+    ]
+  },
+  "limits": [
+    "Chromium simulated viewports; no native iOS or Android FPS guarantee",
+    "Unsupported-backdrop fallback reviewed in CSS; old browser engine unavailable"
+  ],
+  "deployment": {
+    "release": "tongyou-web-mobile-glass-20261019",
+    "static_files_verified": 39,
+    "health": "ok",
+    "old_chunks_preserved": true,
+    "backend_restarted": false,
+    "backup": "/home/ubuntu/travel-agent/backups/tongyou-web-mobile-glass-20261019"
+  },
+  "lint": "passed with warnings",
+  "screenshot_review": [
+    "home-320",
+    "trips-320",
+    "sheet-320"
+  ]
+}

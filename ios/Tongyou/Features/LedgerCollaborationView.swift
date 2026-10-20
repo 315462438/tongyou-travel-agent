@@ -102,6 +102,7 @@ struct LedgerMemberPanel: View {
 }
 
 struct LedgerJoinEditor: View {
+    var initialToken: String? = nil
     var onJoined: (String) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var link = ""
@@ -132,13 +133,15 @@ struct LedgerJoinEditor: View {
             .navigationTitle("加入账本")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() }.disabled(busy) } }
             .interactiveDismissDisabled(busy)
+            .task {
+                if let initialToken { link = LedgerDeepLink(token: initialToken).webURL.absoluteString; inspect() }
+            }
         }
     }
     private func inspect() {
         let value = link.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let components = URLComponents(string: value), components.host == "17tongyou.com", components.scheme == "https",
-              let code = components.queryItems?.first(where: {$0.name == "ledger_join"})?.value,
-              code.range(of: #"^[A-Za-z0-9_-]{32,64}$"#, options: .regularExpression) != nil else { error = "请粘贴完整的 17同游账本分享链接"; return }
+        guard let url = URL(string: value), let invite = LedgerDeepLink.parse(url) else { error = "请粘贴完整的 17同游账本分享链接"; return }
+        let code = invite.token
         busy = true; error = nil
         Task {
             defer { busy = false }

@@ -1,0 +1,16 @@
+自动化用例
+1. frontend/tests/android-layout-browser.mjs：Android 320/390/430px + Web 手机390px + 桌面1440px中的移动布局。检查首页开关触控、开关刷新保留、发送请求 true/false 实值、布局往返切换、接力文案宽度、长标题列表、记账空说明提交、缩小键盘视口保存触达、历史/同游圈与无溢出。
+2. frontend/tests/android-browser.mjs：原生返回、桥接分享/导出、断网恢复、邀请预览以及普通浏览器隔离，共8组。
+3. frontend/tests/mobile-browser.mjs：普通 Web 320/390/430，7个页面与移动交互回归。
+4. frontend/tests/ledger-browser.mjs：网页桌面/手机 CRUD、原币换算、折叠汇率异常提示与空说明记账。
+5. Android HostInstrumentedTest：真实模拟器 WebView 的键盘/返回/持久化、上传、原生导出、PDF，4项。新增键盘可视区内保存栏可触达检查和截图。
+6. TypeScript + Vite，100项前端单测，oxlint；Android Java 单测、lintRelease、assembleRelease；签名/包名/内嵌资源哈希验证。
+7. 模拟器已安装 0.1.0 (1) 上覆盖安装 0.2.0 (2)，比较更新前后 Local Storage 内容未变，版本号确认。
+8. android/scripts/verify-download.py --release 0.2.0-2：公网下载与发布清单一致、Range支持、网站入口正常。
+
+运行（项目根目录）
+PLAYWRIGHT_MODULE=/tmp/tongyou-qa/node_modules/playwright/index.mjs node frontend/tests/android-layout-browser.mjs
+测试可用 ANDROID_QA_URL 指向本地打包快照；全部业务 API 均拦截为假数据，不改线上账号。
+LAYOUT_CASE 可选择 android-small/android/android-large/web-phone/web-preview；默认全部运行。
+android/scripts/test-emulator.py --serial emulator-5556
+最终结果与截图路径记入对应 results.json。

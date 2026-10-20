@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync, statSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 const cssPath = fileURLToPath(new URL('../src/index.css', import.meta.url))
@@ -31,7 +31,6 @@ const indexPath = fileURLToPath(new URL('../index.html', import.meta.url))
 const indexHtml = readFileSync(indexPath, 'utf8')
 const faviconPath = fileURLToPath(new URL('../public/favicon.svg', import.meta.url))
 const favicon = readFileSync(faviconPath, 'utf8')
-const inkBackgroundPath = fileURLToPath(new URL('../public/ink-landscape.webp', import.meta.url))
 
 test('single-entry hero returns to quiet travel content instead of a full-screen color wash', () => {
   assert.doesNotMatch(home, /<Aurora/)
@@ -41,8 +40,9 @@ test('single-entry hero returns to quiet travel content instead of a full-screen
   const heroTitle = css.slice(css.indexOf('.hero .hero-title {'), css.indexOf('.hero .hero-eyebrow'))
   assert.doesNotMatch(heroTitle, /text-stroke|drop-shadow|var\(--x-n100\)/)
   assert.doesNotMatch(css, /\.hero-eyebrow\s*\{[^}]*color:\s*transparent/s)
-  assert.match(css, /\.inspiration-launchpad\.simple\s*\{[^}]*rgba\(59, 130, 246, \.5\)[^}]*0 0 0 4px rgba\(59, 130, 246, \.06\)/s)
-  assert.match(css, /\.inspiration-launchpad\.simple:focus-within\s*\{[^}]*rgba\(37, 99, 235, \.78\)/s)
+  assert.match(css, /\.inspiration-launchpad\.simple\s*\{[^}]*border-radius:\s*var\(--x-r-2xl\)/s)
+  assert.match(css, /\.inspiration-launchpad\.simple\s*\{[^}]*background:\s*var\(--x-glass\)/s)
+  assert.match(css, /\.inspiration-launchpad\.simple:focus-within\s*\{[^}]*rgba\(37, 99, 235, \.55\)/s)
   assert.match(css, /\.destination-card\s*\{[^}]*animation:\s*destination-card-rise/s)
   assert.match(css, /\.hero-soft-glow\s*\{[^}]*rgba\(219, 234, 254, \.48\)/s)
   assert.doesNotMatch(css, /\.hero-soft-glow\s*\{[^}]*rgba\(238, 121, 101/s)
@@ -56,30 +56,33 @@ test('home palette uses royal sky blue and keeps the relay banner free of green-
   assert.match(css, /--x-ocean:\s*var\(--x-sky\)/)
   assert.match(css, /--x-pine:\s*var\(--x-sky\)/)
   assert.doesNotMatch(homePalette, /rgba\((?:79, 124, 255|82,\s*104,\s*221|117, 136, 230|92, 113, 226)/)
-  assert.match(homePalette, /rgba\(59, 130, 246, \.5\)/)
+  assert.match(homePalette, /var\(--x-sky-44\)|#2563EB/)
   assert.match(socialEntry, /background:\s*linear-gradient\(115deg, var\(--x-pine-30\), var\(--x-n20\)/)
   assert.match(socialEntry, /\.social-entry-people i:nth-child\(2\) \{ background:\s*var\(--x-day-5\)/)
   assert.doesNotMatch(socialEntry, /140, 126, 231|131, 154, 230|91, 112, 194|92, 129, 107|168, 196, 177|51, 141, 168|79, 167, 192|145, 201, 218/)
 })
 
-test('topbar switches between persisted modern and ink-wash themes', () => {
-  assert.ok(statSync(inkBackgroundPath).size > 100_000)
-  assert.match(home, /initialThemeMode\(localStorage\.getItem\('travel_theme_mode'\)\)/)
-  assert.match(home, /localStorage\.setItem\('travel_theme_mode', mode\)/)
-  assert.match(home, /theme-\$\{themeMode\}/)
-  assert.match(home, /className=\{`theme-toggle/)
-  assert.match(home, /aria-pressed=\{themeMode === 'ink'\}/)
-  assert.match(home, /'现代主题' : '水墨主题'/)
-  assert.match(css, /\.theme-ink \.hero\s*\{[^}]*url\('\/travel\/ink-landscape\.webp'\)/s)
-  const inkTitle = css.slice(css.indexOf('.theme-ink .hero .hero-title'), css.indexOf('.theme-ink .hero .hero-eyebrow'))
-  assert.match(inkTitle, /font-family:\s*var\(--x-font-kai\)/)
-  assert.match(inkTitle, /-webkit-text-fill-color:\s*currentColor/)
-  assert.match(css, /\.theme-ink \.unified-submit\s*\{[^}]*linear-gradient\(145deg, var\(--x-n30\), var\(--x-n12\)\)/s)
-  assert.match(css, /\.view-mobile \.theme-toggle span\s*\{\s*display:\s*none/)
+test('single glass theme: theme switch removed, iOS glass material in place', () => {
+  // 2026-10-19：用户决定与 iOS App 统一为单一主题，双主题（modern/ink）整体移除。
+  assert.doesNotMatch(home, /theme-toggle|themeMode|travel_theme_mode/)
+  assert.doesNotMatch(css, /\.theme-ink/)
+  assert.doesNotMatch(css, /ink-landscape/)
+  // 玻璃材质 token 与工具类（iOS glassEffect 的 Web 复刻）
+  assert.match(css, /--x-glass:\s*rgba\(255, 255, 255, \.62\)/)
+  assert.match(css, /\.glass\s*\{[^}]*backdrop-filter:\s*blur\(var\(--x-glass-blur\)\)/s)
+  assert.match(css, /\.glass-pill\s*\{[^}]*border-radius:\s*var\(--x-r-pill\)/s)
+  // 三色光晕背景（sky / dusk / warm，与 iOS Palette 同色）
+  assert.match(css, /--x-aura-sky:\s*rgba\(37, 99, 235, \.22\)/)
+  assert.match(css, /--x-aura-dusk:\s*rgba\(107, 92, 242, \.16\)/)
+  assert.match(css, /--x-aura-warm:\s*rgba\(250, 158, 92, \.14\)/)
+  assert.match(css, /\.app::before\s*\{[^}]*radial-gradient/s)
+  // 无障碍降级：不支持 backdrop-filter / 要求减少透明度时改实底
+  assert.match(css, /@supports not \(\(backdrop-filter/)
+  assert.match(css, /prefers-reduced-transparency: reduce/)
 })
 
 test('首页单入口：以用户原话为准，前端不重写请求（Phase 110）', () => {
-  assert.match(home, /想去哪儿，就从这里出发/)
+  assert.match(home.replace(/<br className="mobile-title-break" \/>/g, ''), /想去哪儿，就从这里出发/)
   assert.match(home, /function InspirationLaunchpad\(/)
 
   // 只剩两条路：有公开链接 → 补一句「炼成行程」；其余一律原样送后端。
@@ -326,9 +329,10 @@ test('mobile shell exposes a view switch, drawer navigation, and safe-area botto
   assert.match(home, />\s*网页端\s*</)
   assert.match(home, />\s*移动端\s*</)
   assert.match(home, /className="mobile-bottom-nav"/)
-  assert.match(home, /aria-label="打开历史对话"/)
+  assert.match(home, /aria-label="我的"/)
+  assert.match(home, /aria-label="搜索历史对话"/)
   assert.match(home, /layoutMode=\{layoutMode\}/)
-  assert.match(trips, /trips-overlay\$\{layoutMode === 'mobile' \? ' mobile-layout' : ''\}/)
+  assert.match(trips, /\$\{layoutMode === 'mobile' \? ' mobile-layout' : ''\}/)
   assert.match(css, /\.app\.view-mobile\.collapsed \.sidebar\s*\{[\s\S]*transform:\s*translateX\(-105%\)/)
   assert.match(css, /\.view-mobile \.mobile-bottom-nav\s*\{[\s\S]*env\(safe-area-inset-bottom\)/)
   assert.match(css, /\.view-mobile \.chips\s*\{[\s\S]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/)
@@ -362,13 +366,12 @@ test('17tongyou brand replaces the legacy lightning favicon and travelX wordmark
   assert.match(css, /\.brand-name \.brand-number\s*\{[^}]*color:\s*var\(--x-sky-44\)[^}]*-webkit-text-fill-color:\s*var\(--x-sky-44\)/s)
   assert.match(css, /\.brand-name \.brand-cn\s*\{\s*color:\s*var\(--x-sky-30\)/)
   assert.match(css, /\.brand-mark\s*\{[^}]*background:\s*linear-gradient\(145deg, var\(--x-sky-58\), var\(--x-sky-44\)/s)
-  assert.match(css, /\.theme-ink \.topbar-mark, \.theme-ink \.brand-mark\s*\{[^}]*background:\s*var\(--x-cinnabar\)/s)
   assert.match(favicon, /rect[^>]*fill="#2563EB"/)  // 皇家蓝底，与 --x-sky/.brand-mark 同色
   assert.match(indexHtml, /name="theme-color" content="#2563EB"/)  // 地址栏色不能落在旧品牌色上
   assert.match(favicon, /stroke="#FFFEFB"/)
   assert.match(home, /<small>17tongyou<\/small>/)
   assert.match(home, /17同游 · 为你手绘/)
-  assert.match(auth, /17tongyou · 一起规划，一起出发/)
+  assert.match(auth, /一起规划，一起出发/)  // 2026-10-19 与 iOS 登录页一致：wordmark + 副标分开
   assert.doesNotMatch(`${indexHtml}\n${home}\n${auth}`, /travelX/)
 })
 
@@ -527,7 +530,9 @@ test('接力站先展示真实热门目的地，再提供无原生黑框的任�
   assert.doesNotMatch(home, /<ImmersivePreview/)
   assert.match(home, />同游圈</)
   assert.match(home, /onProfileChanged=\{onProfileChanged\}/)
-  assert.match(social, /role="dialog" aria-modal="true"/)
+  // Android is a full-page tab with native Back handling; Web remains a modal.
+  assert.match(social, /role=\{android \? 'region' : 'dialog'\}/)
+  assert.match(social, /aria-modal=\{android \? undefined : true\}/)
   assert.match(social, /'station' \| 'friends' \| 'profile'/)
   assert.match(social, /\/social\/station\?/)
   assert.match(social, /\/social\/friends\/request\//)

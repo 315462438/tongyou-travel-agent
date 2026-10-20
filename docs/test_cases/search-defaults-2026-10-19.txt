@@ -1,0 +1,8 @@
+1. 前端初始偏好单测：未设置/undefined 开启，显式0关闭，显式1开启。
+2. frontend/tests/search-defaults-browser.mjs：桌面、手机网页、Android 宿主首次状态 search=true/deep=false，并拦截实际 POST 验证；手动关搜索/开深度，刷新后保留并验证反向字段。
+3. ios/tests/ChatPreferencesTests.swift：独立随机 UserDefaults suite，未设置默认 true 且不写入偏好；显式 false/true 保留；测试后清理。
+4. Web TypeScript/Vite 与全单测；Android lint/签名构建；iOS 真机目标编译与签名。
+5. 发布后线上默认值浏览器测试（API 全模拟，无线上业务写入）；APK 下载哈希与冻结清单比对。
+运行：PLAYWRIGHT_MODULE=<playwright路径> node frontend/tests/search-defaults-browser.mjs
+SEARCH_QA_URL 可指定打包快照或线上页面，SEARCH_QA_RESULTS 可指定结果文件。
+xcrun swiftc ios/Tongyou/Core/ChatPreferences.swift ios/tests/ChatPreferencesTests.swift -o /tmp/tongyou-chat-preferences-tests && /tmp/tongyou-chat-preferences-tests

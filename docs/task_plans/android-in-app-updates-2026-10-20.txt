@@ -1,0 +1,8 @@
+目标：Android 启动后检查新版本，展示版本号、更新内容与下载按钮，由用户在浏览器下载并确认覆盖安装；双主题随系统外观变化，保留首页现有字号布局和启动动画。
+方案：原生 AppUpdates 独立异步读取固定 HTTPS /downloads/android/latest.json，无登录凭据，超时/断网/非法响应静默，不阻塞首屏。versionCode 比较，只提示更高版本；清单严格校验平台/包名/版本/官方版本化APK地址/大小/SHA/minSdk。页面就绪且前台才提示；稍后24小时不重复同版，新版不受旧版延后影响；暖恢复最多每6小时检查，失败5分钟后可重试。点击下载经现有明确浏览器 Intent；不申请安装/存储/通知权限，不静默安装，不修改用户草稿。
+主题：保留现有原生uiMode→Web document-start/dataset主题同步；补齐登录页、更新提示、原生错误页与网络提示的浅深色，系统切换时更新弹窗而不重建WebView。
+发布：0.6.0 (9)，同签名同包名。新增可重复使用的发布脚本：先上传不可变版本APK并核验，再原子更新 latest.json；防止降级清单，明确HTTPS验证及失败情况。仅部署安卓下载目录，不部署Web/API/iOS。旧0.5.0不具备检查能力，首次仍需人工安装0.6.0，以后启动内提醒；不是后台远程推送。
+验收：有效更高版提示，同/低版/停用/不兼容/错包/恶意URL/损坏JSON/超大响应/断网失败不提示；稍后、重新进入、下载动作、前后台、销毁生命周期无重复和泄漏；系统深浅切换保留草稿和弹窗内容；原生既有11项回归。清单下载及发布脚本自动化；单测/lint/构建/签名/覆盖安装/公网APK与latest清单通过后发布。
+参考：Android uiMode处理 https://developer.android.com/develop/ui/views/theming/darktheme；浏览器ACTION_VIEW https://developer.android.com/guide/components/intents-common 。
+
+完成：0.6.0 (9) APK及latest.json已发布，HTTPS下载/Range206/哈希/清单核验通过，同签名覆盖安装通过。全部用例通过，最终结果见docs/test_cases/android-in-app-updates-results-2026-10-20.json。旧版首次安装限制已向用户明确说明。

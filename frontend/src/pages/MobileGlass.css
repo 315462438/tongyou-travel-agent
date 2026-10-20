@@ -1,0 +1,106 @@
+/* iOS Palette + selective live blur. Long lists never allocate a blur per row. */
+.app.view-mobile {
+  --mobile-page-bg: radial-gradient(430px 430px at -10% 0, #2563eb32, transparent 74%), radial-gradient(360px 470px at 112% 32%, #6b5cf226, transparent 76%), radial-gradient(350px 380px at 85% 100%, #fa9e5c20, transparent 76%), #f2f5fc;
+  --mobile-glass-fill: rgba(255,255,255,.48);
+  --mobile-glass-card: linear-gradient(135deg, rgba(255,255,255,.76), rgba(255,255,255,.38) 55%, rgba(255,255,255,.58));
+  --mobile-glass-edge: rgba(255,255,255,.86);
+  --mobile-glass-shadow: inset 0 1px 0 #ffffffed, inset 0 -1px 0 #ffffff40, 0 8px 28px -18px #365c9c55;
+  --mobile-glass-ease: cubic-bezier(.22,.8,.25,1);
+}
+.app.view-mobile::before { background: var(--mobile-page-bg); }
+.app.view-mobile:has(.hero) .main { padding-bottom: 0; }
+.app.view-mobile .hero { padding-bottom: var(--mobile-tab-space); }
+/* One blur surface behind all five controls; its lens moves without blurring again. */
+.app.view-mobile .mobile-bottom-nav {
+  --mobile-tab-index: 0;
+  background: linear-gradient(130deg,#ffffffa8,#ffffff55 55%,#ffffffa3);
+  border-color: #ffffffd9;
+  box-shadow: inset 0 1px 1px #fff, inset 0 -1px 1px #ffffff80, 0 12px 36px -12px #42537945;
+  -webkit-backdrop-filter: blur(20px) saturate(165%);
+  backdrop-filter: blur(20px) saturate(165%);
+}
+.app.view-mobile .mobile-bottom-nav[data-active="trips"] { --mobile-tab-index: 1; }
+.app.view-mobile .mobile-bottom-nav[data-active="ledger"] { --mobile-tab-index: 2; }
+.app.view-mobile .mobile-bottom-nav[data-active="history"] { --mobile-tab-index: 3; }
+.app.view-mobile .mobile-bottom-nav[data-active="social"] { --mobile-tab-index: 4; }
+.app.view-mobile .mobile-bottom-nav::before {
+  content: ''; position: absolute; pointer-events: none; box-sizing: border-box;
+  left: 5px; top: 5px; bottom: 5px; width: calc((100% - 18px) / 5);
+  border-radius: 28px; border: 1px solid #ffffffb0;
+  background: linear-gradient(145deg,#ffffffa8,#bdd3ff70 65%,#d5ddff88);
+  box-shadow: inset 0 1px 1px #fff, 0 2px 9px #3261a918;
+  transform: translateX(calc(var(--mobile-tab-index) * (100% + 2px)));
+  transition: transform .32s var(--mobile-glass-ease);
+}
+.app.view-mobile .mobile-bottom-nav button { position: relative; z-index: 1; background: transparent; -webkit-tap-highlight-color: transparent; }
+.app.view-mobile .mobile-bottom-nav button.active { background: transparent; }
+.app.view-mobile .mobile-bottom-nav button > svg { transition: transform .22s var(--mobile-glass-ease); }
+.app.view-mobile .mobile-bottom-nav button.active > svg { transform: translateY(-1px) scale(1.06); }
+/* Keep scroll surfaces cheap: translucency, a bright rim, and a soft shadow. */
+.app.view-mobile :is(.trip-card,.mobile-history-row,.mobile-profile-card,.mobile-account-links,.ledger-book,.ledger-entry,.relay-card,.friend-card) {
+  background: var(--mobile-glass-card);
+  border: 1px solid var(--mobile-glass-edge);
+  box-shadow: var(--mobile-glass-shadow);
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+.app.view-mobile :is(.inspiration-launchpad.simple,.composer,.ledger-total) {
+  background: var(--mobile-glass-card);
+  border: 1px solid var(--mobile-glass-edge);
+  box-shadow: var(--mobile-glass-shadow);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  backdrop-filter: blur(12px) saturate(140%);
+}
+.app.view-mobile .inspiration-launchpad.simple::before { display: none; }
+.app.view-mobile .inspiration-launchpad.simple:focus-within { border-color: #7ba8f7; box-shadow: var(--mobile-glass-shadow), 0 0 0 3px #2563eb12; }
+.app.view-mobile .unified-idea textarea::placeholder { color: #697a94; }
+/* Controls sit within a glass group; avoid nested filters. */
+.app.view-mobile :is(.mobile-menu-button,.topbar-bell,.mobile-create-trip,.mobile-page-header > button,.mobile-signout,.social-close,.unified-attach-btn) {
+  background: var(--mobile-glass-card); border: 1px solid var(--mobile-glass-edge); box-shadow: var(--mobile-glass-shadow);
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+.app.view-mobile :is(.unified-attach,.ledger-rate,.ledger-header,.social-rail,.station-search-panel,.mobile-trip-days) { -webkit-backdrop-filter: none; backdrop-filter: none; }
+.app.view-mobile .mobile-trip-days { background: linear-gradient(145deg,#bed4ff9c,#d3dafa75); box-shadow: inset 0 1px 1px #ffffffad; border: 1px solid #ffffff50; }
+.app.view-mobile .mobile-history-search { background: #ffffff55; border: 1px solid #ffffff70; }
+.app.view-mobile .social-rail nav { background: #e0e7f180; box-shadow: inset 0 1px 2px #4a638012; }
+.app.view-mobile .social-rail nav button.active { background: var(--mobile-glass-card); box-shadow: inset 0 1px 0 #fff, 0 2px 8px #33415512; }
+.app.view-mobile :is(.trip-card-sub,.ledger-book > span,.mobile-history-row small) { color: #627088; }
+/* Remove sticky hover elevation after a tap on touch screens. */
+@media (hover: none) {
+  .app.view-mobile :is(.trip-card,.ledger-book,.destination-card,.relay-card):hover { transform: none; }
+}
+.app.view-mobile :is(.mobile-bottom-nav button,.mobile-create-trip,.mobile-menu-button,.topbar-bell,.unified-submit,.mobile-profile-card,.trip-card,.ledger-book,.mobile-history-row > button:first-child) {
+  transition: transform .18s var(--mobile-glass-ease);
+  -webkit-tap-highlight-color: transparent;
+}
+.app.view-mobile :is(.mobile-bottom-nav button,.mobile-create-trip,.mobile-menu-button,.topbar-bell,.unified-submit,.mobile-profile-card,.trip-card,.ledger-book,.mobile-history-row > button:first-child):active { transform: scale(.97); }
+/* Blur only the sheet, not both a full-screen scrim and its sheet. Covers body portals. */
+body:has(.app.view-mobile) :is(.modal-mask,.ledger-modal-backdrop) {
+  background: rgba(31,45,75,.22);
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+body:has(.app.view-mobile) :is(.modal,.ledger-modal) {
+  background: linear-gradient(145deg,#fffffff0,#f3f6ffe8);
+  border: 1px solid #ffffffd9;
+  box-shadow: inset 0 1px 0 #fff, 0 20px 65px #23345033;
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  backdrop-filter: blur(16px) saturate(140%);
+  animation: mobile-glass-sheet-in .24s cubic-bezier(.22,.8,.25,1);
+}
+@keyframes mobile-glass-sheet-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+/* Full-screen page ancestors never transform: fixed dialogs retain viewport coordinates. */
+@media (prefers-reduced-motion: reduce) {
+  .app.view-mobile *, .app.view-mobile *::before, .app.view-mobile *::after,
+  body:has(.app.view-mobile) :is(.modal,.ledger-modal) { animation: none !important; transition: none !important; }
+  .app.view-mobile :is(.mobile-bottom-nav button,.mobile-create-trip,.mobile-menu-button,.topbar-bell,.unified-submit,.mobile-profile-card,.trip-card,.ledger-book,.mobile-history-row > button:first-child):active { transform: none; }
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .app.view-mobile { --mobile-glass-card: #f9fbff; }
+  .app.view-mobile .mobile-bottom-nav { background: #f9fbff; }
+  body:has(.app.view-mobile) :is(.modal,.ledger-modal) { background: #f9fbff; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .app.view-mobile { --mobile-glass-card: #f9fbff; --mobile-glass-fill: #f9fbff; }
+  .app.view-mobile :is(.mobile-bottom-nav,.mobile-history-search,.social-rail nav),
+  body:has(.app.view-mobile) :is(.modal,.ledger-modal) { background: #f9fbff; }
+  .app.view-mobile .mobile-bottom-nav::before { background: #dbeafe; }
+}

@@ -1,0 +1,20 @@
+验收范围：网页手机版，iOS 原生客户端不变。桌面和手机共用现有 API 与权限。
+
+自动化入口（先 npm --prefix frontend run build，再启动 4179 的 npm run preview）：
+PLAYWRIGHT_MODULE=<Playwright模块路径> npm --prefix frontend run test:mobile
+同样执行 test:glass、test:workspace、test:ledger、test:ledger:collaboration，以及 npm --prefix frontend test。
+本机 Playwright 模块为 /tmp/tongyou-qa/node_modules/playwright/index.mjs；Chrome 使用系统 Google Chrome。所有业务 API 均拦截为模拟数据，不向线上写用户数据。
+
+mobile-browser.mjs 在 320/390/430 × 844 下逐项验证：
+1. 五个底栏入口名称与 iOS 一致，每个触控区域至少 44 × 44；唯一选中态、无横向溢出、底栏未被其他页面遮挡。
+2. 首页大标题左对齐；头像进入我的账户，关闭可回首页。
+3. 历史独立页面可按标题过滤，打开会话后页面退出并显示消息；回首页无删除请求。
+4. 行程列表默认隐藏创建表单，点加号展开、再点收起，不发创建请求。
+5. 记账页面及新建账本弹层能打开，保存按钮不被底栏遮挡。
+6. 同游圈二级导航位于顶部，主底栏可直接切回首页。
+7. 输入聚焦且 visualViewport 缩小时隐藏底栏，视口恢复时重新显示。
+8. 每个页面截图；无 JavaScript 异常；导航过程中仅 GET 请求。
+
+回归：登录/注册与透明度降级；行程日期浮层、地点编辑抽屉；记账只填金额和分类、汇率/失败重试、账本关联与删除；邀请成员、只读/编辑角色、登录后显式加入与撤销链接。
+
+限制：Chromium 移动视口和模拟数据验收；软键盘采用 visualViewport 事件模拟，未冒充 iPhone Safari / 安卓真机键盘测试。结果见同目录 JSON 报告。

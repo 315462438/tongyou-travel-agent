@@ -1,6 +1,7 @@
 // Run against the local preview only; every business API is mocked.
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
 import fs from 'node:fs/promises';
+import assert from 'node:assert/strict';
 const output=process.env.WORKSPACE_QA_OUTPUT || '/tmp/tongyou-trip-workspace-qa';
 await fs.mkdir(output,{recursive:true});
 const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_PATH || (process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : undefined),args:['--no-sandbox']});
@@ -21,7 +22,10 @@ for(const [name,width,height,mobile] of [['desktop',1440,1000,false],['phone',39
   if(route.request().method()!=='GET') requests.push({method:route.request().method(),path:url.pathname+url.search});
   let data=[];
   if(path==='/auth/me')data={username:'demo',is_admin:false,display_name:'旅行者'};
-  else if(path==='/trips/demo-trip')data=trip;
+  else if(path==='/trips/demo-trip'){
+   if(route.request().method()==='PATCH')Object.assign(trip,route.request().postDataJSON());
+   data=trip;
+  }
   else if(path==='/trips')data=[trip];
   else if(path==='/trips/demo-trip/issues')data={issues:[],ticket_total:125};
   else if(path.includes('expenses/summary'))data={total:0,count:0,by_category:{},per_person:[],transfers:[],text:''};
@@ -38,10 +42,41 @@ for(const [name,width,height,mobile] of [['desktop',1440,1000,false],['phone',39
  await page.getByRole('button',{name:'添加地点',exact:false}).first().waitFor();
  await page.screenshot({path:`${output}/${name}.png`,fullPage:true});
  const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth);
+ await page.locator('.trip-date-chip').click();
+ const date=page.getByRole('dialog',{name:'设置出发日期'});
+ const dateStyle=await date.evaluate(el=>({background:getComputedStyle(el).backgroundColor,border:parseFloat(getComputedStyle(el).borderTopWidth),portal:el.parentElement===document.body}));
+ assert.notEqual(dateStyle.background,'rgba(0, 0, 0, 0)');assert.ok(dateStyle.border>=1);assert.ok(dateStyle.portal);
+ if(!mobile)await page.waitForFunction(()=>{const p=document.querySelector('.trip-date-popover')?.getBoundingClientRect(),a=document.querySelector('.trip-date-chip')?.getBoundingClientRect();return p&&a&&Math.abs(p.y-a.bottom-8)<2});
+ const dateBounds=await date.boundingBox(),anchorBounds=await page.locator('.trip-date-chip').boundingBox();
+ assert.ok(dateBounds.x>=0 && dateBounds.x+dateBounds.width<=width && dateBounds.y+dateBounds.height<=height);
+ if(!mobile){assert.ok(dateBounds.width<=300);assert.ok(Math.abs(dateBounds.y-anchorBounds.y-anchorBounds.height-8)<2)}
+ await page.screenshot({path:`${output}/${name}-date.png`});
+ await page.keyboard.press('Escape');await date.waitFor({state:'hidden'});
+ assert.ok(await page.locator('.trip-date-chip').evaluate(e=>document.activeElement===e));
+ await page.locator('.trip-date-chip').click();
+ await page.getByLabel('出发日期',{exact:true}).fill('2026-10-25');
+ await date.getByRole('button',{name:'保存',exact:true}).click();
+ await date.waitFor({state:'hidden'});assert.equal(trip.start_date,'2026-10-25');
+ await page.getByRole('button',{name:'关闭提示',exact:true}).click();
+ await page.locator('.trip-date-chip').click();
+ await date.getByRole('button',{name:'取消',exact:true}).click();await date.waitFor({state:'hidden'});
  await page.getByRole('button',{name:'编辑 西湖',exact:false}).click();
  await page.getByText('编辑行程',{exact:true}).waitFor({timeout:3000});
  const editOverflow = await page.locator('.trip-edit-modal').evaluate(el=>el.scrollWidth > el.clientWidth + 2);
  if(editOverflow)throw new Error('Edit drawer has horizontal overflow');
+ const drawer=page.locator('.trip-edit-drawer'),bounds=await drawer.boundingBox();
+ if(mobile){assert.ok(Math.abs(bounds.width-width)<2);assert.ok(Math.abs(bounds.x)<2)}
+ else {assert.ok(bounds.width>=680 && bounds.width<=820);assert.ok(Math.abs(bounds.height-height)<2)}
+ const clipped=await page.locator('.trip-edit-drawer-body').evaluate(el=>{
+  const r=el.getBoundingClientRect();
+  return [...el.querySelectorAll('input,button,select,textarea')].filter(e=>{const b=e.getBoundingClientRect();return b.width>0 && (b.left<r.left-1 || b.right>r.right+1)}).map(e=>e.outerHTML.slice(0,100));
+ });
+ assert.deepEqual(clipped,[],'form controls must fit the drawer body');
+ await page.screenshot({path:`${output}/${name}-edit.png`});
+ await page.locator('.trip-edit-drawer-body').evaluate(el=>el.scrollTop=el.scrollHeight);
+ const footer=await page.locator('.trip-edit-footer').boundingBox();assert.ok(footer.y>=0 && footer.y+footer.height<=height+1);
+ const obscured=await page.locator('.trip-edit-footer button').evaluateAll(els=>els.filter(el=>{const r=el.getBoundingClientRect();return !el.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))}).map(el=>el.textContent));
+ assert.deepEqual(obscured,[],'bottom navigation must not cover drawer actions');
  await page.keyboard.press('Escape');
  await page.locator('summary[aria-label^="更多操作 西湖"]').click();
  await page.getByRole('button',{name:'上移 西湖',exact:false}).waitFor();
@@ -57,7 +92,7 @@ for(const [name,width,height,mobile] of [['desktop',1440,1000,false],['phone',39
   await page.getByRole('button',{name:'整理当天顺序',exact:true}).click();
  }
  if(overflow || errors.length)throw new Error(JSON.stringify({name,overflow,errors}));
- console.log(JSON.stringify({name,overflow,errors,editDrawer:true,moreActions:true}));
+ console.log(JSON.stringify({name,overflow,errors,editDrawer:true,moreActions:true,datePopover:true,dateSave:true,drawerControlsVisible:true}));
  await context.close();
 }
 await fs.writeFile(`${output}/requests.json`,JSON.stringify(requests,null,2));

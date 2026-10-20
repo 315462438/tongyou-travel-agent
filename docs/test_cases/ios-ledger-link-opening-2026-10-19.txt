@@ -1,0 +1,20 @@
+iOS 账本链接唤起验收
+
+1. xcrun swiftc ios/Tongyou/Core/LedgerDeepLink.swift ios/tests/LedgerDeepLinkTests.swift
+   -o /tmp/tongyou-ios-link-tests && /tmp/tongyou-ios-link-tests
+   验证 HTTPS 与私有协议一致、13 种错误输入拒绝、待接受邀请跨登录/重启保留、取消清理。
+2. frontend/tests/link-opening-browser.mjs：iPhone Safari 显示正确的协议地址且需要点击；
+   微信点击只提示 Safari；Android/桌面不显示 iOS 专属入口；所有端保留网页加入；无自动 POST。
+   本地与生产已发布资源各运行一次（API 全部 mock，不创建线上成员关系）。
+3. xcodebuild：模拟器构建、个人团队设备签名构建；安装到已连接的 iPhone。
+4. python3 ios/scripts/test-links-ui.py --device <专用模拟器 UDID>：XCTest 配合真实
+   simctl openurl，点击系统“打开”确认，验证冷/热启动进入登录并保留邀请，取消清理。
+   无效链接不改已有邀请、应用重启后保留另由 Swift 持久化用例验证。
+
+范围：当前只接入账本邀请唤起；分享出去依然是通用 HTTPS URL。
+免费个人签名下使用用户点击的自定义协议，不宣称已经支持 iOS Universal Links。
+没安装 App 时 Safari 可能提示无法打开地址，但网页加入流程仍保留；不通过定时器谎报安装状态。
+
+结果：上述用例全部通过，见 ios-ledger-link-opening-results-2026-10-19.json。
+XCTest 需兼容 iOS 已记住之前确认的情况：出现系统弹窗则点击，没有弹窗且 App 已显示
+待接受邀请也属于正确行为，不应强制要求每次都弹窗。

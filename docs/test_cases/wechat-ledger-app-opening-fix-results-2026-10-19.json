@@ -1,0 +1,30 @@
+{
+  "date": "2026-10-19",
+  "status": "passed",
+  "web_unit_tests": 100,
+  "typecheck": "passed",
+  "production_browser_groups": {
+    "passed": 5,
+    "results": [
+      "iPhone Safari: same HTTPS invitation, no automatic join, correct platform fallback",
+      "WeChat: explicit guidance, copy/fallback, isolated Safari handoff, cancel cleanup, legacy pending URL restoration",
+      "iPhone WeChat: same HTTPS invitation, no automatic join, correct platform fallback",
+      "Android browser: same HTTPS invitation, no automatic join, correct platform fallback",
+      "Desktop: same HTTPS invitation, no automatic join, correct platform fallback"
+    ]
+  },
+  "android_browser_groups": 8,
+  "ledger_collaboration": [
+    "desktop passed",
+    "mobile passed"
+  ],
+  "deployment": {
+    "web_deployed": true,
+    "index_sha256": "a2971331b1791485e4f3d71b7290613c153dfa6450f8be482e6eaf1aa478b80a",
+    "backend_restarted": false,
+    "ios_updated": false,
+    "android_updated": false
+  },
+  "actual_WeChat_device_automation": false,
+  "note": "UA-specific behavior and isolated browser handoff tested; actual WeChat menu is a user action. No iOS/Android binaries changed."
+}

@@ -1,0 +1,19 @@
+对应计划：docs/task_plans/android-trip-native-layout-2026-10-19.txt
+测试使用假 API，不向正式账号写数据。
+
+自动化用例
+1. Android 320×740 / 390×844 / 430×932 / 844×390，无横向溢出；单一滚动正文；隐藏重复标题与全局底栏；390/430 首屏能看到完整第一地点卡片。
+2. 单组日期选择；地图切换日期仍留在地图；返回时间线显示对应天；空天有添加入口。
+3. 新增、修改、上移、确认删除；设置出发日期、修改当天标题，验证实际请求和重绘。
+4. 更多 sheet 导出选项可见；owner 成员邀请/分享可用，分享弹窗按钮能点击且原生返回先关闭分享；只读原攻略可打开关闭；editor 不出现 owner 邀请/分享。
+5. 旅行工具切换可用；系统返回先回时间线，再回列表，底栏恢复；30天、长标题、定位中/失败状态和20%文字放大不产生横向裁切。
+6. 网页桌面/手机协同行程布局、日期 popover、编辑抽屉、底部保存操作、工具地图回归。
+7. Android 真 WebView：详情首卡、系统键盘和保存按钮、返回键逐层关闭；原有上传/下载/PDF/数据持久化四组用例继续通过。
+8. 正式包单测、Android lint、非debug标记、包名/签名/版本、内置文件哈希；覆盖安装；公网200/Range206/二进制MIME/完整SHA。
+
+执行
+PLAYWRIGHT_MODULE=/tmp/tongyou-qa/node_modules/playwright/index.mjs WORKSPACE_QA_URL=http://127.0.0.1:4181/travel/ node frontend/tests/android-trip-browser.mjs
+同环境运行 frontend/tests/workspace-browser.mjs。
+Android 原生：JAVA_HOME=<Java21> GRADLE=<Gradle8.11.1> python3 android/scripts/test-emulator.py --serial emulator-5556
+正式包快照再用 WORKSPACE_QA_URL=http://127.0.0.1:4182/travel/ 运行 Android 协同行程脚本。
+结果见同目录 android-trip-native-layout-results-2026-10-19.json。

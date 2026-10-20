@@ -1,0 +1,34 @@
+{
+  "date": "2026-10-19",
+  "platform": "Android",
+  "version": "0.1.0 (1)",
+  "apk": "17tongyou-android-0.1.0-1.apk",
+  "bytes": 2812864,
+  "sha256": "c7590c1c0e21dc6e3001c3729124d0fe62946859a07ece9bdcaa0ae7b1c1006a",
+  "tests": {
+    "frontend_unit": 100,
+    "android_browser_groups": 8,
+    "mobile_regression_widths": [
+      320,
+      390,
+      430
+    ],
+    "java_unit": 4,
+    "android_webview_instrumentation": 4,
+    "lint_release": "passed (0 errors)",
+    "apk_signature_and_embedded_snapshot": "passed",
+    "system_app_links": "verified (Android 15 AOSP)",
+    "implicit_https_intent": "resolved to com.tongyou.travel/.MainActivity",
+    "signed_reinstall": "pending invitation persisted in WebView localStorage; screenshot verified"
+  },
+  "runtime": {
+    "android": 15,
+    "webview": "124.0.6367.219",
+    "device": "dedicated emulator"
+  },
+  "limitations": [
+    "Real manufacturer phones and WeChat in-app browser behavior need friend testing",
+    "APK uses production backend/account data; automated UI tests mocked business APIs"
+  ],
+  "web_snapshot_locked": true
+}

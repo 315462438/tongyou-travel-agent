@@ -1,0 +1,7 @@
+目标：给朋友提供现有 Android 0.1.0 (1) 正式签名 APK 的 HTTPS 下载链接，避免微信文件传输改后缀。
+方案：原样发布 android/releases/0.1.0-1/ 内 APK 到 nginx 已有静态根目录 downloads/android/0.1.0-1/；使用版本化文件名，不重建 APK，不改 nginx 或重启后端。
+使用 /downloads/ 路径，避免落入已有 Android App Links 的 /travel/ 范围。
+验收：公网 HTTPS 200、无跳转、文件大小及 SHA256 与冻结发布清单一致；支持 Range；网站入口仍正常。
+操作：先上传临时文件，远端核对 hash 后原子发布；已有同名不同 hash 文件时中止。
+状态：已发布并通过全部公网自动化验收。
+地址：https://17tongyou.com/downloads/android/0.1.0-1/17tongyou-android-0.1.0-1.apk

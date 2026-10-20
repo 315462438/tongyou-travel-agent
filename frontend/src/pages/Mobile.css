@@ -1,0 +1,142 @@
+/* Native-inspired mobile shell; desktop keeps its existing layout. */
+.unified-tools { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 18px 0; }
+.unified-tools button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 8px 12px; border: 1px solid #dce3ee; border-radius: 24px; color: #637087; background: #ffffff80; font-size: 13px; font-weight: 500; }
+.unified-tools button[aria-pressed="true"] { color: #1d4ed8; background: #e4edff; border-color: #a8c5ff; }
+.unified-tools button:focus-visible { outline: 2px solid #2563eb; outline-offset: 3px; }
+.unified-tools button:disabled { opacity: .5; }
+.mobile-title-break, .mobile-trip-days, .mobile-social-title { display: none; }
+.app.view-mobile {
+  --mobile-tab-space: calc(88px + env(safe-area-inset-bottom, 0px));
+  --mobile-page-bg: radial-gradient(440px 480px at 0 0, rgba(37,99,235,.12), transparent 72%), radial-gradient(350px 420px at 100% 55%, rgba(107,92,242,.08), transparent 70%), #f5f7fb;
+  background: var(--mobile-page-bg);
+}
+.app.view-mobile .main { padding-bottom: var(--mobile-tab-space); }
+.app.view-mobile .app-topbar { min-height: 60px; padding: max(10px, env(safe-area-inset-top)) 18px 6px; background: transparent; border: 0; box-shadow: none; backdrop-filter: none; }
+.app.view-mobile .mobile-menu-button { width: 44px; height: 44px; padding: 3px; background: var(--x-glass); border-radius: 50%; }
+.app.view-mobile .mobile-menu-button > svg { display: none; }
+.mobile-account-avatar { display: grid; place-items: center; width: 36px; height: 36px; flex: none; overflow: hidden; border-radius: 50%; background: #dbeafe; color: #1d4ed8; font-size: 17px; font-weight: 700; }
+.mobile-account-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.app.view-mobile .topbar-context strong { font-size: 15px; max-width: 190px; }
+.app.view-mobile .topbar-bell { width: 44px; height: 44px; margin-left: auto; border-radius: 50%; background: var(--x-glass); }
+.app.view-mobile .layout-switch { display: inline-flex; flex: none; padding: 0; border-radius: 24px; background: var(--x-glass); }
+.app.view-mobile .layout-switch button { min-height: 44px; padding: 8px 12px; font-size: 12px; }
+.app.view-mobile .layout-switch button.active { display: none; }
+.app.view-mobile .topbar-context { min-width: 0; }
+.app.view-mobile .topbar-context strong { max-width: 100%; }
+.app.view-mobile .mobile-bottom-nav { left: 12px; right: 12px; bottom: max(10px, env(safe-area-inset-bottom)); min-height: 64px; padding: 5px; gap: 2px; border-radius: 34px; background: var(--x-glass); border: 1px solid rgba(255,255,255,.9); box-shadow: 0 10px 35px #23365220, inset 0 1px 0 #fff; -webkit-backdrop-filter: blur(24px) saturate(180%); backdrop-filter: blur(24px) saturate(180%); }
+.app.view-mobile .mobile-bottom-nav button { min-height: 52px; gap: 3px; border-radius: 28px; color: #475569; }
+.app.view-mobile .mobile-bottom-nav button small { font-size: 11px; line-height: 1.2; }
+.app.view-mobile .mobile-bottom-nav button.active { background: rgba(37,99,235,.10); color: #2563eb; }
+.app.view-mobile.keyboard-open .mobile-bottom-nav { display: none; }
+.app.view-mobile.keyboard-open .main { padding-bottom: 0; }
+.app.view-mobile .hero { padding: 14px 18px 28px; align-items: stretch; }
+.app.view-mobile .hero-content { max-width: 100%; text-align: left; align-items: stretch; }
+.app.view-mobile .hero-eyebrow { display: block; padding: 0; margin: 0 0 10px; background: transparent; border: 0; box-shadow: none; backdrop-filter: none; color: #2563eb; font-size: 14px; letter-spacing: 0; }
+.app.view-mobile .hero .hero-title { text-align: left; font-size: clamp(29px,8vw,36px); line-height: 1.25; letter-spacing: -.035em; margin: 0 0 12px; color: #17243a; background: none; -webkit-text-fill-color: currentColor; filter: none; }
+.app.view-mobile .mobile-title-break { display: initial; }
+.app.view-mobile .hero-sub { max-width: none; margin: 0 0 24px; text-align: left; font-size: 15px; line-height: 1.65; color: #64748b; }
+.app.view-mobile .inspiration-launchpad.simple { border-radius: 28px; padding: 0; }
+.app.view-mobile .unified-idea { padding: 18px 18px 8px; }
+.app.view-mobile .unified-idea > span { font-size: 13px; }
+.app.view-mobile .unified-idea textarea { min-height: 90px; font-size: 16px; line-height: 1.6; }
+.app.view-mobile .unified-footer { flex-direction: row; align-items: center; gap: 12px; padding: 12px 16px 16px; }
+.app.view-mobile .unified-footer > div { min-width: 0; flex: 1; }
+.app.view-mobile .inspiration-status { font-size: 12px; line-height: 1.5; }
+.app.view-mobile .unified-submit { width: auto; min-height: 44px; flex: none; padding: 10px 16px; font-size: 14px; border-radius: 24px; }
+.app.view-mobile .unified-attach { padding: 4px 18px; }
+.app.view-mobile .unified-attach > small { display: none; }
+.app.view-mobile .social-entry { margin-top: 22px; }
+.app.view-mobile .social-entry > button { border-radius: 24px; min-height: 100px; }
+.app.view-mobile .social-entry > button { grid-template-columns: 60px minmax(0,1fr); gap: 12px; padding: 16px; }
+.app.view-mobile .social-entry-people i { width: 28px; height: 28px; font-size: 11px; }
+.app.view-mobile .social-entry-copy { min-width: 0; }
+.app.view-mobile :is(.social-entry-copy small,.social-entry-meta,.social-entry-cta) { display: none; }
+.app.view-mobile .social-entry-copy strong { font-size: 15px; line-height: 1.5; }
+.app.view-mobile .trending-destinations { margin-top: 26px; }
+.app.view-mobile .trending-destinations-head { margin-bottom: 14px; }
+.app.view-mobile .destination-card { border-radius: 22px; }
+.app.view-mobile .destination-card-copy strong { font-size: 16px; }
+.app.view-mobile .composer textarea { font-size: 16px; }
+/* Real pages for history and account, instead of exposing the desktop sidebar. */
+.app.view-mobile .mobile-page { position: absolute; z-index: 55; inset: 0; overflow-y: auto; overscroll-behavior: contain; background: var(--mobile-page-bg); padding: max(18px, env(safe-area-inset-top)) 18px var(--mobile-tab-space); }
+.mobile-page-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
+.mobile-page-header h1 { margin: 0; font-size: 34px; line-height: 1.2; letter-spacing: -.03em; }
+.mobile-page-header > button { min-height: 44px; padding: 8px 14px; border-radius: 24px; background: var(--x-glass); color: #2563eb; font-size: 16px; }
+.mobile-history-search { display: flex; align-items: center; gap: 10px; padding: 0 14px; min-height: 50px; border-radius: 18px; background: rgba(118,133,155,.1); color: #64748b; }
+.mobile-history-search input { width: 100%; min-width: 0; padding: 12px 0; border: 0; outline: none; background: transparent; color: #17243a; font-size: 16px; }
+.mobile-history-list h2 { font-size: 13px; color: #64748b; margin: 22px 4px 10px; }
+.mobile-history-row { display: flex; align-items: center; margin-bottom: 10px; padding: 8px 12px 8px 16px; border-radius: 22px; background: var(--x-glass); border: 1px solid #fff; }
+.mobile-history-row > button:first-child { flex: 1; min-width: 0; min-height: 62px; display: grid; gap: 6px; align-content: center; text-align: left; }
+.mobile-history-row strong { font-size: 16px; line-height: 1.5; overflow-wrap: anywhere; }
+.mobile-history-row small { font-size: 12px; color: #64748b; }
+.mobile-delete { flex: none; color: #b91c1c; min-height: 44px; padding: 10px; font-size: 13px; }
+.mobile-empty { padding: 48px 12px; color: #64748b; text-align: center; line-height: 1.8; }
+.mobile-profile-card { display: flex; align-items: center; gap: 14px; width: 100%; padding: 20px; border-radius: 26px; background: var(--x-glass); text-align: left; }
+.mobile-profile-card .mobile-account-avatar { width: 52px; height: 52px; font-size: 24px; }
+.mobile-profile-card > span:nth-child(2) { display: grid; gap: 6px; min-width: 0; flex: 1; }
+.mobile-profile-card strong { font-size: 19px; overflow-wrap: anywhere; }
+.mobile-profile-card small { color: #64748b; font-size: 12px; }
+.mobile-profile-card > b { font-size: 24px; color: #94a3b8; }
+.mobile-account-links { margin-top: 22px; padding: 0 16px; border-radius: 24px; background: var(--x-glass); }
+.mobile-account-links button { display: flex; justify-content: space-between; align-items: center; width: 100%; min-height: 54px; border-bottom: 1px solid #e2e8f0; font-size: 16px; text-align: left; }
+.mobile-account-links button:last-child { border: 0; }
+.mobile-account-links span { color: #94a3b8; }
+.mobile-signout { margin-top: 22px; width: 100%; min-height: 52px; border-radius: 24px; background: var(--x-glass); color: #b91c1c; font-size: 16px; }
+/* Trip lists: the user's trips lead, creation is a deliberate action. */
+.app.view-mobile .trips-overlay { bottom: 0; background: var(--mobile-page-bg); }
+.app.view-mobile .trips-list { padding: 18px 16px var(--mobile-tab-space); }
+.app.view-mobile .trip-list-page .trips-head { display: none; }
+.app.view-mobile .trip-list-page .trips-backdrop { display: none; }
+.app.view-mobile .trip-list-intro { position: relative; margin-bottom: 24px; padding-top: 18px; }
+.app.view-mobile .trip-list-intro > small { display: none; }
+.app.view-mobile .trip-list-intro h1 { font-size: 34px; line-height: 1.2; margin: 0; padding-right: 64px; }
+.app.view-mobile .trip-list-intro p { font-size: 13px; line-height: 1.6; margin-top: 12px; max-width: 260px; }
+.mobile-create-trip { position: absolute; right: 0; top: 8px; width: 48px; height: 48px; border-radius: 50%; background: var(--x-glass); color: #2563eb; font-size: 32px; }
+.app.view-mobile .trip-create { padding: 18px; border-radius: 24px; margin-bottom: 20px; }
+.app.view-mobile .trip-create-row { flex-direction: column; }
+.app.view-mobile .trip-create input, .app.view-mobile .trip-create textarea { font-size: 16px; min-height: 44px; }
+.app.view-mobile .trip-cards { grid-template-columns: minmax(0,1fr); gap: 14px; }
+.app.view-mobile .trip-card { position: relative; min-height: 110px; border-radius: 26px; padding: 20px 52px 18px 90px; background: var(--x-glass); border: 1px solid #fff; }
+.app.view-mobile .mobile-trip-days { display: grid; place-content: center; justify-items: center; gap: 2px; position: absolute; left: 16px; top: 20px; width: 60px; height: 66px; border-radius: 20px; background: rgba(37,99,235,.13); color: #2563eb; }
+.mobile-trip-days b { font-size: 26px; }
+.mobile-trip-days small { font-size: 12px; }
+.app.view-mobile .trip-card-title { font-size: 17px; line-height: 1.5; margin: 0 0 8px; overflow-wrap: anywhere; }
+.app.view-mobile .trip-card-sub { font-size: 12px; line-height: 1.6; }
+.app.view-mobile .trip-card-open { display: none; }
+.app.view-mobile .trip-card-del { right: 6px; top: 32px; min-width: 44px; min-height: 44px; font-size: 12px; }
+.app.view-mobile .trips-overlay:not(.trip-list-page) { bottom: var(--mobile-tab-space); }
+.app.view-mobile .trips-overlay:has(.modal-mask), .app.view-mobile .ledger-shell:has(.ledger-modal-backdrop) { z-index: 57; }
+/* Ledger remains compact; only page/list hierarchy changes. */
+.app.view-mobile .ledger-shell { bottom: 0; background: var(--mobile-page-bg); }
+.app.view-mobile .ledger-header { align-items: flex-start; gap: 10px; padding: max(22px, env(safe-area-inset-top)) 18px 14px; background: transparent; border: 0; backdrop-filter: none; }
+.app.view-mobile .ledger-header h1 { font-size: 28px; line-height: 1.25; overflow-wrap: anywhere; }
+.app.view-mobile .ledger-eyebrow { display: none; }
+.app.view-mobile .ledger-header .ledger-actions { max-width: 150px; gap: 6px; }
+.app.view-mobile .ledger-header button { min-height: 40px; padding: 8px 10px; border-radius: 22px; background: var(--x-glass); font-size: 12px; }
+.app.view-mobile .ledger-content { padding: 12px 16px var(--mobile-tab-space); }
+.app.view-mobile .ledger-intro { gap: 12px; margin-bottom: 20px; }
+.app.view-mobile .ledger-intro h2 { font-size: 18px; margin-bottom: 8px; }
+.app.view-mobile .ledger-intro p { font-size: 13px; line-height: 1.6; }
+.app.view-mobile .ledger-intro > button { min-height: 44px; border-radius: 24px; }
+.app.view-mobile .ledger-shell .ledger-book { border-radius: 26px; padding: 22px; }
+.app.view-mobile .ledger-book h2 { font-size: 20px; }
+.app.view-mobile .ledger-book small { margin-top: 12px; }
+/* Social sub-navigation lives at the top, leaving one primary tab bar. */
+.app.view-mobile .social-overlay { position: absolute; z-index: 55; inset: 0; display: flex; flex-direction: column; background: var(--mobile-page-bg); }
+.app.view-mobile .social-rail { position: static; width: auto; flex: none; padding: 0 16px; border: 0; background: transparent; box-shadow: none; backdrop-filter: none; order: 0; margin-top: 76px; }
+.app.view-mobile .social-rail nav { display: flex; padding: 4px; border-radius: 20px; background: #e2e8f080; gap: 4px; }
+.app.view-mobile .social-rail nav button { flex: 1; min-height: 44px; padding: 8px 4px; border-radius: 16px; font-size: 12px; color: #64748b; }
+.app.view-mobile .social-rail nav button.active { color: #2563eb; background: #fff; }
+.app.view-mobile .social-rail nav i, .app.view-mobile .social-brand, .app.view-mobile .social-rail-note, .app.view-mobile .social-me-mini { display: none; }
+.app.view-mobile .social-topbar { position: absolute; top: 0; left: 0; right: 0; min-height: 72px; padding: 18px; background: transparent; border: 0; }
+.app.view-mobile .social-topbar > div > span { display: none; }
+.app.view-mobile .mobile-social-title { display: block; margin: 0; font-size: 30px; }
+.app.view-mobile .social-main { position: static; background: transparent; flex: 1; min-height: 0; width: 100%; padding: 18px 16px var(--mobile-tab-space); overflow-y: auto; }
+.app.view-mobile .social-close { min-height: 44px; border-radius: 22px; padding: 8px 12px; color: #2563eb; background: var(--x-glass); }
+.app.view-mobile .station-search-row input { font-size: 16px; }
+@media (max-width: 359px) {
+  .app.view-mobile .mobile-bottom-nav { left: 6px; right: 6px; }
+  .app.view-mobile .hero { padding-inline: 14px; }
+  .app.view-mobile .unified-submit { padding-inline: 12px; }
+  .app.view-mobile .ledger-header h1 { font-size: 25px; }
+}

@@ -1,0 +1,63 @@
+plugins { id 'com.android.application' }
+
+def signingFile = file(System.getenv('TONGYOU_ANDROID_SIGNING') ?: "${System.getProperty('user.home')}/.config/17tongyou/android/signing.properties")
+def keys = new Properties()
+if (signingFile.exists()) signingFile.withInputStream { keys.load(it) }
+
+android {
+    namespace 'com.tongyou.travel'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'com.tongyou.travel'
+        minSdk 26
+        targetSdk 35
+        versionCode 9
+        versionName '0.6.0'
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+    }
+    signingConfigs {
+        release {
+            if (!keys.isEmpty()) {
+                storeFile file(keys['storeFile'])
+                storePassword keys['storePassword']
+                keyAlias keys['keyAlias']
+                keyPassword keys['keyPassword']
+            }
+        }
+    }
+    buildTypes {
+        release { signingConfig signingConfigs.release; minifyEnabled false }
+        debug { applicationIdSuffix '.debug'; versionNameSuffix '-debug' }
+    }
+    buildFeatures { buildConfig true }
+    sourceSets.main.assets.srcDirs += ['build/generated/webAssets']
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    lint { abortOnError true }
+}
+
+tasks.register('bundleWeb', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'python3', 'scripts/bundle-web.py'
+    inputs.dir "${rootProject.projectDir}/../frontend/src"
+    inputs.dir "${rootProject.projectDir}/../frontend/public"
+    inputs.file "${rootProject.projectDir}/../frontend/index.html"
+    inputs.file "${rootProject.projectDir}/../frontend/package-lock.json"
+    inputs.file "${rootProject.projectDir}/../frontend/vite.config.ts"
+    inputs.file "${rootProject.projectDir}/scripts/bundle-web.py"
+    outputs.dir 'build/generated/webAssets'
+}
+tasks.named('preBuild').configure { dependsOn 'bundleWeb' }
+tasks.configureEach { task ->
+    if (task.name == 'validateSigningRelease') task.doFirst {
+        if (keys.isEmpty()) throw new GradleException('Missing private signing config. Run scripts/create-signing.py first.')
+    }
+}
+dependencies {
+    implementation 'androidx.webkit:webkit:1.12.1'
+    implementation 'androidx.core:core:1.15.0'
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test:runner:1.6.2'
+    androidTestImplementation 'androidx.test:rules:1.6.1'
+    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
+    androidTestImplementation 'androidx.test.uiautomator:uiautomator:2.3.0'
+}

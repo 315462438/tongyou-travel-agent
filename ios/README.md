@@ -1,5 +1,7 @@
 # 17同游 iOS（原生 SwiftUI）
 
+当前版本：1.0.7 (8)。首页与聊天默认联网开启、深度推理关闭；保留用户明确关闭联网的偏好。
+
 原生 iOS 26 App，直接调用线上接口 `https://17tongyou.com/travel/api`，界面全部用 SwiftUI + Liquid Glass（`glassEffect`、`.glass` 按钮、系统 TabView 玻璃底栏）。
 
 | 模块 | 文件 | 内容 |
@@ -22,3 +24,10 @@ xcodebuild -project Tongyou.xcodeproj -scheme Tongyou -destination 'id=<设备ID
 ```
 
 最低系统 iOS 26。签名使用个人免费开发者团队，7 天后需要重新安装。图标由 `scripts/render-icon.swift` 按 `frontend/public/favicon.svg` 绘制。
+
+当前 1.0.6（7）：账本网页邀请支持点击“在 App 中打开”，协议为
+`tongyou://ledger/join?token=…`。接收后先登录、预览，再由用户确认加入；分享出去仍为
+`https://17tongyou.com/travel/?ledger_join=…`，与 Android/Web 互通。
+免费个人团队未启用 Associated Domains，因此这里不是 HTTPS 自动 Universal Links。
+测试：`xcrun swiftc Tongyou/Core/LedgerDeepLink.swift tests/LedgerDeepLinkTests.swift -o /tmp/tongyou-ios-link-tests && /tmp/tongyou-ios-link-tests`。
+冷/热启动及系统确认 UI 测试：`python3 scripts/test-links-ui.py --device <专用模拟器 UDID>`。

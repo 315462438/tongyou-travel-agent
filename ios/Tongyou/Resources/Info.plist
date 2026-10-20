@@ -12,6 +12,12 @@
 	<key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key><true/>
+	<key>CFBundleURLTypes</key>
+	<array><dict>
+		<key>CFBundleURLName</key><string>com.yuchengjiang.tongyou.links</string>
+		<key>CFBundleURLSchemes</key><array><string>tongyou</string></array>
+		<key>CFBundleTypeRole</key><string>Editor</string>
+	</dict></array>
 	<key>ITSAppUsesNonExemptEncryption</key><false/>
 	<key>NSCameraUsageDescription</key><string>拍照上传行程截图、机票订单或头像。</string>
 	<key>NSPhotoLibraryUsageDescription</key><string>从相册选择行程截图、攻略图或头像上传。</string>

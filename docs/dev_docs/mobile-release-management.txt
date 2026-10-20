@@ -1,0 +1,78 @@
+17同游三端发布管理（2026-10-19）
+
+平台        工程/源码                    版本来源                     产物/发布方式
+Web         frontend/                    部署清单/构建资源 hash       Vite dist → Web 部署脚本
+iOS         ios/                         Xcode 项目版本/Build          Xcode 签名 → 真机/TestFlight
+Android     android/ + frontend/共享 UI   android/app/build.gradle     签名 APK → android/releases/<版本>-<构建号>/
+
+Android 首个好友测试版：0.1.0 / versionCode 1；applicationId=com.tongyou.travel。
+该版本公网下载：https://17tongyou.com/downloads/android/0.1.0-1/17tongyou-android-0.1.0-1.apk
+发布位置：nginx 静态根 downloads/android/0.1.0-1/，独立于 Web 构建部署。微信收到链接后用外部浏览器下载。
+Android debug：com.tongyou.travel.debug，与正式测试包并存，不覆盖正式安装。
+Android 固定打包共享 UI 快照，线上 Web 更新不会直接改变已安装 APK。
+Android 的原生能力只在指定 UA + 来源受限桥接存在时启用，普通 Web 与 iOS 网页兜底不启用。
+Android 编译不覆盖 frontend/dist 或 backend/static，绝不隐式部署服务器或触发 iOS 构建。
+
+共同部分：生产 API https://17tongyou.com/travel/api、账号体系与业务数据库。
+注意这是共享正式数据，朋友的增删改都是实际业务操作，不是虚构沙箱。
+
+每次安卓发布
+1. 确定该次前端快照范围，检查 git diff；递增 versionCode，按需调整 versionName。
+2. 跑 Android 单测、lint、浏览器契约测试、设备测试；确认 Web 回归通过。
+3. 使用同一私有 release key 构建；不更换 key、不修改 applicationId。
+4. package-release.py 校验包名、debuggable、签名、快照文件 hash。
+5. 保留版本化 APK、release.json、signature.txt、SHA256SUMS、安装说明。
+6. 对同签名 APK 做覆盖安装检查后再发给测试者；无需先卸载。
+
+后端变更需保持已发布 iOS/Android 所用 API 兼容。若必须破坏兼容，先制定多版本迁移方案。
+不要用统一的“当前 App 版本”字段代替三端独立版本记录。
+签名密钥由开发者私有目录管理，说明见 android/README.txt；不得放入 release 分享目录。
+
+本次最终发布记录
+- Android 0.1.0 (1)：正式签名 APK；App Links 经 Android 15 系统验证为 verified。
+- iOS 1.0.6 (7)：用户追加要求后独立构建/安装；账本自定义协议 + 网页手动唤起。
+- Web：追加 iPhone 邀请页“在 App 中打开”，仅部署静态资源，不重启或修改业务后端。
+三端分享的账本链接均是同一个 HTTPS 形式，发送端不决定打开方式；接收端决定。
+Android 装 App 且系统允许时自动进入 App；iOS 需网页按钮（微信先转 Safari）；电脑/未装 App
+继续网页。系统和内置浏览器限制不能伪装为已安装检测结果。
+
+2026-10-19 追加发布
+- Android 0.2.0 (2)：参照 iOS 的排版和轻玻璃卡片、记账底部 sheet；沿用原签名，覆盖 0.1.0 保留 Local Storage。下载 https://17tongyou.com/downloads/android/0.2.0-2/17tongyou-android-0.2.0-2.apk
+- Web：修复手机模式切回网页端入口、桌面移动预览接力卡及侧栏初始化；首页新增深度推理/联网搜索，复用原协议。仅部署静态资源，无后端重启。
+- iOS：仍为 1.0.6 (7)，此次未改动或重新安装；原生首页已有上述两个开关。
+- 公网旧 Android 0.1.0 (1) 下载仍保留，需向朋友发送新版本链接。
+
+默认搜索设置更新：Web 初始 web_search=true/deep_reasoning=false；Android 0.2.1 (3) 固定同样默认值；iOS 1.0.7 (8) 首页/聊天页统一 search 默认 true，深度仍 false。保留用户显式选择。
+Android 新下载：https://17tongyou.com/downloads/android/0.2.1-3/17tongyou-android-0.2.1-3.apk
+
+Android 协同行程详情更新：0.3.0 (4)，签名与包名保持不变。iOS 风格的独立详情结构，解决多层头部、导航及嵌套滚动挤占正文。Web/iOS 未部署本次变更；API 不变。
+新下载：https://17tongyou.com/downloads/android/0.3.0-4/17tongyou-android-0.3.0-4.apk
+
+Android 紧凑字体更新：0.3.1 (5)，仅 Android 统一字号/字重与留白；无页面缩放、保留系统字体偏好和触控面积。Web/iOS未部署。
+下载：https://17tongyou.com/downloads/android/0.3.1-5/17tongyou-android-0.3.1-5.apk
+
+Android 首页重排：0.4.0 (6)。输入单行操作、快捷推荐词、紧凑卡片和底栏；首页随Android uiMode切换深浅色并保留草稿。其他业务页配色沿用原版。Web/iOS/API均不部署本次更改。
+下载：https://17tongyou.com/downloads/android/0.4.0-6/17tongyou-android-0.4.0-6.apk
+
+Android 0.4.1 (7) / 2026-10-19
+- 只增加原生开场动画及启动衔接，包内4份CSS与0.4.0完全相同；Web/iOS/API未部署。
+- 品牌图标轻入场，React目标页可绘制后淡出，适配系统深浅色/关闭动画；后台返回保留草稿。鉴权8s、原生12s兜底可重试。
+- 下载：https://17tongyou.com/downloads/android/0.4.1-7/17tongyou-android-0.4.1-7.apk
+- 10项原生测试、8组浏览器启动测试、101前端单测、4项Android单测通过，覆盖安装成功。结果见docs/test_cases/android-startup-transition-results-2026-10-19.json。
+
+Android 0.5.0 (8) / 2026-10-19
+- 行程列表、记账、历史、同游圈按iOS截图调整信息层级、紧凑字号、卡片与底栏；编辑弹层和行程详情同步深浅色。
+- 首页在390浅/深色与0.4.1 APK基线的位置、尺寸、字号、字重、颜色逐项一致；原生启动动画保留。
+- 本次仅发布Android APK；Web/iOS/API未部署。沿用签名覆盖0.4.1成功，版本号8。
+- 下载：https://17tongyou.com/downloads/android/0.5.0-8/17tongyou-android-0.5.0-8.apk
+- 101前端单测、4Android单测、11原生设备测试、7组模块浏览器测试、5组行程详情测试、5组Android/Web布局回归通过。
+- 结果见 docs/test_cases/android-modules-ios-style-results-2026-10-19.json。华为/小米真机外观仍以朋友实测为准。
+
+Android 0.6.0 (9) / 2026-10-20
+- 启动页面就绪后异步检查固定HTTPS版本清单，较高versionCode才提示；稍后24h延后同版，浏览器下载并由用户确认覆盖安装。
+- 系统uiMode继续驱动首页与各模块；补齐登录/注册、更新弹窗和原生错误提示深浅色；不重建WebView、不改首页字号布局与启动动画。
+- 0.5.0及以前无更新检查能力，需要手动覆盖安装0.6.0一次。不是后台通知推送。
+- 新增可复用发布脚本android/scripts/publish-release.py：先校验上传APK，再原子更新/downloads/android/latest.json；保留旧包，拒绝降级及同code换包。
+- 下载：https://17tongyou.com/downloads/android/0.6.0-9/17tongyou-android-0.6.0-9.apk
+- 仅发布Android APK与更新清单；Web/iOS/API未部署。0.5.0→0.6.0同签名覆盖安装通过。
+- 17项设备测试通过，末次登录前景色/弹窗按钮色修正后复跑相关6项通过；8项Android单测、5项发布脚本测试、101前端单测通过。详见docs/test_cases/android-in-app-updates-results-2026-10-20.json。

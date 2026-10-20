@@ -1,0 +1,156 @@
+{
+  "date": "2026-10-19",
+  "scope": "网页手机版对齐 iOS 布局",
+  "build": "passed",
+  "unit_tests": {
+    "passed": 100,
+    "failed": 0
+  },
+  "lint": "passed with existing warnings",
+  "browser": {
+    "mobile": [
+      {
+        "width": 320,
+        "pages": 7,
+        "historySearchAndOpen": true,
+        "creationToggle": true,
+        "modalReachable": true,
+        "keyboardViewport": true,
+        "errors": []
+      },
+      {
+        "width": 390,
+        "pages": 7,
+        "historySearchAndOpen": true,
+        "creationToggle": true,
+        "modalReachable": true,
+        "keyboardViewport": true,
+        "errors": []
+      },
+      {
+        "width": 430,
+        "pages": 7,
+        "historySearchAndOpen": true,
+        "creationToggle": true,
+        "modalReachable": true,
+        "keyboardViewport": true,
+        "errors": []
+      }
+    ],
+    "glass": [
+      {
+        "width": 390,
+        "logoLoaded": true,
+        "brandContrast": true,
+        "registrationError": true,
+        "reducedTransparency": true,
+        "overflow": false,
+        "errors": []
+      },
+      {
+        "width": 1440,
+        "logoLoaded": true,
+        "brandContrast": true,
+        "registrationError": true,
+        "reducedTransparency": true,
+        "overflow": false,
+        "errors": []
+      }
+    ],
+    "workspace": [
+      {
+        "name": "desktop",
+        "overflow": false,
+        "errors": [],
+        "editDrawer": true,
+        "moreActions": true,
+        "datePopover": true,
+        "dateSave": true,
+        "drawerControlsVisible": true
+      },
+      {
+        "name": "phone",
+        "overflow": false,
+        "errors": [],
+        "editDrawer": true,
+        "moreActions": true,
+        "datePopover": true,
+        "dateSave": true,
+        "drawerControlsVisible": true
+      }
+    ],
+    "ledger": [
+      {
+        "name": "desktop",
+        "errors": [],
+        "entryCRUD": true,
+        "categoryOnlySave": true,
+        "optionalTitle": true,
+        "compactSummary": true,
+        "collapsedFxWarnings": true,
+        "failedSaveRetained": true,
+        "retrySameID": true,
+        "currencyConversion": true,
+        "deleteAndLeave": true,
+        "overflow": false
+      },
+      {
+        "name": "phone",
+        "errors": [],
+        "entryCRUD": true,
+        "categoryOnlySave": true,
+        "optionalTitle": true,
+        "compactSummary": true,
+        "collapsedFxWarnings": true,
+        "failedSaveRetained": true,
+        "retrySameID": true,
+        "currencyConversion": true,
+        "deleteAndLeave": true,
+        "overflow": false
+      }
+    ],
+    "collaboration": [
+      {
+        "mobile": false,
+        "ownerManage": true,
+        "inviteRetry": true,
+        "accept": true,
+        "viewerReadOnly": true,
+        "editorEntries": true,
+        "exit": true,
+        "explicitJoin": true,
+        "revokedLink": true,
+        "errors": []
+      },
+      {
+        "mobile": true,
+        "ownerManage": true,
+        "inviteRetry": true,
+        "accept": true,
+        "viewerReadOnly": true,
+        "editorEntries": true,
+        "exit": true,
+        "explicitJoin": true,
+        "revokedLink": true,
+        "errors": []
+      }
+    ]
+  },
+  "screenshot_review": [
+    "home-320",
+    "trips-390",
+    "social-320",
+    "ledger-390"
+  ],
+  "limits": [
+    "浏览器为 Chromium 模拟手机视口；未进行 Safari 或安卓真机键盘测试"
+  ],
+  "deployment": {
+    "release": "tongyou-web-mobile-20261019",
+    "static_files_verified": 39,
+    "health": "ok",
+    "old_chunks_preserved": true,
+    "backend_restarted": false,
+    "backup": "/home/ubuntu/travel-agent/backups/tongyou-web-mobile-20261019"
+  }
+}

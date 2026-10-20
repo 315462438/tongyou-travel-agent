@@ -54,3 +54,23 @@ backend/evals/samples/*.md
 .playwright-mcp/
 after-mobile.png
 design/xingji/xingji-mobile.html
+
+# Android: generated output and private signing material
+android/.gradle/
+android/**/build/
+android/local.properties
+android/signing.properties
+android/releases/
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.mobileprovision
+*.provisionprofile
+*.ipa
+ios/build/
+ios/DerivedData/
+**/xcuserdata/
+
+# Local server incident evidence may contain private operational details.
+docs/security/

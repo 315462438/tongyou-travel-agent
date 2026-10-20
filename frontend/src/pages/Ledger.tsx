@@ -1,3 +1,4 @@
+import { isAndroidApp, useAndroidBack } from '../nativeAndroid'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { API, authFetch } from '../api'
 import './Ledger.css'
@@ -36,6 +37,13 @@ export default function Ledger({onClose, initialTrip, initialBookID}: {onClose: 
   const [bookForm, setBookForm] = useState<{id?: string; title: string; trip?: Trip | null} | null>(null)
   const [entryForm, setEntryForm] = useState<Entry | 'new' | null>(null)
   const [confirm, setConfirm] = useState<{title: string; path: string; wholeBook: boolean; method?: string} | null>(null)
+  useAndroidBack(() => {
+    if (busy) return true
+    if (showMembers) setShowMembers(false)
+    else if (selected) setSelected(null)
+    else onClose()
+    return true
+  }, 30)
   const generation = useRef(0)
   const fxGeneration = useRef(0)
   const refreshFx = useCallback(async (id: string, refresh = false) => {
@@ -88,11 +96,12 @@ export default function Ledger({onClose, initialTrip, initialBookID}: {onClose: 
   const isOwner = book?.role === 'owner'
   const totals = (b: Book) => Object.entries(b.totals).map(([c, n]) => <span key={c}>{money(n, c)}</span>)
   const dates = [...new Set(book?.entries?.map(e => e.spent_at) || [])].sort().reverse()
-  return <section className="ledger-shell" aria-label="旅行记账">
+  return <section className="ledger-shell" data-detail={!!selected} aria-label="旅行记账">
     <header className="ledger-header"><div><span className="ledger-eyebrow">旅行账本</span><h1>{book?.title || '旅行记账'}</h1></div><div className="ledger-actions">
       {tripFilter && <button onClick={() => { setTripFilter(null); setSelected(null) }}>显示全部账本</button>}
       {selected && <button disabled={busy} onClick={() => setSelected(null)}>全部账本</button>}
-      <button disabled={busy || loading} onClick={() => void load()}>刷新账本</button>
+      <button aria-label="刷新账本" disabled={busy || loading} onClick={() => void load()}>{isAndroidApp() ? '↻' : '刷新账本'}</button>
+      {isAndroidApp() && !selected && <button aria-label="＋ 新建账本" onClick={() => setBookForm({title: '', trip: tripFilter})}>＋</button>}
       <button onClick={onClose} aria-label="关闭旅行记账">关闭</button>
     </div></header>
     <main className="ledger-content">
@@ -100,7 +109,7 @@ export default function Ledger({onClose, initialTrip, initialBookID}: {onClose: 
       {loading && <p role="status">正在加载…</p>}
       {!selected ? <>
         <LedgerInvites onJoined={id => { setTripFilter(null); setSelected(id) }} />
-        <div className="ledger-intro"><div><h2>{tripFilter ? `${tripFilter.title} · 我的账本` : '把旅途花费，记得清清楚楚'}</h2><p>不必先建行程。记录原币支出，按你期望的币种汇总。</p></div><button className="ledger-primary" onClick={() => setBookForm({title: '', trip: tripFilter})}>＋ 新建账本</button></div>
+        <div className="ledger-intro"><div><h2>{tripFilter ? `${tripFilter.title} · 我的账本` : (isAndroidApp() ? '旅行中的每一笔，都记在这里' : '把旅途花费，记得清清楚楚')}</h2><p>{isAndroidApp() ? '个人记账，也能邀请同伴协作' : '不必先建行程。记录原币支出，按你期望的币种汇总。'}</p></div>{!isAndroidApp() && <button className="ledger-primary" onClick={() => setBookForm({title: '', trip: tripFilter})}>＋ 新建账本</button>}</div>
         {!loading && !books.length && <div className="ledger-empty">还没有账本，为下一趟旅行建一个吧。</div>}
         <div className="ledger-books">{books.map(b => <button key={b.id} className="ledger-book" onClick={() => setSelected(b.id)}><span>{b.count} 笔支出 · {roleName(b.role)}</span><h2>{b.title}</h2><p>{b.trip ? `关联行程：${b.trip.title}` : '独立账本'}</p><div className="ledger-original">{b.count ? totals(b) : '还没有支出'}</div><small>查看账本 →</small></button>)}</div>
       </> : book && <>

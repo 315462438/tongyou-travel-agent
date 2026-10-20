@@ -1,0 +1,8 @@
+现象：打开应用时先出现空白WebView，再出现登录检查、懒加载和首页；用网页加载完成事件隐藏启动图也可能过早。
+原因：WebView onPageFinished只代表文档加载，不代表React异步鉴权和懒加载完成，也不保证下一帧包含当前DOM。原先没有原生启动遮罩，鉴权请求也没有Android超时。
+处理：从原生第一帧显示品牌层；React的ready组件放在Suspense内部，实际目标页提交后通知原生，原生postVisualStateCallback完成后才淡出。每次主文档导航递增generation，避免旧绘制回调移除新遮罩。无强制最短等待；尊重系统禁用动画。
+失败路径：鉴权8s超时显示可重试错误、保留token；JS不运行则原生12s超时转重试。原生重试保留目标URL以免丢失分享入口。后台恢复不loadUrl，不重播；onNewIntent普通桌面图标启动不应误报“请分享链接”。测试fixture只在debug包，Release排除。
+参考：https://developer.android.com/reference/android/webkit/WebViewClient#onPageFinished(android.webkit.WebView,%20java.lang.String)
+https://developer.android.com/develop/ui/views/launch/splash-screen
+测试环境坑：debug启动fixture增加?startup=模式后，旧shouldOverrideUrlLoading按完整URL等号匹配，reload被当外链打开系统浏览器，后续仪器测试失焦。改为仍限debug + 可信源 + 精确路径判断，允许fixture查询参数；正式URL策略不变。
+仪器测试隔离：外链测试遗留的系统浏览器可能占据同一任务栈顶，使后续ActivityTestRule只返回旧Activity却未回到前台。每例用NEW_TASK|CLEAR_TASK启动假数据入口，等待遮罩结束；Activity重建后显式结束新的实例，避免把重建对象留给下一例。

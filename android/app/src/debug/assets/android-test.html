@@ -1,0 +1,38 @@
+<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"></head><body><div id="root"></div><script>
+// Debug APK only. Test data never touches the production API.
+localStorage.setItem('travel_token','android-instrumentation');
+window.fixtureReady=true;
+const startupMode=new URLSearchParams(location.search).get('startup');
+if(startupMode==='guest')localStorage.removeItem('travel_token');
+const trip={id:'android-trip',title:'杭州三日 · 山水慢游',destination:'杭州',days:3,budget:1800,start_date:'2026-10-24',source_conversation_id:null,ai_status:null,updated_at:'fixture',members:[{username:'android_test',role:'owner',online:true}],day_titles:{'1':'湖畔漫步'},stops:[{id:'s1',day:1,order_no:0,name:'西湖 · 断桥残雪',note:'沿白堤慢慢走，留一点散步时间。',location:null,start_time:'09:00',stay_min:90,transport:'步行',ticket_price:null,tags:[],nav:null}]};
+const realFetch=fetch.bind(window);
+window.fetch=async function(input,init){
+ const u=new URL(typeof input==='string'?input:input.url,location.href), p=u.pathname.replace('/travel/api','');
+ if(!u.pathname.startsWith('/travel/api/'))return realFetch(input,init);
+ let data=[];
+ if(p==='/auth/me' && startupMode==='offline')throw new Error('fixture offline');
+ if(p==='/auth/me')data={username:'android_test',is_admin:false,display_name:'安卓测试'};
+ else if(p==='/onboarding')data={trending:[],questions:[]};
+ else if(p.includes('unread'))data={count:0};
+ else if(p==='/trips')data=[trip];
+ else if(p==='/trips/android-trip')data=trip;
+ else if(p==='/trips/android-trip/issues')data={issues:[],ticket_total:0};
+ else if(p.includes('expenses/summary'))data={total:0,count:0,by_category:{},per_person:[],transfers:[],text:''};
+ else if(p.includes('day-cities'))data={cities:{},overnight:{}};
+ else if(p==='/social/me')data={id:'test-user',username:'android_test',display_name:'安卓测试',avatar_url:'',home_city:'',travel_styles:[],stats:{relay_posts:1,verified:2,friends:0},recent_relay:[]};
+ else if(p==='/social/friends')data={friends:[],received:[],sent:[]};
+ else if(p==='/social/station')data={posts:[{id:'p1',author:{id:'test-user',username:'android_test',display_name:'安卓测试',avatar_url:''},phase:'returned',kind:'condition',content:'测试现场情报：出行前再次确认开放时间。',created_at:'2026-08-19T09:00:00',expired:true,mine:true,reactions:{useful:0,verified:2,outdated:0}}],phase_counts:{planning:0,on_trip:0,returned:1}};
+ else if(p==='/ledger')data=[{id:'b1',title:'模拟器账本',role:'owner',target_currency:'CNY',count:0,totals:{},by_category:[]}];
+ else if(p==='/ledger/b1')data={id:'b1',title:'模拟器账本',role:'owner',target_currency:'CNY',count:0,totals:{},by_category:[],entries:[]};
+ else if(p.endsWith('/conversion'))data={target_currency:'CNY',total_minor:0,items:[],missing:[],source:'test',stale:false};
+ return new Response(JSON.stringify(data),{headers:{'Content-Type':'application/json'}});
+};
+function boot(){realFetch('/travel/').then(r=>r.text()).then(html=>{
+ const doc=new DOMParser().parseFromString(html,'text/html');
+ for(const link of doc.querySelectorAll('link[rel="stylesheet"]'))document.head.append(link.cloneNode());
+ for(const el of doc.querySelectorAll('script[type="module"]')){const s=document.createElement('script');s.type='module';s.src=el.getAttribute('src');document.head.append(s)}
+});}
+if(startupMode==='slow')setTimeout(boot,2200);
+else if(startupMode==='stalled' && !sessionStorage.getItem('startup_stall_seen'))sessionStorage.setItem('startup_stall_seen','1');
+else boot();
+</script></body></html>

@@ -1,0 +1,155 @@
+{
+  "date": "2026-10-19",
+  "scope": "Android 首页 iOS 风格排版与系统深浅色；Web/iOS/API 未部署",
+  "release": {
+    "version": "0.4.0",
+    "version_code": 6,
+    "apk": "17tongyou-android-0.4.0-6.apk",
+    "bytes": 2824088,
+    "sha256": "05f15147759891dc644ffc10341bc2ba6996e7544507120dcfbce94f404d0e35"
+  },
+  "frontend_unit": {
+    "passed": 101,
+    "failed": 0
+  },
+  "frontend_build": "passed",
+  "frontend_lint": "passed with existing warnings",
+  "homepage_browser": [
+    {
+      "name": "light-320",
+      "formHeight": 160,
+      "popularCardBottom": 737.46875,
+      "navTop": 774,
+      "toolbar": true,
+      "quickStarts": true,
+      "requests": true,
+      "images": true,
+      "links": true
+    },
+    {
+      "name": "light-360",
+      "formHeight": 164,
+      "popularCardBottom": 740.875,
+      "navTop": 774,
+      "toolbar": true,
+      "quickStarts": true,
+      "requests": true,
+      "images": true,
+      "links": true
+    },
+    {
+      "name": "light-390",
+      "formHeight": 164,
+      "popularCardBottom": 740.875,
+      "navTop": 774,
+      "toolbar": true,
+      "quickStarts": true,
+      "requests": true,
+      "images": true,
+      "links": true
+    },
+    {
+      "name": "light-430",
+      "formHeight": 164,
+      "popularCardBottom": 740.875,
+      "navTop": 862,
+      "toolbar": true,
+      "quickStarts": true,
+      "requests": true,
+      "images": true,
+      "links": true
+    },
+    {
+      "name": "dark-320",
+      "formHeight": 160,
+      "popularCardBottom": 737.46875,
+      "navTop": 774,
+      "toolbar": true,
+      "quickStarts": true,
+      "requests": true,
+      "images": true,
+      "links": true
+    },
+    {
+      "name": "dark-360",
+      "formHeight": 164,
+      "popularCardBottom": 740.875,
+      "navTop": 774,
+      "toolbar": true,
+      "quickStarts": true,
+      "requests": true,
+      "images": true,
+      "links": true
+    },
+    {
+      "name": "dark-390",
+      "formHeight": 164,
+      "popularCardBottom": 740.875,
+      "navTop": 774,
+      "toolbar": true,
+      "quickStarts": true,
+      "requests": true,
+      "images": true,
+      "links": true
+    },
+    {
+      "name": "dark-430",
+      "formHeight": 164,
+      "popularCardBottom": 740.875,
+      "navTop": 862,
+      "toolbar": true,
+      "quickStarts": true,
+      "requests": true,
+      "images": true,
+      "links": true
+    },
+    {
+      "name": "landscape",
+      "formHeight": 164,
+      "popularCardBottom": 740.875,
+      "navTop": 320,
+      "toolbar": true,
+      "quickStarts": true,
+      "requests": true,
+      "images": true,
+      "links": true
+    }
+  ],
+  "cross_platform_layout": {
+    "passed": 5,
+    "pages_per_case": 7
+  },
+  "search_defaults": {
+    "passed": 3
+  },
+  "collaborative_trip_regression": {
+    "passed": 4
+  },
+  "android_unit": {
+    "passed": 4
+  },
+  "android_lint_release": "passed",
+  "android_instrumentation": {
+    "passed": 6,
+    "device": "Android 15 emulator",
+    "system_night_switch_preserves_draft": true
+  },
+  "upgrade": {
+    "from": "0.3.1 (5)",
+    "to": "0.4.0 (6)",
+    "adb_install_r": "Success",
+    "installed_version_code": 6
+  },
+  "limitations": [
+    "未在朋友的华为真机验证；原生测试使用假 API",
+    "深色处理限定首页，其余业务页保留现有配色"
+  ],
+  "public_download": {
+    "url": "https://17tongyou.com/downloads/android/0.4.0-6/17tongyou-android-0.4.0-6.apk",
+    "bytes": 2824088,
+    "sha256": "05f15147759891dc644ffc10341bc2ba6996e7544507120dcfbce94f404d0e35",
+    "https_download": "passed",
+    "range": "passed",
+    "web_entry": "passed"
+  }
+}

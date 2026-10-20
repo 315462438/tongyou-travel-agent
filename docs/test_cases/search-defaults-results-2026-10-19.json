@@ -1,0 +1,116 @@
+{
+  "status": "passed",
+  "defaults": {
+    "web_search": true,
+    "deep_reasoning": false
+  },
+  "existing_choices_preserved": true,
+  "web_tests": [
+    {
+      "name": "desktop",
+      "initial": {
+        "web_search": true,
+        "deep_reasoning": false
+      },
+      "explicitChoicePersisted": true,
+      "requestFields": true
+    },
+    {
+      "name": "mobile",
+      "initial": {
+        "web_search": true,
+        "deep_reasoning": false
+      },
+      "explicitChoicePersisted": true,
+      "requestFields": true
+    },
+    {
+      "name": "android",
+      "initial": {
+        "web_search": true,
+        "deep_reasoning": false
+      },
+      "explicitChoicePersisted": true,
+      "requestFields": true
+    }
+  ],
+  "apk_tests": [
+    {
+      "name": "desktop",
+      "initial": {
+        "web_search": true,
+        "deep_reasoning": false
+      },
+      "explicitChoicePersisted": true,
+      "requestFields": true
+    },
+    {
+      "name": "mobile",
+      "initial": {
+        "web_search": true,
+        "deep_reasoning": false
+      },
+      "explicitChoicePersisted": true,
+      "requestFields": true
+    },
+    {
+      "name": "android",
+      "initial": {
+        "web_search": true,
+        "deep_reasoning": false
+      },
+      "explicitChoicePersisted": true,
+      "requestFields": true
+    }
+  ],
+  "frontend_unit_tests": 101,
+  "ios_preferences_tests": 3,
+  "ios_build": "passed",
+  "ios_installed": "1.0.7 (8)",
+  "android_build": "0.2.1 (3)",
+  "android_download": {
+    "url": "https://17tongyou.com/downloads/android/0.2.1-3/17tongyou-android-0.2.1-3.apk",
+    "bytes": 2816804,
+    "sha256": "77a7527baffcf0eb33209e69e8275afd4e15e23db925a1508e51ad1d2f75d133",
+    "https_download": "passed",
+    "range": "passed",
+    "web_entry": "passed"
+  },
+  "backend_changed": false,
+  "logs": [
+    "/tmp/search-defaults-unit.log",
+    "/tmp/android-021-build.log",
+    "/tmp/tongyou-ios-defaults-build.log",
+    "/tmp/tongyou-ios-defaults-install.log",
+    "/tmp/search-defaults-production.log"
+  ],
+  "production_tests": [
+    {
+      "name": "desktop",
+      "initial": {
+        "web_search": true,
+        "deep_reasoning": false
+      },
+      "explicitChoicePersisted": true,
+      "requestFields": true
+    },
+    {
+      "name": "mobile",
+      "initial": {
+        "web_search": true,
+        "deep_reasoning": false
+      },
+      "explicitChoicePersisted": true,
+      "requestFields": true
+    },
+    {
+      "name": "android",
+      "initial": {
+        "web_search": true,
+        "deep_reasoning": false
+      },
+      "explicitChoicePersisted": true,
+      "requestFields": true
+    }
+  ]
+}

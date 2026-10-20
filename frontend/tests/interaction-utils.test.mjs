@@ -15,13 +15,20 @@ import {
   formatThinkingElapsed,
   headingAnchor,
   initialLayoutMode,
-  initialThemeMode,
+  initialWebSearch,
   MAX_PROMPT_LENGTH,
   normalizePrompt,
   latestLine,
   shouldSubmitComposer,
   thinkingRowLabel,
 } from '../src/interaction.ts'
+
+test('web search defaults on and preserves an explicit opt-out', () => {
+  assert.equal(initialWebSearch(null), true)
+  assert.equal(initialWebSearch(undefined), true)
+  assert.equal(initialWebSearch('0'), false)
+  assert.equal(initialWebSearch('1'), true)
+})
 
 test('trip event time is a range derived from duration or the next event', () => {
   assert.equal(formatTripTimeRange('08:30', 135), '08:30 – 10:45')
@@ -37,13 +44,6 @@ test('layout mode defaults to mobile on phones and preserves desktop preview cho
   assert.equal(initialLayoutMode(1440, null), 'desktop')
   assert.equal(initialLayoutMode(1440, 'mobile'), 'mobile')
   assert.equal(initialLayoutMode(844, 'desktop', true), 'mobile')
-})
-
-test('theme mode persists only supported values and otherwise falls back to modern', () => {
-  assert.equal(initialThemeMode(null), 'modern')
-  assert.equal(initialThemeMode('modern'), 'modern')
-  assert.equal(initialThemeMode('ink'), 'ink')
-  assert.equal(initialThemeMode('green'), 'modern')
 })
 
 test('composer submits with plain Enter', () => {

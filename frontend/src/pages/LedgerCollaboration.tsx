@@ -1,3 +1,4 @@
+import { isAndroidApp, shareAndroidLink } from '../nativeAndroid'
 import { useCallback, useEffect, useState } from 'react'
 import { ledgerRequest as request } from './Ledger'
 
@@ -43,7 +44,7 @@ export function LedgerMembers({bookID, owner, onClose, onChanged}: {bookID: stri
       <h3>通过链接加入</h3><p>持有链接的人登录后可自行加入。链接有效期 7 天，请只发给信任的人。</p>
       <label>链接加入权限<select aria-label="链接加入权限" value={linkRole} onChange={e => setLinkRole(e.target.value)}><option value="viewer">只读</option><option value="editor">可编辑 · 可增改删账单</option></select></label>
       <button disabled={busy} onClick={() => { if (!share || window.confirm('重新生成会使旧链接立即失效，已加入成员不受影响。')) void act('/share', 'POST', {role: linkRole}) }}>{share ? '重新生成链接' : '生成分享链接'}</button>
-      {share && <div className="ledger-share"><p>当前链接：{roleName(share.role)} · 到期 {new Date(share.expires_at).toLocaleString('zh-CN')}</p><label>分享链接<input readOnly value={link} onFocus={e => e.target.select()} /></label><div className="ledger-actions"><button onClick={async () => { try { await navigator.clipboard.writeText(link); setNotice('链接已复制') } catch { setNotice('请长按链接或选中后复制') } }}>复制链接</button><button disabled={busy} onClick={() => { if (window.confirm('撤销链接？已加入的成员仍保留权限。')) void act('/share', 'DELETE') }}>撤销链接</button></div><small>撤销链接不移除已加入成员；如需收回权限，请在上方移除成员。</small></div>}
+      {share && <div className="ledger-share"><p>当前链接：{roleName(share.role)} · 到期 {new Date(share.expires_at).toLocaleString('zh-CN')}</p><label>分享链接<input readOnly value={link} onFocus={e => e.target.select()} /></label><div className="ledger-actions"><button onClick={async () => { try { await navigator.clipboard.writeText(link); setNotice('链接已复制') } catch { setNotice('请长按链接或选中后复制') } }}>复制链接</button><button hidden={!isAndroidApp()} onClick={() => shareAndroidLink('邀请加入旅行账本', link)}>分享给朋友</button><button disabled={busy} onClick={() => { if (window.confirm('撤销链接？已加入的成员仍保留权限。')) void act('/share', 'DELETE') }}>撤销链接</button></div><small>撤销链接不移除已加入成员；如需收回权限，请在上方移除成员。</small></div>}
     </>}
     <div className="ledger-actions"><button disabled={busy} onClick={onClose}>完成</button></div>
   </section></div>

@@ -1,0 +1,89 @@
+{
+  "date": "2026-10-20",
+  "platform": "Android",
+  "version": "0.6.0",
+  "version_code": 9,
+  "checks": {
+    "android_unit": {
+      "tests": 8,
+      "failures": 0,
+      "errors": 0
+    },
+    "android_build": "passed",
+    "android_lint": "passed; existing warnings",
+    "native_regression": {
+      "tests": 17,
+      "passed": 17,
+      "fixture": "Android 15 emulator; local APIs and simulated future version"
+    },
+    "final_update_and_auth_regression": {
+      "tests": 6,
+      "passed": 6,
+      "after": "Final dialog accent and dark auth brand/tagline contrast corrections"
+    },
+    "publish_contract_and_atomicity": {
+      "tests": 5,
+      "passed": 5
+    },
+    "frontend_unit": {
+      "tests": 101,
+      "passed": 101
+    },
+    "frontend_bundle": "passed",
+    "apk_signature_and_asset_hashes": "passed",
+    "homepage_css": "Identical to 0.5.0 (8); this change only adds auth CSS",
+    "visual_review": [
+      "update-light",
+      "update-dark",
+      "auth-dark"
+    ],
+    "upgrade": {
+      "from": "0.5.0 (8)",
+      "to": "0.6.0 (9)",
+      "result": "adb install -r Success; package manager confirms version code 9"
+    }
+  },
+  "release": {
+    "apk": "17tongyou-android-0.6.0-9.apk",
+    "bytes": 2836240,
+    "sha256": "3b1b4113ff47616b94322bf76ebc7ffb42b592d1d159cb5c1cb048de60d2113c",
+    "min_sdk": 26
+  },
+  "download": {
+    "url": "https://17tongyou.com/downloads/android/0.6.0-9/17tongyou-android-0.6.0-9.apk",
+    "bytes": 2836240,
+    "sha256": "3b1b4113ff47616b94322bf76ebc7ffb42b592d1d159cb5c1cb048de60d2113c",
+    "https_download": "passed",
+    "range": "passed",
+    "web_entry": "passed",
+    "latest_feed": "passed"
+  },
+  "update_feed": {
+    "schema_version": 1,
+    "enabled": true,
+    "platform": "Android",
+    "application_id": "com.tongyou.travel",
+    "version": "0.6.0",
+    "version_code": 9,
+    "min_sdk": 26,
+    "url": "https://17tongyou.com/downloads/android/0.6.0-9/17tongyou-android-0.6.0-9.apk",
+    "bytes": 2836240,
+    "sha256": "3b1b4113ff47616b94322bf76ebc7ffb42b592d1d159cb5c1cb048de60d2113c",
+    "notes": "新增启动时检查更新，有新版可一键前往下载并覆盖安装。\n浅色与深蓝色外观跟随手机系统，登录页和更新提示同步适配。\n保留首页字号、现有布局与开场动画。"
+  },
+  "deployment_scope": [
+    "versioned Android APK",
+    "Android latest.json"
+  ],
+  "unchanged_deployments": [
+    "Web",
+    "iOS",
+    "API"
+  ],
+  "limitations": [
+    "Versions 0.5.0 and older must manually install 0.6.0 once.",
+    "Checks happen in foreground; no background push notifications.",
+    "APK downloads use the selected browser and user-confirmed install; no silent installs.",
+    "Huawei/Xiaomi physical-device installation flow not available for testing."
+  ]
+}

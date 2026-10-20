@@ -1,0 +1,4 @@
+运行：backend/.venv/bin/python android/scripts/verify-download.py
+用例：公网下载 HTTPS 200 且无重定向；二进制 MIME；字节数与 SHA256 等于本地发布清单；Range 返回 206 和 ZIP/APK 文件头；原网站入口 HTTP 200。
+本测试不代表鸿蒙卓易通兼容性实测。微信需通过外部浏览器下载。
+2026-10-19 验收：全部通过。公网完整下载 2812864 字节，SHA256=c7590c1c0e21dc6e3001c3729124d0fe62946859a07ece9bdcaa0ae7b1c1006a；Range 与网站入口正常。

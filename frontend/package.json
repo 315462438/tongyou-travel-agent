@@ -9,9 +9,14 @@
     "lint": "oxlint",
     "test": "node --no-warnings --test tests/*.test.mjs",
     "preview": "vite preview",
+    "test:glass": "node tests/glass-browser.mjs",
     "test:workspace": "node tests/workspace-browser.mjs",
     "test:ledger": "node tests/ledger-browser.mjs",
-    "test:ledger:collaboration": "node tests/ledger-collaboration-browser.mjs"
+    "test:ledger:collaboration": "node tests/ledger-collaboration-browser.mjs",
+    "test:mobile": "node tests/mobile-browser.mjs",
+    "test:mobile:glass": "node tests/mobile-glass-browser.mjs",
+    "test:android": "node tests/android-browser.mjs",
+    "test:links": "node tests/link-opening-browser.mjs"
   },
   "dependencies": {
     "@amap/amap-jsapi-loader": "^1.0.1",

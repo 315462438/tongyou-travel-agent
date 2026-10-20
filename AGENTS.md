@@ -80,6 +80,8 @@ ssh "$DEPLOY_HOST" 'sudo journalctl -u travel-backend -n 50 --no-pager'
 
 ## Environment
 
+- Android 好友测试版（2026-10-19）：独立 `android/` 工程，包名 `com.tongyou.travel`，版本源为 `android/app/build.gradle`。复用 `frontend/` UI，但固定资源快照打进 APK，构建不改 `frontend/dist`/`backend/static`、不部署 Web、不更新 iOS。Android 适配由 `nativeAndroid.ts` 在指定 UA 与受限原生桥存在时启用。签名密钥存仓库外 `~/.config/17tongyou/android/`，发布产物在忽略的 `android/releases/`；详见 `android/README.txt` 与 `docs/dev_docs/mobile-release-management.txt`。后端接口须兼容已发出的三端版本。
+
 - Backend: Python 3.12 venv at `backend/.venv`（本机 `python3.12`；PyCharm 里显示的 3.9 已过时）
 - Frontend: Node 23 + Vite + React-TS（`frontend/`）
 - LLM: DeepSeek（OpenAI 兼容接口），key 在 `backend/.env`；规划/抽取/分类/视觉默认均为 `deepseek-flash`，官方于 2026-10-17 将此别名升级到 V4.1-Flash-1017，调用名与价格不变。
@@ -88,6 +90,7 @@ ssh "$DEPLOY_HOST" 'sudo journalctl -u travel-backend -n 50 --no-pager'
 - 独立旅行记账（2026-10-19）：`/api/ledger` 个人账本与账单，整数分存储、UUID 防重复新增、自选汇总币种；`ledger_fx.py` 查询 Frankfurter v2 最新参考汇率（按日更新，明确来源/行情日期/查询时间，缺失不拼假总额）。网页 `Ledger.tsx` 与 iOS `LedgerView` 独立入口；原协同行程 AA 账单不迁移。iOS/网页行程列表新增常驻删除/退出，owner 删除整份含子记录，editor 只移除自身成员关系；iOS 1.0.3 (4)。
 - 账本协作（2026-10-19）：账本可选关联行程，成员权限独立。创建者可邀请任意用户名并授予 editor/viewer，待接受才授权；7 天随机分享链接可重置/撤销，移除成员不能凭原链接重入。行程删除/退出只解绑，保留账本与协作关系；条目版本冲突 409。网页/iOS 均支持，iOS 1.0.4 (5)。
 - 快速记账（2026-10-19）：账单说明选填，填写金额并选择分类即可保存；空说明由后端统一使用分类名，账本名称仍必填。网页/iOS 同步，顶部合并紧凑总额卡、汇率/原币明细默认折叠，异常提示仍可见；iOS 1.0.5 (6)。
+- 跨端账本唤起（2026-10-19）：共享 HTTPS 邀请 URL；Android 0.1.0 (1) 使用正式签名 App Links（域名根 assetlinks.json）。iOS 1.0.6 (7) 在免费个人签名下使用 `tongyou://ledger/join?token=…`，网页 iPhone 邀请页点击唤起，微信提示 Safari；未登录先保留邀请、确认后才加入。没有启用 iOS Associated Domains，不宣称 Universal Links。三端独立版本/发布，详见 docs/dev_docs/mobile-release-management.txt。
 - DB: 远程 PostgreSQL 16（部署在上面的服务器），**必须走 SSH 隧道**，不能公网直连
   （原因见 `docs/pitfalls/远程PostgreSQL公网直连被重置.md`）
 

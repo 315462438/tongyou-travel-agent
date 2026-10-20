@@ -1,0 +1,14 @@
+对应计划：docs/task_plans/android-startup-transition-2026-10-19.txt
+自动化：frontend/tests/android-startup-browser.mjs（PLAYWRIGHT_MODULE 可指定 Playwright 安装；ANDROID_QA_URL 默认4182的APK内置快照）
+1. slow-auth / slow-chunk：鉴权或懒加载未完成时不发ready；真实页面提交后才发送。
+2. guest / expired：登录页可见后ready，过期token按既有401规则处理。
+3. offline / timeout：服务失败或8s挂起时显示重试并保留token，重新连接恢复首页。
+4. invite：分享参数/待加入token保留，邀请页显示后ready。
+5. web：网页可正常进入，不发送原生ready。
+原生：HostInstrumentedTest新增4项（共10项），test-emulator.py执行。
+- startupWaitsForReactAndRecoversFromTimeout：JS延迟2.2s时仍显示原生层，不能被PageFinished提前移除；脚本不启动12s后出现重新加载，重试保留目标并恢复。
+- startupGuestAndConnectionFailureAreReadyScreens：未登录/网络失败各可移除覆盖层，不挡住登录/重试。
+- startupDarkAndWarmResumeKeepsDraft：深色启动截图，后台返回不重播、不丢未提交文本。
+- startupRecreationWithoutAnimations：Activity重建恢复可见页面，本地存储保留，系统禁用动画时可正常结束启动。
+回归原有6项：键盘/导航/行程/首页深浅色/文件上传保存/PDF。
+发布：Android单测、lint、Release构建、签名与打包快照校验；0.4.0覆盖安装0.4.1；HTTPS下载200、Range206、SHA256。

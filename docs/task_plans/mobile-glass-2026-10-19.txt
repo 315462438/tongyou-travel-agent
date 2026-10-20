@@ -1,0 +1,9 @@
+目标：网页手机版在现有 iOS 风格布局上同步原生客户端的玻璃材质和轻量交互，优先触控、滚动流畅与可读性。
+方案：沿用 iOS Palette 的蓝/紫/暖色背景；底栏共享一个可平移的选中玻璃胶囊，主要输入/弹层适量 backdrop-filter，长列表卡片使用透光渐变与内高光避免多层实时模糊；按钮提供短促按压反馈。所有新增动效仅 transform/opacity，不引入 Canvas/WebGL、滚动 JS 或新依赖。
+模块：Home.tsx 底栏状态属性；MobileGlass.css 独立移动样式（桌面保留）；手机浏览器自动验收。
+兼容：同时声明 WebKit/标准 backdrop-filter；减少动态时关闭过渡/动画；减少透明度和不支持 backdrop-filter 时实底降级。大块页面不通过 transform 建立新的 fixed 定位容器。
+验收：320/390/430 视口导航命中与选中态、玻璃滤镜/透明度、长列表滚动后末行可达、弹层保存按钮不被底栏挡住、减少动态/透明度降级；桌面/手机既有记账与行程回归；生产构建和单测通过。浏览器模拟不等于真机帧率保证。
+发布：延续本轮已授权的网页更新部署；静态文件先于 index，保留旧资源和回滚备份，线上健康/哈希核验，不重启后端。
+参考：ios/Tongyou/Design/Glass.swift；https://webkit.org/blog/3632/introducing-backdrop-filters/（实时模糊增加渲染次数，应限制使用）。
+
+完成：已实现独立 MobileGlass.css、单个底栏滑动胶囊、适量实时模糊与轻量卡片高光。100 单测、生产构建、三屏宽玻璃专项/导航验收和桌面/手机行程及记账回归通过；lint 无错误但保留既有警告。已发布 tongyou-web-mobile-glass-20261019，39 个静态资源校验及线上健康检查通过，后端未重启。截图在 /tmp/tongyou-mobile-glass-qa，结果在 docs/test_cases/mobile-glass-results-2026-10-19.json。

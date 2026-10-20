@@ -12,3 +12,28 @@
 /* Compact summary: rate details stay folded until needed. */
 .ledger-summary{display:block}.ledger-total{padding:18px 20px;border-radius:20px}.ledger-total-head{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:14px;color:var(--text-secondary,#637083)}.ledger-total-head select{max-width:180px;padding:8px 10px;font-size:14px;min-height:40px}.ledger-total-main{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-top:10px}.ledger-total-main h2{margin:0;min-width:0;font-size:32px;line-height:1.2}.ledger-total-main button{flex-shrink:0}.ledger-total>p{margin:6px 0 0;line-height:1.5}.ledger-total>[role=alert]{color:var(--danger,#bd3434)}.ledger-total .ledger-rate{padding:0;margin-top:12px;border:0;border-top:1px solid var(--border,#e1e5ee);border-radius:0;background:none}.ledger-rate summary{padding:10px 0 0;cursor:pointer;font-size:13px;color:var(--text-secondary,#637083)}.ledger-rate-content{padding:12px 0 0}.ledger-rate-content>button{margin-top:10px;font-size:13px}.ledger-toolbar{margin:16px 0 8px;gap:8px}.ledger-toolbar h3{font-size:16px;margin:0 auto 0 0}.ledger-toolbar>button{font-size:13px;padding:8px 12px}.ledger-more{position:relative}.ledger-more>summary{cursor:pointer;font-size:13px;padding:12px;min-height:42px;list-style:none;border:1px solid var(--border,#e1e5ee);border-radius:12px;background:var(--surface,#fff)}.ledger-more>summary::-webkit-details-marker{display:none}.ledger-more-menu{position:absolute;right:0;top:calc(100% + 6px);z-index:3;min-width:150px;display:grid;gap:6px;padding:8px;background:var(--surface,#fff);border:1px solid var(--border,#e1e5ee);border-radius:14px;box-shadow:0 8px 30px #0002}.ledger-more-menu button{white-space:nowrap;text-align:left;font-size:14px}.ledger-link-info{font-size:13px;margin:0 0 12px}.ledger-day:first-child h3{margin-top:10px}
 @media(max-width:700px){.ledger-total{padding:14px 16px}.ledger-total-main h2{font-size:28px}.ledger-total-main button{font-size:14px;padding:10px 12px}.ledger-total-head select{max-width:155px}.ledger-content{padding-top:14px}.ledger-detail-grid{gap:14px}}
+
+/* ---------- 2026-10-19 与 iOS 玻璃拟态统一 ----------
+   卡片层玻璃化；记账明细行（.ledger-entry 之外的表单/选择器）保持实底以保证可读性。 */
+.ledger-shell { background: var(--x-n96); }
+.ledger-header {
+  background: rgba(255, 255, 255, .6);
+  border-bottom-color: var(--x-glass-line);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+}
+.ledger-total, .ledger-rate, .ledger-categories, .ledger-entry, .ledger-modal, .ledger-more-menu {
+  background: var(--x-glass);
+  border-color: var(--x-glass-line);
+  box-shadow: var(--x-glass-inner), var(--x-glass-shadow);
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
+  backdrop-filter: blur(22px) saturate(180%);
+}
+.ledger-book { background: var(--x-glass); }
+.ledger-open-app { display: grid; gap: 8px; margin: 16px 0; }
+.ledger-open-app > a { justify-self: start; text-decoration: none; padding: 10px 16px; border-radius: 12px; }
+.ledger-open-app > small { color: var(--text-muted, #65758b); line-height: 1.5; }
+.ledger-open-app > p { margin: 0; font-size: 14px; line-height: 1.5; }
+.ledger-open-app-wechat { padding: 14px; border: 1px solid rgba(37, 99, 235, .2); border-radius: 14px; background: rgba(37, 99, 235, .04); }
+.ledger-open-app-wechat > ol { margin: 0; padding-left: 20px; font-size: 14px; line-height: 1.65; }
+.ledger-open-app-wechat > button { justify-self: start; }

@@ -6,6 +6,8 @@ final class AppRouter {
     var tab: TabID = .home
     var socialDestination: String?
     var openTripID: String?
+    var openLedgerID: String?
+    var ledgerLinks = LedgerLinkInbox()
     var historyVersion = 0
 }
 
@@ -28,7 +30,7 @@ struct HomeView: View {
     @State private var draft = ""
     @State private var deep = false
     /// Same setting as the chat composer's web search toggle.
-    @AppStorage("webSearch") private var webSearch = false
+    @AppStorage("webSearch") private var webSearch = ChatPreferences.defaultWebSearch
     @State private var trending: [String] = []
     @State private var homeCity = ""
     @State private var covers: [String: String] = [:]

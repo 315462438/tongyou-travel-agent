@@ -1,0 +1,21 @@
+Android 好友测试版验收 — 2026-10-19
+
+自动化用例
+1. UrlPolicyTest：固定 HTTPS origin；拒绝伪域名/用户信息/非标准端口；只接受主页面邀请；
+   不允许 file/content/intent 任意跳转；导出文件名不能逃出缓存目录。
+2. frontend/tests/android-browser.mjs：账本创建取消不退出父页面；明细→列表→首页；
+   行程创建先收起；系统分享保留账本 token；原生键盘状态隐藏底栏；
+   blob 立即 revoke 后导出数据完整；外部下载被拒；断网启动保留 token、重试恢复；
+   非 Android 浏览器不启用桥接。
+3. HostInstrumentedTest：真实 Android WebView 包内页面、分层 Back、localStorage 重载保留；
+   native bridge 解码文件字节并通过系统文档界面真正保存到 Download；系统文件选择器和
+   content URI 读取；sandbox iframe 无原生 bridge；PDF 系统打印界面；实际键盘/Back 顺序。
+4. 现有 frontend npm test / mobile-browser 回归覆盖普通手机网页。
+5. Android lintRelease + assembleRelease；apksigner 验签；aapt 包名/版本/debuggable 检查；
+   APK 中资源逐个 SHA-256 校验；确认无 debug fixture；记录发布文件摘要。
+6. App Links：HTTPS /.well-known/assetlinks.json 为 200 JSON 无重定向；包名及指纹与
+   release APK 相同；清单 autoVerify 和 URL 范围正确；通过系统 intent 打开邀请页。
+
+运行命令见 android/README.txt。全部通过，详细结果见 android-beta-results-2026-10-19.json。
+真人手机反馈范围：小米/OPPO/vivo 的厂商安装提示、玻璃动画流畅度、微信文件分享接收、
+输入法候选栏与手势返回。模拟器不能代替这些机型体验，不作为已验证宣称。

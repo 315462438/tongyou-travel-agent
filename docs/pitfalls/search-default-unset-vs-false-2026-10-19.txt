@@ -1,0 +1,4 @@
+现象：把 iOS 首页 @AppStorage 的默认值设为 true，聊天模型若仍使用 UserDefaults.bool(forKey:)，首次发送仍会得到 false。
+原因：bool(forKey:) 把“键不存在”与“用户明确关闭”都返回 false；网页 stored === '1' 同样将未设置当成关闭。
+解决：iOS 用 object(forKey:) as? Bool ?? true 区分缺失与明确选择，并与首页共享常量。Web/Android 以明确 '0' 作为关闭，其余采用开启默认；深度推理原默认 false 保留。不做覆盖已有用户偏好的迁移。
+验证：随机 UserDefaults suite 三态测试、首次真实 UI 发送字段与手动覆盖后刷新测试。Android 固定 UI 快照，不能只发布 Web 而宣称已安装 APK 自动更新。

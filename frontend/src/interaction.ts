@@ -1,12 +1,11 @@
 export const MAX_PROMPT_LENGTH = 4000
 
-export type LayoutMode = 'desktop' | 'mobile'
-export type ThemeMode = 'modern' | 'ink'
-
-export function initialThemeMode(storedMode?: string | null): ThemeMode {
-  return storedMode === 'ink' ? 'ink' : 'modern'
+/** Missing preference uses the product default; an explicit opt-out survives upgrades. */
+export function initialWebSearch(stored?: string | null): boolean {
+  return stored !== '0'
 }
 
+export type LayoutMode = 'desktop' | 'mobile'
 export function initialLayoutMode(
   width: number,
   storedMode?: string | null,

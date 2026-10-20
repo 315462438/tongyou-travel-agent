@@ -1,0 +1,161 @@
+{
+  "date": "2026-10-19",
+  "platform": "Android",
+  "version": "0.5.0",
+  "version_code": 8,
+  "scope": [
+    "trips",
+    "ledger",
+    "history",
+    "social",
+    "module sheets"
+  ],
+  "home_unchanged": {
+    "baseline": "0.4.1 (7) frozen APK",
+    "viewport": 390,
+    "themes": [
+      "light",
+      "dark"
+    ],
+    "checked": [
+      "position",
+      "size",
+      "font size",
+      "font weight",
+      "color"
+    ],
+    "passed": true
+  },
+  "modules_browser": [
+    {
+      "name": "light-320",
+      "passed": true,
+      "homeBaseline": false,
+      "tripPermissions": true,
+      "history": true,
+      "ledgerViewer": true,
+      "socialPublishing": true
+    },
+    {
+      "name": "light-390",
+      "passed": true,
+      "homeBaseline": true,
+      "tripPermissions": true,
+      "history": true,
+      "ledgerViewer": true,
+      "socialPublishing": true
+    },
+    {
+      "name": "light-430",
+      "passed": true,
+      "homeBaseline": false,
+      "tripPermissions": true,
+      "history": true,
+      "ledgerViewer": true,
+      "socialPublishing": true
+    },
+    {
+      "name": "dark-320",
+      "passed": true,
+      "homeBaseline": false,
+      "tripPermissions": true,
+      "history": true,
+      "ledgerViewer": true,
+      "socialPublishing": true
+    },
+    {
+      "name": "dark-390",
+      "passed": true,
+      "homeBaseline": true,
+      "tripPermissions": true,
+      "history": true,
+      "ledgerViewer": true,
+      "socialPublishing": true
+    },
+    {
+      "name": "dark-430",
+      "passed": true,
+      "homeBaseline": false,
+      "tripPermissions": true,
+      "history": true,
+      "ledgerViewer": true,
+      "socialPublishing": true
+    },
+    {
+      "name": "landscape",
+      "passed": true,
+      "homeBaseline": false,
+      "tripPermissions": true,
+      "history": true,
+      "ledgerViewer": true,
+      "socialPublishing": true
+    }
+  ],
+  "trip_browser": {
+    "light": [
+      "320",
+      "390",
+      "430",
+      "landscape"
+    ],
+    "dark": [
+      "390"
+    ],
+    "passed": true
+  },
+  "layout_regression": {
+    "cases": [
+      "android-small",
+      "android",
+      "android-large",
+      "web-phone",
+      "web-preview"
+    ],
+    "passed": true
+  },
+  "frontend_unit": {
+    "passed": 101,
+    "failed": 0
+  },
+  "frontend_build": "passed",
+  "frontend_lint": "passed with existing warnings",
+  "android_unit": {
+    "passed": 4,
+    "failed": 0
+  },
+  "android_lint": "passed",
+  "android_instrumentation": {
+    "passed": 11,
+    "failed": 0,
+    "device": "Android 15 emulator; local fixture data"
+  },
+  "upgrade": {
+    "from": "0.4.1 (7)",
+    "to": "0.5.0 (8)",
+    "same_signature": true,
+    "install_r": "Success"
+  },
+  "release": {
+    "apk": "17tongyou-android-0.5.0-8.apk",
+    "bytes": 2831548,
+    "sha256": "a97dd189457d2390f3bcaee196785fbd8d4253ace96cda6a75c4ea4b1fca10e0",
+    "packaged_assets_verified": true
+  },
+  "public_download": {
+    "url": "https://17tongyou.com/downloads/android/0.5.0-8/17tongyou-android-0.5.0-8.apk",
+    "bytes": 2831548,
+    "sha256": "a97dd189457d2390f3bcaee196785fbd8d4253ace96cda6a75c4ea4b1fca10e0",
+    "https_download": "passed",
+    "range": "passed",
+    "web_entry": "passed"
+  },
+  "other_deployments": {
+    "Web": false,
+    "iOS": false,
+    "API": false
+  },
+  "limitations": [
+    "Huawei/Xiaomi physical devices not available for this verification.",
+    "Android rendering approximates supplied iOS visual references; it does not use SwiftUI glass."
+  ]
+}

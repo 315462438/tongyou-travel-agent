@@ -1,0 +1,112 @@
+{
+  "status": "passed",
+  "android_version": "0.2.0 (2)",
+  "layout_cases": [
+    {
+      "name": "android-small",
+      "requestFlags": true,
+      "layoutSwitch": false,
+      "emptyTitleSave": true,
+      "keyboard": true,
+      "pages": 7
+    },
+    {
+      "name": "android",
+      "requestFlags": true,
+      "layoutSwitch": false,
+      "emptyTitleSave": true,
+      "keyboard": true,
+      "pages": 7
+    },
+    {
+      "name": "android-large",
+      "requestFlags": true,
+      "layoutSwitch": false,
+      "emptyTitleSave": true,
+      "keyboard": true,
+      "pages": 7
+    },
+    {
+      "name": "web-phone",
+      "requestFlags": true,
+      "layoutSwitch": true,
+      "emptyTitleSave": true,
+      "keyboard": false,
+      "pages": 7
+    },
+    {
+      "name": "web-preview",
+      "requestFlags": true,
+      "layoutSwitch": true,
+      "emptyTitleSave": true,
+      "keyboard": false,
+      "pages": 7
+    }
+  ],
+  "web_production": [
+    {
+      "name": "web-preview",
+      "requestFlags": true,
+      "layoutSwitch": true,
+      "emptyTitleSave": true,
+      "keyboard": false,
+      "pages": 7
+    }
+  ],
+  "download": {
+    "url": "https://17tongyou.com/downloads/android/0.2.0-2/17tongyou-android-0.2.0-2.apk",
+    "bytes": 2816808,
+    "sha256": "77767035d2d55cbb437d9f5b7f36bf470438124917db8c0e01f43d0d8b9117c8",
+    "https_download": "passed",
+    "range": "passed",
+    "web_entry": "passed"
+  },
+  "web_deployment": {
+    "previous_index_sha256": "a2971331b1791485e4f3d71b7290613c153dfa6450f8be482e6eaf1aa478b80a",
+    "new_index_sha256": "c530856a9b74932832dbfa11aa11a14e9e89eccb964d6b38d750a78175f5a729"
+  },
+  "frontend_unit_tests": 100,
+  "android_unit_tests": 4,
+  "native_emulator_tests": 4,
+  "android_bridge_groups": 8,
+  "web_mobile_widths": [
+    320,
+    390,
+    430
+  ],
+  "web_ledger_crud": [
+    "desktop",
+    "phone"
+  ],
+  "builds": [
+    "TypeScript/Vite",
+    "Android lintRelease",
+    "Android signed assembleRelease"
+  ],
+  "upgrade": {
+    "from": "0.1.0 (1)",
+    "to": "0.2.0 (2)",
+    "local_storage_unchanged": true
+  },
+  "screenshots": [
+    "/tmp/tongyou-android-final",
+    "/tmp/android-020-native-home.png",
+    "/tmp/android-020-native-keyboard.png",
+    "/tmp/tongyou-web-production-020"
+  ],
+  "limitations": [
+    "HarmonyOS 卓易通真机尚未实测",
+    "模拟器 Android 15；最低 API 26 由 lint/兼容 API 检查，未在 API 26 真机运行"
+  ],
+  "ios": "unchanged 1.0.6 (7)",
+  "backend_restarted": false,
+  "logs": [
+    "/tmp/android-020-build.log",
+    "/tmp/android-020-native.log",
+    "/tmp/android-final-layout.log",
+    "/tmp/android-020-production.log",
+    "/tmp/android-020-bridge.log",
+    "/tmp/android-020-ledger.log",
+    "/tmp/android-020-web-mobile.log"
+  ]
+}

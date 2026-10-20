@@ -66,7 +66,7 @@ final class ChatStore {
     var error: String?
     var deepReasoning = false
     /// Search the web before quick answers; remembered across conversations.
-    var webSearch = UserDefaults.standard.bool(forKey: "webSearch") {
+    var webSearch = ChatPreferences.webSearch() {
         didSet { UserDefaults.standard.set(webSearch, forKey: "webSearch") }
     }
     /// Conversation title, used to name exported guides.

@@ -1,0 +1,12 @@
+自动化验收
+1. UpdateInfoTest（4项）：只接受更高且兼容的versionCode；同/低版不提示；24h延后同版、新版突破旧延后；官方固定HTTPS版本APK路径、SHA/大小/版本字段合法性。
+2. UpdateInstrumentedTest（6项，Android 15模拟器，假更新源）：解析合法/停用/错误包/平台/格式/超大JSON；稍后持久化及暖恢复/重新创建不重复；弹窗浅深跟随系统、下载动作收到准确官方URL并保留输入；断网静默；后台等待前台展示、close不再弹；登录页系统深浅切换保留输入。
+3. HostInstrumentedTest（既有11项）：首屏启动/超时恢复/关闭动画/暖恢复/草稿、五模块系统主题、键盘、分层返回、文件选择/导出/PDF等。
+4. android/tests/test_update_manifest.py（5项）：生成公共清单不泄漏内部字段、错误包/版本/损坏APK拒绝；运行真实远端发布脚本（本地临时目录）检验先APK后清单、重试幂等、禁止降级和同版替换，失败保留原清单与APK。
+5. 构建与检查：Android单测8项、lint、release/debug/test APK；前端单测101项和生产资源构建（bundleWeb）；APK签名与所有内置资源SHA校验。
+6. 发布与升级：0.5.0 (8)→0.6.0 (9)同签名覆盖安装；验证公网HTTPS APK 200/Range206/SHA/长度，latest.json元数据/地址/hash/version与安装包一致；Web入口200。
+运行
+JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home GRADLE=/tmp/tongyou-android-tools/gradle-8.11.1/bin/gradle python3 android/scripts/test-emulator.py --serial emulator-5556
+python3 -m unittest discover -s android/tests -v
+backend/.venv/bin/python android/scripts/verify-download.py --release 0.6.0-9 --latest
+约束：模拟器假源模拟未来0.7.0，只用于测试；不得把不存在或未验收的未来版本发布到真实latest清单。公开清单仅指向最终0.6.0。无真实账号业务写入。未实测华为/小米实体设备的浏览器安装流程。

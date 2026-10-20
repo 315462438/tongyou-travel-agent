@@ -1,0 +1,210 @@
+{
+  "android_version": "0.3.0 (4)",
+  "status": "passed",
+  "frontend_unit_tests": 101,
+  "frontend_lint": "passed with existing warnings",
+  "android_unit_tests": 4,
+  "android_lint_release": "passed",
+  "android_browser": [
+    {
+      "name": "android-320",
+      "firstStop": {
+        "x": 16,
+        "y": 600.171875,
+        "width": 288,
+        "height": 205.1875
+      },
+      "layout": true,
+      "CRUD": true,
+      "map": true,
+      "tools": true,
+      "sheets": true,
+      "nativeBack": true,
+      "longTrip": true,
+      "errors": []
+    },
+    {
+      "name": "android-390",
+      "firstStop": {
+        "x": 16,
+        "y": 569.171875,
+        "width": 358,
+        "height": 205.1875
+      },
+      "layout": true,
+      "CRUD": true,
+      "map": true,
+      "tools": true,
+      "sheets": true,
+      "nativeBack": true,
+      "longTrip": true,
+      "errors": []
+    },
+    {
+      "name": "android-430",
+      "firstStop": {
+        "x": 16,
+        "y": 569.171875,
+        "width": 398,
+        "height": 205.1875
+      },
+      "layout": true,
+      "CRUD": true,
+      "map": true,
+      "tools": true,
+      "sheets": true,
+      "nativeBack": true,
+      "longTrip": true,
+      "errors": []
+    },
+    {
+      "name": "android-landscape",
+      "firstStop": {
+        "x": 16,
+        "y": 569.171875,
+        "width": 812,
+        "height": 182.09375
+      },
+      "layout": true,
+      "CRUD": true,
+      "map": true,
+      "tools": true,
+      "sheets": true,
+      "nativeBack": true,
+      "longTrip": true,
+      "errors": []
+    }
+  ],
+  "apk_snapshot_browser": [
+    {
+      "name": "android-320",
+      "firstStop": {
+        "x": 16,
+        "y": 600.171875,
+        "width": 288,
+        "height": 205.1875
+      },
+      "layout": true,
+      "CRUD": true,
+      "map": true,
+      "tools": true,
+      "sheets": true,
+      "nativeBack": true,
+      "longTrip": true,
+      "errors": []
+    },
+    {
+      "name": "android-390",
+      "firstStop": {
+        "x": 16,
+        "y": 569.171875,
+        "width": 358,
+        "height": 205.1875
+      },
+      "layout": true,
+      "CRUD": true,
+      "map": true,
+      "tools": true,
+      "sheets": true,
+      "nativeBack": true,
+      "longTrip": true,
+      "errors": []
+    },
+    {
+      "name": "android-430",
+      "firstStop": {
+        "x": 16,
+        "y": 569.171875,
+        "width": 398,
+        "height": 205.1875
+      },
+      "layout": true,
+      "CRUD": true,
+      "map": true,
+      "tools": true,
+      "sheets": true,
+      "nativeBack": true,
+      "longTrip": true,
+      "errors": []
+    },
+    {
+      "name": "android-landscape",
+      "firstStop": {
+        "x": 16,
+        "y": 569.171875,
+        "width": 812,
+        "height": 182.09375
+      },
+      "layout": true,
+      "CRUD": true,
+      "map": true,
+      "tools": true,
+      "sheets": true,
+      "nativeBack": true,
+      "longTrip": true,
+      "errors": []
+    }
+  ],
+  "web_workspace_regression": [
+    {
+      "name": "desktop",
+      "overflow": false,
+      "errors": [],
+      "editDrawer": true,
+      "moreActions": true,
+      "datePopover": true,
+      "dateSave": true,
+      "drawerControlsVisible": true
+    },
+    {
+      "name": "phone",
+      "overflow": false,
+      "errors": [],
+      "editDrawer": true,
+      "moreActions": true,
+      "datePopover": true,
+      "dateSave": true,
+      "drawerControlsVisible": true
+    }
+  ],
+  "other_layout_regression": [
+    "android-small: passed",
+    "android: passed",
+    "android-large: passed",
+    "web-phone: passed",
+    "web-preview: passed"
+  ],
+  "native_instrumentation": {
+    "tests": 5,
+    "status": "passed",
+    "additional_trip_screenshot_test": "passed",
+    "screenshots": [
+      "/tmp/android-trip-native.png",
+      "/tmp/android-trip-native-keyboard.png"
+    ]
+  },
+  "upgrade": {
+    "from": "0.2.0 (2)",
+    "to": "0.3.0 (4)",
+    "adb_install_r": "Success",
+    "same_release_certificate": true
+  },
+  "apk": {
+    "bytes": 2821952,
+    "sha256": "b3fb27d17ac17d2f636b722a108a82b2c92c2f53ae66352d9b0207d19a66629f",
+    "apk": "17tongyou-android-0.3.0-4.apk"
+  },
+  "public_download": {
+    "url": "https://17tongyou.com/downloads/android/0.3.0-4/17tongyou-android-0.3.0-4.apk",
+    "bytes": 2821952,
+    "sha256": "b3fb27d17ac17d2f636b722a108a82b2c92c2f53ae66352d9b0207d19a66629f",
+    "https_download": "passed",
+    "range": "passed",
+    "web_entry": "passed"
+  },
+  "deployment_scope": "Versioned Android APK only; no Web, iOS or backend deployment",
+  "limitations": [
+    "Android 15 emulator and Chromium viewport testing; no physical Huawei device tested",
+    "Maps API mocked in browser tests; production map provider unchanged"
+  ]
+}

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { API, authFetch } from '../api'
 import Aurora from './Aurora'
+import { isAndroidApp, useAndroidBack } from '../nativeAndroid'
 
 export type SocialTab = 'station' | 'friends' | 'profile'
 type TravelPhase = 'planning' | 'on_trip' | 'returned'
@@ -99,6 +100,8 @@ export default function SocialHub({
   initialDestination?: string
 }) {
   const startDestination = initialDestination.trim() || '天堂寨'
+  const android = isAndroidApp()
+  const [androidSearchOpen, setAndroidSearchOpen] = useState(false)
   const [tab, setTab] = useState<SocialTab>(initialTab)
   const [destination, setDestination] = useState(startDestination)
   const [destinationDraft, setDestinationDraft] = useState(startDestination)
@@ -120,6 +123,12 @@ export default function SocialHub({
   const [postDestination, setPostDestination] = useState(startDestination)
   const [content, setContent] = useState('')
   const [busy, setBusy] = useState(false)
+  useAndroidBack(() => {
+    if (composerOpen) { setComposerOpen(false); return true }
+    if (tab !== 'station') { setTab('station'); return true }
+    if (androidSearchOpen) { setAndroidSearchOpen(false); return true }
+    onClose(); return true
+  }, 30)
   const avatarInputRef = useRef<HTMLInputElement>(null)
   const reducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
@@ -384,7 +393,7 @@ export default function SocialHub({
   const myProfile = viewProfile?.id === profile?.id
 
   return (
-    <div className="social-overlay" role="dialog" aria-modal="true" aria-label="17同游社交中心">
+    <div className="social-overlay" role={android ? 'region' : 'dialog'} aria-modal={android ? undefined : true} aria-label="17同游社交中心">
       <aside className="social-rail">
         <div className="social-brand"><span>17</span><div><b>同游圈</b><small>真实旅行者接力</small></div></div>
         <nav aria-label="社交中心导航">
@@ -398,14 +407,23 @@ export default function SocialHub({
 
       <main className="social-main">
         <header className="social-topbar">
-          <div><span>17同游 · 一起规划，也把经验留给下一位</span></div>
+          <div><h1 className="mobile-social-title">同游圈</h1><span>17同游 · 一起规划，也把经验留给下一位</span></div>
+          {android && <details className="android-social-menu"><summary aria-label="同游圈更多">•••</summary><div>
+            <button onClick={e => {setTab('station'); e.currentTarget.closest('details')?.removeAttribute('open')}}>目的地接力站</button>
+            <button onClick={e => {setTab('friends'); e.currentTarget.closest('details')?.removeAttribute('open')}}>好友{friends.received.length > 0 ? ` · ${friends.received.length} 个申请` : ''}</button>
+            <button onClick={e => {setViewProfile(profile);setTab('profile'); e.currentTarget.closest('details')?.removeAttribute('open')}}>我的主页</button>
+          </div></details>}
           <button className="social-close" onClick={onClose} aria-label="关闭同游圈">关闭 <b>×</b></button>
         </header>
         {error && <div className="social-error" role="alert"><span>{error}</span><button onClick={() => setError('')}>×</button></div>}
 
         {tab === 'station' && (
           <div className="station-page">
-            <section className="station-hot">
+            {android && <nav className="android-station-cities" aria-label="目的地选择">
+              {[...new Set([destination, '天堂寨', ...hotDestinations])].map(city => <button key={city} aria-pressed={city === destination} onClick={() => enterDestination(city)}>{city}</button>)}
+              <button aria-label="搜索其他目的地" aria-expanded={androidSearchOpen} onClick={() => setAndroidSearchOpen(v => !v)}>＋ 其他</button>
+            </nav>}
+            {!android && <section className="station-hot">
               {!reducedMotion && <Aurora className="station-hot-aurora" colorStops={['#46d6a0', '#7397ff', '#bd71e8']} amplitude={0.72} blend={0.62} speed={0.42} />}
               <header><div><small>{hotIsLive ? '近 30 天真实热问' : '本期旅行灵感'}</small><h1>最近大家都想去</h1></div><p>点一个热门目的地，看看旅行者留下的真实近况。</p></header>
               <div className="station-hot-grid">
@@ -421,9 +439,9 @@ export default function SocialHub({
                   )
                 })}
               </div>
-            </section>
+            </section>}
 
-            <section className="station-search-panel">
+            {(!android || androidSearchOpen) && <section className="station-search-panel">
               <div className="station-search-copy"><small>没有你想去的？</small><b>搜索任意目的地</b></div>
               <form className="station-search" onSubmit={(event) => { event.preventDefault(); enterDestination() }}>
                 <span aria-hidden>⌕</span>
@@ -431,8 +449,11 @@ export default function SocialHub({
                 <button type="submit" disabled={!destinationDraft.trim()} aria-label="查看目的地接力"><span>查看接力</span><b aria-hidden>→</b></button>
               </form>
               <button className="relay-compose-trigger" onClick={() => { setPostDestination(destination); setComposerOpen(true) }}>＋ 发接力</button>
-            </section>
+            </section>}
 
+            {android && <div className="android-relay-actions" aria-label="发布旅行接力">
+              {(['question','condition','route'] as RelayKind[]).map(kind => <button key={kind} onClick={() => {setPostKind(kind);setPostDestination(destination);setComposerOpen(true)}}><span aria-hidden>{KIND_COPY[kind].icon}</span>{kind === 'question' ? '问一个问题' : kind === 'condition' ? '报个现场' : '分享路线'}</button>)}
+            </div>}
             {composerOpen && (
               <section className="relay-composer">
                 <div className="relay-composer-head"><Avatar user={profile || { display_name: '我', username: 'me', avatar_url: '' }} /><div><b>你想留下什么？</b><small>选一种就可以，不用理解复杂分类</small></div></div>
@@ -448,7 +469,7 @@ export default function SocialHub({
             )}
 
             <section className="station-current">
-              <div><small>正在浏览</small><h2>{destination}</h2><span>{Object.values(phaseCounts).reduce((sum, value) => sum + value, 0)} 条旅行者接力</span></div>
+              <div><small>正在浏览</small><h2>{destination}</h2>{android && <p className="android-station-description">真实旅行者接力：出发前问一问，到了报现场，回来分享路线。</p>}<span>{Object.values(phaseCounts).reduce((sum, value) => sum + value, 0)} 条旅行者接力</span></div>
               <div className="station-phase-tabs" aria-label="旅行阶段筛选">
                 <button className={phase === 'all' ? 'active' : ''} onClick={() => setPhase('all')}>全部 <b>{Object.values(phaseCounts).reduce((sum, value) => sum + value, 0)}</b></button>
                 {(Object.entries(PHASE_COPY) as [TravelPhase, { label: string; hint: string }][]).map(([key, value]) => <button className={phase === key ? 'active' : ''} key={key} onClick={() => setPhase(key)}>{value.label} <b>{phaseCounts[key]}</b></button>)}

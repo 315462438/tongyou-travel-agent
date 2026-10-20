@@ -1,0 +1,20 @@
+微信 iPhone 邀请唤起修复用例
+
+1. 微信 UA：立即显示 Safari 指引，无误导性的自定义协议唤起按钮。
+2. 点击复制：完整 HTTPS 链接带 ledger_join；剪贴板拒绝时显示可长按选择的完整 URL。
+3. 隔离浏览器：取微信当前 URL，新建无任何原 localStorage 的 Safari 上下文，仍展示同一
+   邀请，App 链接 token 一致。
+4. 旧页面恢复：只有 pending token、URL 无参数时，加载后恢复可跨浏览器的完整邀请 URL。
+5. 取消：清除 URL 和 localStorage；成功加入同样清理；登录阶段保留且不自动加入。
+6. 混合账本/行程 URL 不会误加入行程；过期链接不能加入；既有成员权限不变。
+7. Safari/Android/桌面入口与 Android 宿主返回/分享/断网契约回归。
+
+命令（frontend/，已有 Vite :4181）：
+PLAYWRIGHT_MODULE=<playwright/index.mjs> node tests/link-opening-browser.mjs
+PLAYWRIGHT_MODULE=<playwright/index.mjs> LEDGER_QA_URL=http://127.0.0.1:4181/travel/ node tests/ledger-collaboration-browser.mjs
+PLAYWRIGHT_MODULE=<playwright/index.mjs> node tests/android-browser.mjs
+npx tsc -b && npm test && npm run build
+
+业务 API 使用 mock，未对线上成员/账本做修改。生产资源发布后再运行入口测试验证部署。
+
+全部通过，结果与发布摘要见 wechat-ledger-app-opening-fix-results-2026-10-19.json。

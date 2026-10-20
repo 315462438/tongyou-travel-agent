@@ -1,0 +1,17 @@
+网页手机版玻璃效果验收
+
+运行：npm --prefix frontend run build，4179 端口运行 npm run preview；
+PLAYWRIGHT_MODULE=/tmp/tongyou-qa/node_modules/playwright/index.mjs npm --prefix frontend run test:mobile:glass
+同样运行 test:mobile、test:workspace、test:ledger 与 npm --prefix frontend test。
+
+专用浏览器用例（320/390/430 × 844，模拟接口，无线上数据写入）：
+1. 底栏实时模糊 20px，输入卡 12px；选中胶囊不增加嵌套模糊，且 pointer-events:none。
+2. 导航后等待真实 transform 结束，校验胶囊按一格移动并对齐选中按钮，而非仅检查 CSS 文本。
+3. 40 张行程卡均无 backdrop-filter；滚到最后一张时整张卡位于底栏上方，elementFromPoint 可命中。
+4. 手机宽度没有页面横向溢出。
+5. 新建账本弹层使用 16px 模糊；全屏遮罩无模糊，动效完成后保存按钮可命中。
+6. 同时模拟减少透明度和减少动态：卡片、底栏、弹层变为实底；模糊取消，底栏移动无过渡，弹层无入场动画。
+7. 截取首页/行程/弹层截图并人工查看；无 JavaScript 错误。
+
+回归：原五项导航、账户和历史搜索、键盘视口；桌面/手机日期弹层与地点抽屉；账本/账单增删改、分类直接保存、汇率失败与重试。
+限制：未做 iPhone Safari 和安卓真机 FPS 测试，不能据此宣称达到原生系统帧率。旧浏览器通过 @supports 使用实底；本机未安装旧引擎，降级分支为样式审查。

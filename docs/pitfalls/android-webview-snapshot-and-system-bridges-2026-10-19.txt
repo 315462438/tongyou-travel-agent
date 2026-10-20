@@ -1,0 +1,28 @@
+Android WebView 测试版：固定网页版本与系统桥接
+
+现象/风险
+1. 直接加载线上首页会使安装在朋友手机上的 APK 随网页部署改变，难以区分三端版本。
+2. React 页面主要用组件 state 和 replaceState 切换，WebView.goBack() 不代表退回上一层界面。
+3. 网页 blob 下载后立即 revokeObjectURL；Android DownloadManager 不认识 blob URL。
+4. File input、window.open 的打印预览、JS confirm、分享都需要宿主显式接管。
+5. 本机只有 Java，没有 Android SDK。首次构建还要安装 SDK/build-tools 与模拟器镜像，
+   SDK/Gradle 大文件下载慢不能误认成代码构建卡死。
+
+处理
+1. Android 构建使用独立 outDir，保存网页资源清单及逐文件 hash，打包进 APK。
+   shouldInterceptRequest 只精确匹配该清单，不匹配 API/用户资源，线上接口始终联网。
+   origin 保持自有 HTTPS 域名，现有同源 API、登录、分享链接无需改域名。
+2. 原生 Back 先收起输入法/打印预览，再委托 Android-only 网页返回栈。
+   模态窗先处理取消，账本详情退列表、行程创建先收起，首页再次返回才退后台。
+3. 延迟释放 blob，在页面内读取并限制 20 MB，经受限来源消息桥交给系统文档保存器或
+   FileProvider 分享。密钥/会话令牌不经任意第三方 URL 发送。
+4. 桥使用 WebViewCompat.addWebMessageListener，限制 exact origin 并只处理主框架，
+   不用不区分 iframe 来源的 addJavascriptInterface。外部链接由浏览器处理。
+5. 下载保留临时文件、核验官方校验值；先验证浏览器逻辑，再做真实 WebView 仪器测试。
+
+验证入口：frontend/tests/android-browser.mjs、android/app/src/androidTest/、
+android/app/src/test/ 与 android/scripts/package-release.py。
+
+首次 lint 发现 windowLightNavigationBar 是 API 27 属性，不能放在 minSdk 26 的通用主题。
+已拆为基础主题（Android 8.0 深色导航栏）与 values-v27 覆盖（浅色导航栏/深色图标），
+没有通过忽略 NewApi 检查来绕过兼容性问题。

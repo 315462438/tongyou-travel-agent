@@ -1,0 +1,5 @@
+现象：将桌面社交侧栏移到手机顶部后，绝对定位的标题仍相对 social-main 定位，会落在二级导航下面；弹层若留在页面原来的 stacking context，底栏可能覆盖弹层按钮。
+原因：social-main 的既有 position:relative 成为标题定位容器；底栏的 z-index 高于页面本身，单纯提高页面内弹层的 z-index 无法跨越祖先层级。
+处理：仅在 app.view-mobile 下取消 social-main 定位，让标题相对全屏 social-overlay；行程出现 .modal-mask 或账本出现实际的 .ledger-modal-backdrop 时提升页面层级。不要猜 mask 类名，按 JSX 实际结构设置。
+验证：浏览器测试使用 elementFromPoint 检查主导航和保存按钮真实命中目标，不能只检查 DOM 存在或尺寸。历史记录点击要同步清除 mobilePanel，否则底下会话已加载而用户仍看到列表。
+补充：登录从“登机”改为“登录”后，原账本分享 E2E 测试定位器也需跟随产品文案更新，保持登录后显式加入的断言不变。

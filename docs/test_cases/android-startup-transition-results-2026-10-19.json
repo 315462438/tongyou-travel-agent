@@ -1,0 +1,81 @@
+{
+  "date": "2026-10-19",
+  "scope": "只增加Android启动动画与启动就绪/失败恢复；保持0.4.0页面UI，Web/iOS未部署",
+  "release": {
+    "version": "0.4.1",
+    "version_code": 7,
+    "apk": "17tongyou-android-0.4.1-7.apk",
+    "bytes": 2827660,
+    "sha256": "3e1a99c2711faf78f8627abd69a245a28f6b89ff77b5a2d1d4aa57ba521bc3fd"
+  },
+  "existing_css_unchanged": true,
+  "browser": [
+    {
+      "mode": "slow-auth",
+      "passed": true
+    },
+    {
+      "mode": "slow-chunk",
+      "passed": true
+    },
+    {
+      "mode": "guest",
+      "passed": true
+    },
+    {
+      "mode": "offline",
+      "passed": true
+    },
+    {
+      "mode": "timeout",
+      "passed": true
+    },
+    {
+      "mode": "expired",
+      "passed": true
+    },
+    {
+      "mode": "invite",
+      "passed": true
+    },
+    {
+      "mode": "web",
+      "passed": true
+    }
+  ],
+  "frontend_unit": {
+    "passed": 101,
+    "failed": 0
+  },
+  "frontend_lint": "passed with existing warnings",
+  "android_build": "passed",
+  "android_unit": {
+    "passed": 4
+  },
+  "android_lint_release": "passed",
+  "signature_and_web_snapshot": "passed",
+  "native_tests": {
+    "passed": 10,
+    "failed": 0,
+    "device": "Android 15 emulator",
+    "log": "/tmp/android-startup-native-final.log",
+    "screenshots": [
+      "/tmp/android-startup-light.png",
+      "/tmp/android-startup-dark.png"
+    ]
+  },
+  "upgrade": {
+    "from": "0.4.0 (6)",
+    "to": "0.4.1 (7)",
+    "result": "Success",
+    "installed_version_code": 7
+  },
+  "download": {
+    "url": "https://17tongyou.com/downloads/android/0.4.1-7/17tongyou-android-0.4.1-7.apk",
+    "bytes": 2827660,
+    "sha256": "3e1a99c2711faf78f8627abd69a245a28f6b89ff77b5a2d1d4aa57ba521bc3fd",
+    "https_download": "passed",
+    "range": "passed",
+    "web_entry": "passed"
+  }
+}

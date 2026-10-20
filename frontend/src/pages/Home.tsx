@@ -1,5 +1,10 @@
+import { isAndroidApp, useAndroidBack } from '../nativeAndroid'
 import { isValidElement, lazy, memo, Suspense, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import './Mobile.css'
+import './MobileGlass.css'
+import './AndroidHome.css'
+import './AndroidModules.css'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { BrandIcon, BrandWordmark } from '../components/Brand'
@@ -20,7 +25,7 @@ import {
   headingAnchor,
   inferThinkingMode,
   initialLayoutMode,
-  initialThemeMode,
+  initialWebSearch,
   latestLine,
   expectedSecondsFor,
   MAX_PROMPT_LENGTH,
@@ -45,7 +50,6 @@ import {
   pickImageFiles,
   type PendingImage,
   type LayoutMode,
-  type ThemeMode,
 } from '../interaction'
 
 const TripsOverlay = lazy(() => import('./Trips'))
@@ -288,6 +292,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
   const [showSocial, setShowSocial] = useState(false)
   const [socialLaunch, setSocialLaunch] = useState<{ tab: SocialTab; destination: string }>({ tab: 'station', destination: '天堂寨' })
   const openSocial = useCallback((tab: SocialTab = 'station', destination = '天堂寨') => {
+    setMobilePanel(null)
     setSocialLaunch({ tab, destination })
     setShowSocial(true)
   }, [])
@@ -311,13 +316,15 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
     })
   }, [])
   // 联网搜索开关（2026-10-16）：开则快速回答/闲聊先联网搜再答。记住上次的选择。
-  const [webSearch, setWebSearch] = useState(() => localStorage.getItem('travel_web_search') === '1')
+  const [webSearch, setWebSearch] = useState(() => initialWebSearch(localStorage.getItem('travel_web_search')))
   const toggleWebSearch = useCallback(() => {
     setWebSearch((w) => {
       localStorage.setItem('travel_web_search', w ? '0' : '1')
       return !w
     })
   }, [])
+  const [mobilePanel, setMobilePanel] = useState<'history' | 'account' | null>(null)
+  const [keyboardOpen, setKeyboardOpen] = useState(false)
   const [showMemories, setShowMemories] = useState(false)
   // 协同板开关/当前 board 存进 URL hash，刷新后恢复（否则回主对话）
   const [showLedger, setShowLedger] = useState(() => !!localStorage.getItem('travel_open_ledger'))
@@ -471,7 +478,6 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
   //   ② 本次会话点过「稍后」就不再弹，但**没确认**的公告下次进来还会弹
   const [annDismissed, setAnnDismissed] = useState(false)
   const showAnnModal = annUnread > 0 && !annDismissed && !running && !showAnn && !showNotifications
-  const [collapsed, setCollapsed] = useState(() => window.innerWidth <= 720)  // 手机默认收起（抽屉式）
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(() => (
     initialLayoutMode(
       window.innerWidth,
@@ -479,9 +485,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
       window.matchMedia('(pointer: coarse)').matches,
     )
   ))
-  const [themeMode, setThemeMode] = useState<ThemeMode>(() => (
-    initialThemeMode(localStorage.getItem('travel_theme_mode'))
-  ))
+  const [collapsed, setCollapsed] = useState(() => layoutMode === 'mobile' || window.innerWidth <= 720)
   const [search, setSearch] = useState('')
   const pollRef = useRef<number | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -509,12 +513,48 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
       else if (showSkills) setShowSkills(false)
       else if (showMemories) setShowMemories(false)
       else if (showSocial) setShowSocial(false)
+      else if (mobilePanel) setMobilePanel(null)
       else if (showTrips) return
       else if (window.innerWidth <= 720 && !collapsed) setCollapsed(true)
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [collapsed, showAdmin, showAnn, showMemories, showNotifications, showSkills, showSocial, showSupport, showTrips, traceFor])
+  }, [collapsed, mobilePanel, showAdmin, showAnn, showMemories, showNotifications, showSkills, showSocial, showSupport, showTrips, traceFor])
+  useEffect(() => {
+    const update = () => {
+      const viewport = window.visualViewport
+      const focused = document.activeElement?.matches('input, textarea, [contenteditable="true"]')
+      setKeyboardOpen(layoutMode === 'mobile' && !!focused && !!viewport && window.innerHeight - viewport.height > 140)
+    }
+    window.visualViewport?.addEventListener('resize', update)
+    document.addEventListener('focusin', update)
+    document.addEventListener('focusout', update)
+    return () => {
+      window.visualViewport?.removeEventListener('resize', update)
+      document.removeEventListener('focusin', update)
+      document.removeEventListener('focusout', update)
+    }
+  }, [layoutMode])
+  useAndroidBack(() => {
+    if (showNotifications) setShowNotifications(false)
+    else if (traceFor) setTraceFor(null)
+    else if (showAnn) setShowAnn(false)
+    else if (showSupport) setShowSupport(false)
+    else if (showAdmin) setShowAdmin(false)
+    else if (showSkills) setShowSkills(false)
+    else if (showConnectors) setShowConnectors(false)
+    else if (showMemories) setShowMemories(false)
+    else return false
+    return true
+  }, 50)
+  useAndroidBack(() => {
+    if (showSocial) setShowSocial(false)
+    else if (mobilePanel) setMobilePanel(null)
+    else if (!collapsed) setCollapsed(true)
+    else if (cid) { newChat() }
+    else return false
+    return true
+  }, 10)
   const trackChange = useCallback((msgs: Msg[]) => {
     const last = msgs[msgs.length - 1]
     const sig = `${msgs.length}:${last ? (last.content?.length ?? 0) + (last.reasoning?.length ?? 0) : 0}`
@@ -624,6 +664,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
 
   const selectConv = useCallback(
     async (id: string) => {
+      setMobilePanel(null)
       stopPoll()
       if (window.innerWidth <= 720) setCollapsed(true)  // 手机：选完自动收抽屉
       setCid(id)
@@ -641,6 +682,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
   )
 
   const newChat = useCallback(() => {
+    setMobilePanel(null)
     stopPoll()
     if (window.innerWidth <= 720) setCollapsed(true)
     setCid(null)
@@ -650,6 +692,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
 
   // 移动底栏是一级导航，不是叠加按钮：切换入口时必须关闭上一层全屏视图。
   const openMobileChat = useCallback(() => {
+    setMobilePanel(null)
     setShowLedger(false)
     setShowSocial(false)
     setShowTrips(false)
@@ -663,6 +706,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
   }, [newChat])
 
   const openMobileTrips = useCallback(() => {
+    setMobilePanel(null)
     setShowLedger(false)
     setShowSocial(false)
     setShowMemories(false)
@@ -674,6 +718,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
   }, [])
 
   const openLedger = () => {
+    setMobilePanel(null)
     setLedgerTrip(null); setLedgerBookID(null)
     setShowTrips(false); setShowSocial(false); setShowMemories(false)
     setShowSkills(false); setShowAdmin(false); setTraceFor(null)
@@ -682,6 +727,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
   }
 
   const openMobileHistory = useCallback(() => {
+    setMobilePanel('history')
     setShowLedger(false)
     setShowSocial(false)
     setShowTrips(false)
@@ -690,10 +736,11 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
     setShowSkills(false)
     setShowAdmin(false)
     setTraceFor(null)
-    setCollapsed(false)
+    setCollapsed(true)
   }, [])
 
   const openMobileSocial = useCallback(() => {
+    setMobilePanel(null)
     setShowLedger(false)
     setShowTrips(false)
     setTripsBoard(null)
@@ -708,12 +755,8 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
   const changeLayoutMode = useCallback((mode: LayoutMode) => {
     localStorage.setItem('travel_layout_mode', mode)
     setLayoutMode(mode)
-    setCollapsed(mode === 'mobile')
-  }, [])
-
-  const changeThemeMode = useCallback((mode: ThemeMode) => {
-    localStorage.setItem('travel_theme_mode', mode)
-    setThemeMode(mode)
+    setMobilePanel(null)
+    setCollapsed(mode === 'mobile' || window.innerWidth <= 720)
   }, [])
 
   const deleteConv = useCallback(
@@ -940,10 +983,12 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
     const r = m.meta?.confirm_reply
     if (m.role === 'action' && r) confirmReplies.set(r.confirm_id, r.choice)
   }
+  const mobileActive = showTrips ? 'trips' : showLedger ? 'ledger' : showSocial ? 'social' : mobilePanel === 'history' || !empty ? 'history' : 'home'
+  const greeting = `${new Date().getHours() < 11 ? '早上好' : new Date().getHours() < 18 ? '下午好' : '晚上好'}，${user.display_name || user.username}`
   const activeConversationTitle = convs.find((conv) => conv.id === cid)?.title || (empty ? '开始新旅程' : '旅行规划')
 
   return (
-    <div className={`app view-${layoutMode} theme-${themeMode}${collapsed ? ' collapsed' : ''}`}>
+    <div className={`app view-${layoutMode}${collapsed ? ' collapsed' : ''}${keyboardOpen ? ' keyboard-open' : ''}`}>
       {user.must_change_password && <AdminPasswordBanner onDone={onPasswordChanged} />}
       {!collapsed && <button className="sidebar-scrim" aria-label="关闭侧栏" onClick={() => setCollapsed(true)} />}
       <aside className="sidebar">
@@ -1154,7 +1199,8 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
 
       <main className="main">
         <header className="app-topbar">
-          <button className="mobile-menu-button" aria-label="打开历史对话" onClick={() => setCollapsed(false)}>
+          <button className="mobile-menu-button" aria-label="我的" onClick={() => setMobilePanel('account')}>
+            <span className="mobile-account-avatar">{user.avatar_url ? <img src={user.avatar_url} alt="" /> : (user.display_name || user.username).slice(0, 1)}</span>
             <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round">
               <path d="M4 7h16M4 12h16M4 17h16" />
             </svg>
@@ -1177,20 +1223,6 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
               <path d="M9.5 20a2.5 2.5 0 0 0 5 0" />
             </svg>
             {notificationUnread > 0 && <b className="bell-count">{notificationUnread > 99 ? '99+' : notificationUnread}</b>}
-          </button>
-          <button
-            className={`theme-toggle${themeMode === 'ink' ? ' active' : ''}`}
-            type="button"
-            aria-pressed={themeMode === 'ink'}
-            aria-label={themeMode === 'ink' ? '切换到现代主题' : '切换到水墨主题'}
-            title={themeMode === 'ink' ? '切换到现代主题' : '切换到水墨主题'}
-            onClick={() => changeThemeMode(themeMode === 'ink' ? 'modern' : 'ink')}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-              <path d="M4 19c3.6-1.1 5.8-3.2 6.5-6.4L17.8 5l2.2 2.2-7.6 7.3C9.2 15.2 7.1 17.4 6 21" />
-              <path d="M14.5 8.4l2.9 2.9" />
-            </svg>
-            <span>{themeMode === 'ink' ? '现代主题' : '水墨主题'}</span>
           </button>
           <div className="layout-switch" role="group" aria-label="界面视图">
             <button
@@ -1217,9 +1249,9 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
           <div className="hero">
             <div className="hero-soft-glow" aria-hidden />
             <div className="hero-content">
-              <div className="hero-eyebrow">17同游 · 一起规划，一起出发</div>
-              <h1 className="hero-title">想去哪儿，就从这里出发</h1>
-              <p className="hero-sub">说一个目的地、贴一篇攻略，或者直接问我旅行问题。</p>
+              <div className="hero-eyebrow">{layoutMode === 'mobile' ? greeting : '17同游 · 一起规划，一起出发'}</div>
+              <h1 className="hero-title">想去哪儿，<br className="mobile-title-break" />就从这里出发</h1>
+              <p className="hero-sub">{isAndroidApp() ? '说个目的地，或贴一篇攻略。' : '说一个目的地、贴一篇攻略，或者直接问我旅行问题。'}</p>
               <InspirationLaunchpad
                 running={running}
                 suggestions={starterChips.slice(0, 4)}
@@ -1233,6 +1265,10 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
                 onAddImages={addImages}
                 onRemoveImage={(id) => setPendingImages((cur) => removePendingImage(cur, id))}
                 uploading={uploadingImage}
+                deep={deep}
+                webSearch={webSearch}
+                onToggleDeep={toggleDeep}
+                onToggleWebSearch={toggleWebSearch}
               />
             </div>
           </div>
@@ -1321,21 +1357,46 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
           />
         </Suspense>
       )}
-      <nav className="mobile-bottom-nav" aria-label="移动端主导航">
-        <button className={empty && !showTrips && !showMemories && !showSocial && !showLedger ? 'active' : ''} onClick={openMobileChat}>
+      {layoutMode === 'mobile' && mobilePanel && <section className="mobile-page" aria-label={mobilePanel === 'history' ? '历史记录' : '我的账户'}>
+        <header className="mobile-page-header"><h1>{mobilePanel === 'history' ? '历史' : '我的'}</h1><button onClick={() => setMobilePanel(null)} aria-label="关闭页面">完成</button></header>
+        {mobilePanel === 'history' ? <>
+          <label className="mobile-history-search">{isAndroidApp() ? <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 5 5" /></svg> : <NavIcon name="history" />}<input aria-label="搜索历史对话" placeholder="搜索对话" value={search} onChange={e => setSearch(e.target.value)} /></label>
+          <div className="mobile-history-list">
+            {!filteredConvs.length && <p className="mobile-empty">{search ? '没有找到相关对话，换个关键词试试。' : '还没有对话，在首页说一个目的地开始吧。'}</p>}
+            {groupConvs(filteredConvs).map(g => <section key={g.label}><h2>{g.label}</h2>{g.items.map(c => <article className="mobile-history-row" key={c.id}>
+              <button onClick={() => selectConv(c.id)}><strong>{c.title}</strong><small>{g.label}</small></button>
+              <button className="mobile-delete" aria-label={`删除对话 ${c.title}`} onClick={() => void deleteConv(c.id)}>{isAndroidApp() ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden><path d="M3 6h18M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7m4-7v7" /></svg> : '删除'}</button>
+            </article>)}</section>)}
+          </div>
+        </> : <>
+          <button className="mobile-profile-card" onClick={() => openSocial('profile')}><span className="mobile-account-avatar">{user.avatar_url ? <img src={user.avatar_url} alt="" /> : (user.display_name || user.username).slice(0, 1)}</span><span><strong>{user.display_name || user.username}</strong><small>@{user.username} · 查看个人主页</small></span><b aria-hidden>›</b></button>
+          <div className="mobile-account-links">
+            {([
+              ['记忆', () => setShowMemories(true)], ['技能', () => setShowSkills(true)], ['连接', () => setShowConnectors(true)],
+              ['公告', () => setShowAnn(true)], ['联系客服', () => setShowSupport(true)],
+              ...(user.is_admin ? [['用户管理', () => setShowAdmin(true)]] : []),
+              ...(!isAndroidApp() ? [['切换桌面布局', () => changeLayoutMode('desktop')]] : []),
+            ] as [string, () => void][]).map(([label, action]) => <button key={label} onClick={() => { setMobilePanel(null); action() }}>{label}<span aria-hidden>›</span></button>)}
+          </div>
+          <button className="mobile-signout" onClick={onLogout}>退出登录</button>
+          {isAndroidApp() && <p className="android-version">17同游 Android {navigator.userAgent.match(/17TongyouAndroid\/([^\s]+)/)?.[1]} · 好友测试版</p>}
+        </>}
+      </section>}
+      <nav className="mobile-bottom-nav" data-active={mobileActive} aria-label="移动端主导航">
+        <button className={mobileActive === 'home' ? 'active' : ''} aria-current={mobileActive === 'home' ? 'page' : undefined} onClick={openMobileChat}>
           <NavIcon name="chat" />
-          <small>新对话</small>
+          <small>首页</small>
         </button>
-        <button className={showTrips ? 'active' : ''} onClick={openMobileTrips}>
+        <button className={mobileActive === 'trips' ? 'active' : ''} aria-current={mobileActive === 'trips' ? 'page' : undefined} onClick={openMobileTrips}>
           <NavIcon name="trip" />
           <small>行程</small>
         </button>
-        <button className={showLedger ? 'active' : ''} onClick={openLedger}><NavIcon name="ledger" /><small>记账</small></button>
-        <button className={!collapsed && !showTrips && !showSocial && !showLedger ? 'active' : ''} onClick={openMobileHistory}>
+        <button className={mobileActive === 'ledger' ? 'active' : ''} aria-current={mobileActive === 'ledger' ? 'page' : undefined} onClick={openLedger}><NavIcon name="ledger" /><small>记账</small></button>
+        <button className={mobileActive === 'history' ? 'active' : ''} aria-current={mobileActive === 'history' ? 'page' : undefined} onClick={openMobileHistory}>
           <NavIcon name="history" />
           <small>历史</small>
         </button>
-        <button className={showSocial ? 'active' : ''} onClick={openMobileSocial}>
+        <button className={mobileActive === 'social' ? 'active' : ''} aria-current={mobileActive === 'social' ? 'page' : undefined} onClick={openMobileSocial}>
           <NavIcon name="social" />
           <small>同游圈</small>
         </button>
@@ -1349,7 +1410,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
  *  原来是 ✦ / 🗺 / ☰ / ⌁ —— 彩色 emoji 与单色字符混用，且 ⌁ 无法辨认。 */
 function NavIcon({ name }: { name: 'chat' | 'trip' | 'ledger' | 'history' | 'social' }) {
   const path = {
-    chat: <><path d="M12 3v18M3 12h18" /><circle cx="12" cy="12" r="9" /></>,
+    chat: <><path d="m12 3 2.4 6.6L21 12l-6.6 2.4L12 21l-2.4-6.6L3 12l6.6-2.4zM20 2v4M18 4h4" /></>,
     trip: <><path d="M9 4 3 6.5v13L9 17l6 2.5 6-2.5v-13L15 7 9 4z" /><path d="M9 4v13M15 7v12.5" /></>,
     ledger: <><rect x="3" y="5" width="18" height="14" rx="3" /><path d="M3 10h18M7 15h4" /></>,
     history: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3.5 2" /></>,
@@ -1384,6 +1445,10 @@ function InspirationLaunchpad({
   onAddImages,
   onRemoveImage,
   uploading,
+  deep,
+  webSearch,
+  onToggleDeep,
+  onToggleWebSearch,
 }: {
   running: boolean
   suggestions: StarterChip[]
@@ -1394,6 +1459,10 @@ function InspirationLaunchpad({
   onAddImages?: (files: File[]) => void
   onRemoveImage?: (id: string) => void
   uploading?: boolean
+  deep: boolean
+  webSearch: boolean
+  onToggleDeep: () => void
+  onToggleWebSearch: () => void
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
   const remaining = MAX_COMPOSER_IMAGES - images.length
@@ -1468,9 +1537,10 @@ function InspirationLaunchpad({
             ref={ideaRef}
             value={idea}
             onChange={(event) => { setIdea(event.target.value); setError('') }}
-            placeholder={'输入目的地、粘贴攻略链接\n或直接问“第一次去日本怎么准备？”'}
+            placeholder={isAndroidApp() ? '输入目的地、攻略链接，或者问“第一次去日本怎么准备？”' : '输入目的地、粘贴攻略链接\n或直接问“第一次去日本怎么准备？”'}
             rows={2}
-            autoFocus
+            autoFocus={!isAndroidApp()}
+            aria-label="旅行需求"
             onPaste={(e) => {
               if (!onAddImages) return
               const files = extractClipboardImages(e.clipboardData, remaining)
@@ -1502,6 +1572,7 @@ function InspirationLaunchpad({
             <button
               type="button"
               className="unified-attach-btn"
+              aria-label={images.length ? `上传图片，已选 ${images.length} 张` : '上传图片'}
               disabled={remaining <= 0 || running}
               onClick={() => fileRef.current?.click()}
             >
@@ -1510,7 +1581,7 @@ function InspirationLaunchpad({
                 <circle cx="8.5" cy="8.5" r="1.6" />
                 <path d="M21 15l-5-5L5 21" />
               </svg>
-              {images.length ? `已选 ${images.length} 张图` : '上传图片'}
+              <span className="unified-attach-text">{images.length ? `已选 ${images.length} 张图` : '上传图片'}</span>{isAndroidApp() && images.length > 0 && <b className="android-attach-count">{images.length}</b>}
             </button>
             <small>行程截图、机票订单、别人发的攻略图都行——也可以直接粘贴或拖进来</small>
             {images.length > 0 && (
@@ -1528,9 +1599,19 @@ function InspirationLaunchpad({
           </div>
         )}
 
+        <div className="unified-tools" role="group" aria-label="规划选项">
+          <button type="button" aria-pressed={deep} onClick={onToggleDeep} disabled={running}>
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M9 3a3 3 0 0 0-3 3 4 4 0 0 0-2 7 4 4 0 0 0 5 6l3 2V4L9 3ZM15 3a3 3 0 0 1 3 3 4 4 0 0 1 2 7 4 4 0 0 1-5 6l-3 2M7 10l5 2m5-2-5 2M8 16l4-1m4 1-4-1"/></svg>
+            深度推理
+          </button>
+          <button type="button" aria-pressed={webSearch} onClick={onToggleWebSearch} disabled={running}>
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18"/></svg>
+            联网搜索
+          </button>
+        </div>
         <div className="unified-footer">
           <div>
-            <p className={`inspiration-status${error ? ' error' : ''}`} aria-live="polite">
+            <p className={`inspiration-status${error ? ' error' : ''}`} data-actionable={Boolean(error || urls.length || images.length)} aria-live="polite">
               {error || (routeKind === 'import'
                 ? `已识别 ${urls.length} 条链接，将自动整理`
                 : images.length && !idea.trim()
@@ -1540,23 +1621,27 @@ function InspirationLaunchpad({
                     : '说什么都行，我来判断怎么帮你')}
             </p>
           </div>
-          <button className="unified-submit" type="submit" disabled={running || uploading}>{actionLabel}<span aria-hidden>→</span></button>
+          <button className="unified-submit" type="submit" aria-label={actionLabel} disabled={running || uploading || (isAndroidApp() && !idea.trim() && !images.length)}><span className="unified-submit-label">{actionLabel}</span><span aria-hidden>{isAndroidApp() ? '↑' : '→'}</span></button>
         </div>
         </form>
       </section>
 
+      {isAndroidApp() && suggestions.length > 0 && <nav className="android-quick-starts" aria-label="旅行灵感">
+        {suggestions.map(item => <button type="button" key={item.label} onClick={() => pickSuggestion(item.label)}>{item.label}</button>)}
+      </nav>}
+
       <section className="social-entry" aria-label="目的地旅行接力站">
         <button type="button" onClick={onSocial}>
           <span className="social-entry-people" aria-hidden>
-            <i>旅</i><i>山</i><i>友</i>
+            {isAndroidApp() ? <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><circle cx="14" cy="4" r="2"/><path d="m12 8-3 5 4 2 2 6M12 8l4 4h4M12 8l-5 1-2 5M9 13l-2 8M20 10v11"/></svg> : <><i>旅</i><i>山</i><i>友</i></>}
           </span>
           <span className="social-entry-copy">
-            <em>NEW · 真实旅行者接力</em>
+            <em>{isAndroidApp() ? '真实旅行者接力' : 'NEW · 真实旅行者接力'}</em>
             <strong>有人正在天堂寨，把现场情况留给下一位</strong>
             <small>看 72 小时现场情报、抄真实路线，也把你的经验接下去</small>
           </span>
           <span className="social-entry-meta"><b>准备去</b><b>正在玩</b><b>刚回来</b></span>
-          <span className="social-entry-cta">进入接力站 <b aria-hidden>→</b></span>
+          <span className="social-entry-cta">{isAndroidApp() ? <b aria-hidden>›</b> : <>进入接力站 <b aria-hidden>→</b></>}</span>
         </button>
       </section>
 

@@ -1,0 +1,16 @@
+现象
+Android 首页/列表已经调整，但协同行程详情仍有两层标题、桌面工具入口、移动导航、日期栏和全局底栏。390×844 下首个地点约在 y694 才开始，正文在嵌套容器中滚动。单纯缩小字号不能解决层级挤占。
+
+原因
+共享 Trips.tsx 的桌面三栏结构在移动模式只做显隐，没有按原生详情页重排。桌面手机预览的 460px 限宽还会污染 Android 横屏。只验首页/列表会漏掉详情。另外菜单 portal 必须遵守现有弹层顺序，否则新底部 sheet 会挡住分享和原攻略。
+
+解决
+Android 专属 Toolbar/Overview/Timeline/Sheet，单一滚动容器；日期横滑，行程/地图切换；详情隐藏全局 tabs，退出恢复。保留业务处理函数；正常网页 wrapper 为 display:contents。真 Android 全宽，不受桌面预览限宽影响。sheet 层级 400，分享 500、原攻略 625、提示 1000；焦点陷阱只约束最上层弹窗。
+日期弹层 Escape 改为捕获监听，避免焦点暂时返回触发按钮时无法关闭。模拟器测试通过点击真正的行程入口进入；修改 hash 不会触发 Home 初始化逻辑，不能用来替代实际点击导航。
+
+验证
+frontend/tests/android-trip-browser.mjs：多屏尺寸、30天、长标题、文字放大、增删改排、日期、地图工具、邀请/分享/权限、原攻略、原生返回。
+frontend/tests/workspace-browser.mjs：原网页桌面及手机回归。
+HostInstrumentedTest.tripWorkspaceLayoutAndSystemBack：包内 WebView、真实键盘、保存按钮、原生返回。
+
+原生测试补充：UiAutomator 只按 EditText 类型取第一个节点会命中弹窗后面的主页输入框。改为读取目标弹窗输入的 CSS 坐标、按 WebView 实际像素比转换并发送真实触摸。截图需等合成帧稳定，DOM 已更新不代表屏幕帧已绘制。

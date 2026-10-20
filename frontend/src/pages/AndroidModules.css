@@ -1,0 +1,196 @@
+/* APK sections share the accepted homepage scale. Deliberately no .hero overrides. */
+html.native-android {
+  --am-bg:radial-gradient(ellipse at 0 0,#dce8ff 0,transparent 60%),radial-gradient(ellipse at 100% 55%,#e7e2f580,transparent 65%),#f6f7fb;
+  --am-ink:#192335;--am-muted:#687488;--am-accent:#2563eb;--am-danger:#c43d4b;
+  --am-card:#ffffffa3;--am-line:#7d90b32e;--am-soft:#64748b12;--am-selected:#ffffffd9;--am-sheet:#f4f6fc;--am-field:#ffffffb8;
+}
+html.native-android[data-android-appearance=dark] {
+  --am-bg:radial-gradient(ellipse at 0 0,#172c58 0,transparent 65%),radial-gradient(ellipse at 100% 48%,#27204490,transparent 60%),radial-gradient(ellipse at 90% 100%,#533b2433,transparent 50%),#0d111b;
+  --am-ink:#f0f2f7;--am-muted:#a0a9ba;--am-accent:#7ba9ff;--am-danger:#ff7d88;
+  --am-card:#ffffff07;--am-line:#ffffff24;--am-soft:#ffffff0d;--am-selected:#ffffff20;--am-sheet:#1b2031;--am-field:#111827b8;
+}
+html.native-android :is(.trips-overlay,.ledger-shell,.mobile-page,.social-overlay,.android-trip-sheet,.trip-edit-modal,.trip-share-modal,.trip-source-panel,.trip-chat-panel,.modal-mask) {
+  --bg:var(--am-sheet);--text:var(--am-ink);--text-secondary:var(--am-muted);--surface:var(--am-card);--border:var(--am-line);--primary:var(--am-accent);--danger:var(--am-danger);
+  --x-n20:var(--am-ink);--x-n30:var(--am-ink);--x-n41:var(--am-ink);--x-n50:var(--am-muted);--x-n68:var(--am-muted);--x-n78:var(--am-line);--x-n88:var(--am-line);--x-n96:var(--am-soft);--x-n100:var(--am-sheet);
+  --x-glass:var(--am-card);--x-glass-line:var(--am-line);--x-glass-inner:0 0 transparent;--x-glass-shadow:0 0 transparent;
+  --x-pine-96:var(--am-soft);--x-pine-74:var(--am-accent);--x-pine-51:var(--am-accent);--x-pine-44:var(--am-accent);
+  --mobile-glass-card:var(--am-card);--mobile-glass-shadow:0 0 transparent;
+  color:var(--am-ink);font-size:14px;
+}
+html.native-android .app.view-mobile :is(.trips-overlay,.ledger-shell,.mobile-page,.social-overlay) { background:var(--am-bg); }
+html.native-android .app.view-mobile :is(.trips-overlay,.ledger-shell,.mobile-page,.social-overlay)::before { display:none; }
+html.native-android .app.view-mobile :is(.trips-list,.ledger-content,.mobile-page,.social-main) { scroll-padding-bottom:92px; }
+html.native-android .app.view-mobile :is(.trip-card,.ledger-book,.ledger-total,.ledger-categories,.ledger-entry,.relay-card) { background:var(--am-card);border:1px solid var(--am-line);box-shadow:none;backdrop-filter:none; }
+html.native-android .app.view-mobile :is(.trip-card,.ledger-book,.relay-card):hover { transform:none;box-shadow:none; }
+html.native-android .app.view-mobile :is(.trip-list-intro h1,.mobile-page-header h1,.ledger-header h1) { color:var(--am-ink);font-size:24px;font-weight:600;line-height:1.35;letter-spacing:-.025em; }
+html.native-android .app.view-mobile :is(.trip-card-sub,.ledger-intro p,.ledger-book p,.ledger-book>span,.ledger-link-info,.ledger-entry p,.mobile-history-row small,.mobile-empty) { color:var(--am-muted);font-size:12px; }
+html.native-android .app.view-mobile .mobile-bottom-nav:not([data-active=home]) { background:#f5f7fbe6; }
+html.native-android[data-android-appearance=dark] .app.view-mobile .mobile-bottom-nav:not([data-active=home]) { background:#1b1e29e8;border-color:var(--am-line); }
+html.native-android .app.view-mobile .mobile-bottom-nav:not([data-active=home]) button { color:var(--am-muted); }
+html.native-android .app.view-mobile .mobile-bottom-nav:not([data-active=home]) button.active { color:var(--am-accent);background:var(--am-selected); }
+
+/* Trips: generous title, compact row, independent destructive/leave target. */
+html.native-android .app.view-mobile .trips-list { padding:12px 16px 92px; }
+html.native-android .app.view-mobile .trip-list-intro { position:relative;min-height:100px;padding:52px 0 0;margin:0 0 20px;box-sizing:border-box; }
+html.native-android .app.view-mobile .trip-list-intro :is(small,p) { display:none; }
+html.native-android .app.view-mobile .trip-list-intro h1 { margin:0; }
+html.native-android .app.view-mobile .mobile-create-trip { top:0;right:0;width:44px;height:44px;min-height:44px;border:1px solid var(--am-line);background:var(--am-card);color:var(--am-accent);box-shadow:none;border-radius:50%;font-size:28px; }
+html.native-android .app.view-mobile .trip-cards { gap:12px;padding-right:48px; }
+html.native-android .app.view-mobile .trip-card { min-height:80px;padding:12px 24px 12px 70px;border-radius:22px;overflow:visible; }
+html.native-android .app.view-mobile .mobile-trip-days { width:44px;height:48px;top:50%;left:12px;transform:translateY(-50%);border-radius:15px;background:#2563eb14;color:var(--am-accent); }
+html.native-android .app.view-mobile .mobile-trip-days b { font-size:20px;font-weight:600; }
+html.native-android .app.view-mobile .mobile-trip-days small { color:var(--am-muted);font-size:11px; }
+html.native-android .app.view-mobile .trip-card-title { display:block;font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--am-ink);margin:0 0 4px; }
+html.native-android .app.view-mobile .trip-card-sub { white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+html.native-android .app.view-mobile .trip-card::after { content:'›';position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:24px;color:var(--am-muted); }
+html.native-android .app.view-mobile .trip-card-del { position:absolute;right:-48px;top:50%;transform:translateY(-50%);min-width:44px;width:44px;height:48px;display:grid;place-items:center;padding:0;border:0;background:transparent;box-shadow:none;color:var(--am-accent); }
+html.native-android .app.view-mobile .trip-card-del.is-delete { color:var(--am-danger); }
+html.native-android .app.view-mobile .trip-create { background:var(--am-card);border:1px solid var(--am-line);color:var(--am-ink); }
+
+/* History: one search field and quiet separators, with deletion still discoverable. */
+html.native-android .app.view-mobile .mobile-page { padding:64px 16px 92px; }
+html.native-android .app.view-mobile .mobile-page-header { margin-bottom:14px; }
+html.native-android .app.view-mobile .mobile-page[aria-label=历史记录] .mobile-page-header>button { display:none; }
+html.native-android .app.view-mobile .mobile-history-search { min-height:44px;border-radius:18px;background:var(--am-selected);color:var(--am-muted);border:0;box-shadow:none; }
+html.native-android .app.view-mobile .mobile-history-search input { font-size:14px;color:var(--am-ink);min-height:44px; }
+html.native-android .app.view-mobile .mobile-history-search input::placeholder { color:var(--am-muted); }
+html.native-android .app.view-mobile .mobile-history-list { margin-top:16px;border-top:1px solid var(--am-line); }
+html.native-android .app.view-mobile .mobile-history-list h2 { display:none; }
+html.native-android .app.view-mobile .mobile-history-row { margin:0;padding:6px 0;min-height:72px;border:0;border-bottom:1px solid var(--am-line);border-radius:0;background:transparent;box-shadow:none;backdrop-filter:none;gap:0; }
+html.native-android .app.view-mobile .mobile-history-row>button:first-child { padding:8px 22px 8px 0;position:relative;color:var(--am-ink);min-height:60px;gap:3px; }
+html.native-android .app.view-mobile .mobile-history-row>button:first-child::after { content:'›';position:absolute;right:8px;top:50%;transform:translateY(-50%);color:var(--am-muted);font-size:22px; }
+html.native-android .app.view-mobile .mobile-history-row strong { font-size:14px;font-weight:500;line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden; }
+html.native-android .app.view-mobile .mobile-history-row .mobile-delete { display:grid;place-items:center;min-height:44px;min-width:44px;padding:0;background:transparent;color:var(--am-danger); }
+
+/* Ledger: toolbar above large title; one line per original currency. */
+html.native-android .app.view-mobile .ledger-header { position:relative;display:flex;flex-wrap:wrap;min-height:112px;padding:64px 16px 12px;background:transparent;border:0;box-shadow:none;backdrop-filter:none; }
+html.native-android .app.view-mobile .ledger-header .ledger-eyebrow { display:none; }
+html.native-android .app.view-mobile .ledger-header>.ledger-actions { position:absolute;top:12px;right:16px;gap:0;flex-wrap:nowrap;padding:0 4px;border:1px solid var(--am-line);border-radius:24px;background:var(--am-card); }
+html.native-android .app.view-mobile .ledger-header button { background:transparent;border:0;box-shadow:none;color:var(--am-accent); }
+html.native-android .app.view-mobile .ledger-shell[data-detail=true] .ledger-header h1 { font-size:18px; }
+html.native-android .app.view-mobile .ledger-content { padding:8px 16px 92px; }
+html.native-android .app.view-mobile .ledger-intro { margin:0 0 20px; }
+html.native-android .app.view-mobile .ledger-intro h2 { font-size:14px;color:var(--am-muted);font-weight:400;line-height:1.6;margin:0 0 10px; }
+html.native-android .app.view-mobile .ledger-books { gap:14px; }
+html.native-android .app.view-mobile .ledger-shell .ledger-book { padding:18px 16px;border-radius:24px;gap:8px; }
+html.native-android .app.view-mobile .ledger-book h2 { font-size:16px;font-weight:600;color:var(--am-ink); }
+html.native-android .app.view-mobile .ledger-book .ledger-original { display:flex;flex-direction:column;align-items:flex-start;gap:1px;font-size:18px;color:var(--am-accent);line-height:1.5;margin:3px 0 6px;font-weight:600; }
+html.native-android .app.view-mobile .ledger-book p { order:0; }
+html.native-android .app.view-mobile .ledger-book>span { order:1; }
+html.native-android .app.view-mobile .ledger-book::after { color:var(--am-muted); }
+html.native-android .app.view-mobile .ledger-total :is(h2,select),html.native-android .app.view-mobile .ledger-entry>b { color:var(--am-accent); }
+html.native-android .app.view-mobile :is(.ledger-total p,.ledger-total-head,.ledger-rate summary,.ledger-day h3) { color:var(--am-muted); }
+html.native-android .app.view-mobile .ledger-shell button { color:var(--am-ink); }
+html.native-android .app.view-mobile .ledger-shell :is(.ledger-header button,.ledger-entry button) { color:var(--am-accent); }
+html.native-android .app.view-mobile .ledger-shell .ledger-danger { color:var(--am-danger); }
+html.native-android .app.view-mobile .ledger-shell .ledger-primary { background:#2563eb;color:white;border-color:transparent; }
+
+/* Destination relay, following the native iOS reading order. */
+html.native-android .app.view-mobile .social-rail { display:none; }
+html.native-android .app.view-mobile .social-main { padding:64px 16px 92px; }
+html.native-android .app.view-mobile .social-topbar { height:56px;min-height:56px;padding:8px 16px;display:flex;justify-content:center;z-index:3; }
+html.native-android .app.view-mobile .mobile-social-title { font-size:16px;font-weight:600;color:var(--am-ink); }
+html.native-android .app.view-mobile .social-close { display:none; }
+html.native-android .android-social-menu { position:absolute;right:16px;top:6px; }
+html.native-android .android-social-menu summary { list-style:none;display:grid;place-items:center;width:44px;min-height:44px;color:var(--am-accent);font-size:17px;cursor:pointer; }
+html.native-android .android-social-menu summary::-webkit-details-marker { display:none; }
+html.native-android .android-social-menu>div { position:absolute;right:0;top:44px;min-width:160px;padding:6px;background:var(--am-sheet);border:1px solid var(--am-line);border-radius:16px;box-shadow:0 8px 30px #0002; }
+html.native-android .android-social-menu button { display:block;width:100%;min-height:44px;text-align:left;padding:10px;color:var(--am-ink);font-size:14px; }
+html.native-android .app.view-mobile .station-page { display:flex;flex-direction:column;width:100%;padding:0;margin:0;gap:16px; }
+html.native-android .android-station-cities { display:flex;overflow-x:auto;gap:8px;scrollbar-width:none;order:0; }
+html.native-android .android-station-cities button { flex:none;min-height:44px;padding:8px 14px;border:1px solid var(--am-line);border-radius:22px;background:var(--am-card);color:var(--am-ink);font-size:14px;font-weight:500; }
+html.native-android .android-station-cities button[aria-pressed=true] { color:white;background:#2563eb;border-color:#548bfa; }
+html.native-android .app.view-mobile .station-search-panel { order:1;padding:0;margin:0;display:block;background:transparent;border:0;box-shadow:none; }
+html.native-android .app.view-mobile .station-search-copy,html.native-android .station-search-panel>.relay-compose-trigger { display:none; }
+html.native-android .app.view-mobile .station-search { width:100%;background:var(--am-field);border:1px solid var(--am-line);box-shadow:none;min-height:44px; }
+html.native-android .app.view-mobile .station-search input { font-size:14px;color:var(--am-ink); }
+html.native-android .app.view-mobile .station-search button { min-height:44px;min-width:44px;background:transparent;color:var(--am-accent); }
+html.native-android .app.view-mobile .station-current { order:2;display:block;margin:2px 0 0;padding:0;background:transparent;border:0; }
+html.native-android .station-current>div:first-child>small,html.native-android .station-current>div:first-child>span { display:none; }
+html.native-android .app.view-mobile .station-current h2 { font-size:24px;font-weight:600;color:var(--am-ink);margin:0 0 6px;line-height:1.35; }
+html.native-android .android-station-description { font-size:13px;line-height:1.6;color:var(--am-muted);margin:0 0 16px; }
+html.native-android .app.view-mobile .station-phase-tabs { display:flex;padding:3px;gap:2px;background:var(--am-selected);border-radius:16px;margin:0;overflow-x:auto; }
+html.native-android .app.view-mobile .station-phase-tabs button { flex:1;display:flex;align-items:center;justify-content:center;gap:3px;min-height:44px;min-width:0;padding:4px 3px;border:0;border-radius:13px;font-size:12px;color:var(--am-muted);background:transparent;white-space:nowrap;font-weight:400; }
+html.native-android .app.view-mobile .station-phase-tabs button.active { background:var(--am-selected);color:var(--am-ink); }
+html.native-android .app.view-mobile .station-phase-tabs button b { font-size:11px;color:inherit;font-weight:400; }
+html.native-android .station-phase-tabs button:first-child b { display:none; }
+html.native-android .android-relay-actions { order:3;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px; }
+html.native-android .android-relay-actions button { min-height:44px;padding:6px 2px;background:var(--am-card);border:1px solid var(--am-line);border-radius:22px;color:var(--am-accent);font-size:12px;font-weight:500; }
+html.native-android .android-relay-actions button span { margin-right:4px; }
+html.native-android .app.view-mobile .relay-composer { order:4;margin:0;padding:14px;border:1px solid var(--am-line);border-radius:20px;background:var(--am-card); }
+html.native-android .app.view-mobile .relay-feed { order:5;gap:14px; }
+html.native-android .app.view-mobile .relay-card { padding:16px 14px 8px;border-radius:24px;opacity:1; }
+html.native-android .app.view-mobile .relay-author { gap:8px;align-items:center; }
+html.native-android .app.view-mobile .relay-author>button { min-width:0;min-height:44px; }
+html.native-android .app.view-mobile .relay-author b { font-size:14px;font-weight:600;color:var(--am-ink); }
+html.native-android .app.view-mobile .relay-author small { font-size:11px;color:var(--am-muted); }
+html.native-android .app.view-mobile .relay-kind { font-size:11px;background:transparent;color:var(--am-muted);padding:0; }
+html.native-android .app.view-mobile .relay-phase { display:none; }
+html.native-android .app.view-mobile .relay-card>p { font-size:14px;line-height:1.65;margin:12px 0;color:var(--am-ink);overflow-wrap:anywhere; }
+html.native-android .app.view-mobile .relay-freshness { padding:0;background:transparent;color:var(--am-accent);font-size:12px;line-height:1.5; }
+html.native-android .app.view-mobile .relay-freshness.stale { color:#e7a454;background:transparent; }
+html.native-android .app.view-mobile .relay-card footer { border:0;margin:4px 0 0;padding:0;gap:0;flex-wrap:wrap; }
+html.native-android .app.view-mobile .relay-reactions { gap:2px; }
+html.native-android .app.view-mobile .relay-reactions button { min-height:44px;padding:6px 4px;background:transparent;color:var(--am-muted);font-size:11px; }
+html.native-android .app.view-mobile .relay-reactions button:disabled { opacity:1; }
+html.native-android .app.view-mobile .relay-reactions button.active { color:var(--am-accent);background:var(--am-soft); }
+html.native-android .app.view-mobile .relay-delete { min-width:44px;min-height:44px;color:var(--am-danger);font-size:12px; }
+html.native-android .app.view-mobile .social-avatar { background:#2563eb;color:#fff;box-shadow:none; }
+html.native-android .app.view-mobile :is(.friends-page,.profile-page) { width:100%;padding:0;margin:0; }
+html.native-android .app.view-mobile :is(.friends-page,.profile-page,.relay-composer) button { min-height:44px;font-size:13px; }
+html.native-android .app.view-mobile :is(.friend-section,.profile-cover,.profile-editor,.people-results article,.social-empty) { background:var(--am-card);border-color:var(--am-line);color:var(--am-ink);box-shadow:none; }
+html.native-android .app.view-mobile :is(.friends-page,.profile-page) h1 { font-size:24px; }
+html.native-android .app.view-mobile :is(.friends-page,.profile-page) h2 { font-size:16px; }
+html.native-android .app.view-mobile :is(.friends-page,.profile-page) p { font-size:13px; }
+
+/* Edit sheets and detail pages continue the same palette instead of flashing white. */
+html.native-android :is(.ledger-modal,.android-trip-sheet,.trip-edit-modal,.trip-share-modal,.trip-source-panel,.trip-chat-panel,.trip-date-popover) { background:var(--am-sheet);color:var(--am-ink);border-color:var(--am-line);box-shadow:0 12px 50px #0003; }
+html.native-android :is(.ledger-modal,.android-trip-sheet,.trip-edit-modal) label { color:var(--am-muted); }
+html.native-android .ledger-modal>.ledger-actions:last-child { background:var(--am-sheet); }
+html.native-android :is(.ledger-shell,.social-overlay,.trips-overlay,.android-trip-sheet,.trip-edit-modal) :is(input:not([type=checkbox]),textarea,select) { background:var(--am-field);color:var(--am-ink);border-color:var(--am-line);font-size:14px; }
+html.native-android :is(.ledger-shell,.social-overlay,.trips-overlay,.android-trip-sheet,.trip-edit-modal) :is(input,textarea)::placeholder { color:var(--am-muted);opacity:.85; }
+html.native-android .app.view-mobile .ledger-modal :is(input,textarea,select) { color:var(--am-ink);background:var(--am-field);border-color:var(--am-line); }
+html.native-android .app.view-mobile :is(.ledger-more-menu,.trip-actions-popover,.trip-export-popover,.trip-edit-drawer-head,.trip-edit-footer) { background:var(--am-sheet);color:var(--am-ink);border-color:var(--am-line); }
+html.native-android .app.view-mobile .android-trip-board { color:var(--am-ink); }
+html.native-android .app.view-mobile :is(.android-trip-day-card,.android-trip-stop article,.android-trip-days button,.android-trip-facts>span:not(.trip-date-wrap)) { background:var(--am-card);border-color:var(--am-line);box-shadow:none; }
+html.native-android .app.view-mobile :is(.android-trip-toolbar>button,.android-trip-toolbar .trip-chat-trigger,.android-trip-day-card button,.android-trip-add) { background:var(--am-card);border-color:var(--am-line);color:var(--am-accent); }
+html.native-android .app.view-mobile :is(.android-trip-note,.android-trip-day-card>p,.android-trip-facts,.android-trip-members,.android-trip-stop-facts span,.android-trip-time-range,.android-trip-days button) { color:var(--am-muted); }
+html.native-android .app.view-mobile :is(.android-trip-stop time,.android-trip-stop-actions button,.android-trip-stop-actions a,.android-trip-stop-actions summary,.android-trip-tools-header>button) { color:var(--am-accent); }
+html.native-android .app.view-mobile .android-trip-stop-actions details>div { background:var(--am-sheet);border-color:var(--am-line); }
+html.native-android .app.view-mobile .android-trip-segments { background:var(--am-soft); }
+html.native-android .app.view-mobile .android-trip-segments button { color:var(--am-muted); }
+html.native-android .app.view-mobile .android-trip-segments button[aria-selected=true] { background:var(--am-selected);color:var(--am-ink);box-shadow:none; }
+html.native-android .app.view-mobile .android-trip-days button[aria-selected=true],html.native-android .app.view-mobile .android-trip-day-card button.primary { background:#2563eb;color:#fff;border-color:#2563eb; }
+html.native-android .android-trip-sheet :is(button,.android-trip-member-list li) { background:var(--am-card);color:var(--am-accent); }
+html.native-android .android-trip-sheet h2,html.native-android .android-trip-member-list li { color:var(--am-ink); }
+html.native-android .android-trip-sheet :is(.trip-actions-popover,.trip-export-popover) { background:var(--am-sheet);border-color:var(--am-line); }
+@media (prefers-reduced-transparency:reduce) { html.native-android .app.view-mobile :is(.trip-card,.ledger-book,.relay-card) { background:var(--am-sheet); } }
+html.native-android .app.view-mobile .station-current>div:first-child { display:block; }
+html.native-android .app.view-mobile .social-overlay button.primary { background:#2563eb;color:#fff; }
+html.native-android .app.view-mobile .relay-kind-picker button { background:var(--am-field);border-color:var(--am-line);color:var(--am-muted);font-size:12px; }
+html.native-android .app.view-mobile .relay-kind-picker button.active { background:var(--am-soft);color:var(--am-accent);border-color:var(--am-accent); }
+html.native-android .app.view-mobile .relay-kind-picker b { font-size:12px;font-weight:500; }
+html.native-android .app.view-mobile .relay-kind-picker small { color:var(--am-muted);font-size:11px; }
+/* Match the mobile sheet selector's specificity; inherited glass defaults are light. */
+html.native-android body:has(.app.view-mobile) :is(.modal,.ledger-modal,.trip-edit-modal,.trip-share-modal,.trip-source-panel,.trip-chat-panel,.trip-date-popover) { background:var(--am-sheet);color:var(--am-ink);border-color:var(--am-line);backdrop-filter:none; }
+html.native-android .app.view-mobile .ledger-shell .ledger-modal { background:var(--am-sheet);color:var(--am-ink); }
+html.native-android .app.view-mobile .ledger-shell :is(.ledger-total select,.ledger-more-menu) { background:var(--am-sheet);border-color:var(--am-line); }
+html.native-android .app.view-mobile .ledger-shell .ledger-modal h2 { color:var(--am-ink); }
+/* The workspace owns a second palette and an opaque background in legacy CSS. */
+html.native-android .app.view-mobile .trips-overlay,
+html.native-android .app.view-mobile .trips-overlay .trip-board.android-trip-board,
+html.native-android :is(.trip-edit-modal,.android-trip-sheet,.trip-date-popover) {
+  --mobile-page-bg:var(--am-bg);--trip-accent:var(--am-accent);--trip-accent-strong:var(--am-accent);--trip-accent-soft:var(--am-soft);
+  --trip-ink:var(--am-ink);--trip-muted:var(--am-muted);--trip-line:var(--am-line);
+}
+html.native-android .app.view-mobile .trips-overlay .trip-board.android-trip-board { background:transparent; }
+html.native-android .app.view-mobile .android-trip-toolbar { background:var(--am-card);border-color:var(--am-line);color:var(--am-ink); }
+html.native-android .app.view-mobile .trips-overlay :is(.trip-panel,.trip-edit-summary-bar,.trip-duration-box,.trip-date-chip,.trip-ai-status) { background:var(--am-card);border-color:var(--am-line);color:var(--am-muted);box-shadow:none; }
+html.native-android .app.view-mobile .trips-overlay :is(.trip-create h2,.trip-edit-summary-bar b,.trip-edit-block-title,.trip-transport-pills button,.trip-panel-head) { color:var(--am-ink); }
+html.native-android .app.view-mobile .trips-overlay .trip-transport-pills button { background:var(--am-field);border-color:var(--am-line); }
+html.native-android .app.view-mobile .trips-overlay .trip-transport-pills button.active { color:var(--am-accent);background:var(--am-soft);border-color:var(--am-accent); }
+html.native-android .app.view-mobile .trips-overlay .trip-edit-footer button { background:var(--am-card);color:var(--am-ink);border-color:var(--am-line); }
+html.native-android .app.view-mobile .trips-overlay .trip-edit-footer button.primary { background:#2563eb;color:white;border-color:#2563eb; }
+html.native-android .app.view-mobile .trips-overlay .trip-edit-footer button.danger { color:var(--am-danger); }
+html.native-android :is(.ledger-shell,.trips-overlay,.social-overlay,.mobile-page,.android-trip-sheet) { color-scheme:light; }
+html.native-android[data-android-appearance=dark] :is(.ledger-shell,.trips-overlay,.social-overlay,.mobile-page,.android-trip-sheet) { color-scheme:dark; }

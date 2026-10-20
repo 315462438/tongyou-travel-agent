@@ -1,0 +1,94 @@
+/* APK homepage: one composer toolbar, restrained surfaces, matching the iOS hierarchy. */
+html.native-android .app.view-mobile {
+  --android-home-bg: radial-gradient(ellipse at 0 0,#dce8ff 0,transparent 55%),radial-gradient(ellipse at 100% 65%,#ebe6fb80,transparent 60%),#f6f7fb;
+  --android-home-ink:#192335;
+  --android-home-muted:#687488;
+  --android-home-accent:#2563eb;
+  --android-home-surface:#ffffffa3;
+  --android-home-line:#7d90b325;
+  --mobile-tab-space:80px;
+}
+html.native-android .app.view-mobile:has(.hero) { background:var(--android-home-bg); }
+html.native-android .app.view-mobile:has(.hero)::before { background:var(--android-home-bg); }
+html.native-android .app.view-mobile:has(.hero) .app-topbar { min-height:52px;padding:4px 16px; }
+html.native-android .app.view-mobile:has(.hero) :is(.mobile-menu-button,.topbar-bell) { border:1px solid var(--android-home-line);box-shadow:none;background:var(--android-home-surface);color:var(--android-home-accent); }
+html.native-android .app.view-mobile:has(.hero) .mobile-account-avatar { width:30px;height:30px;font-size:14px; }
+html.native-android .app.view-mobile .hero { padding:10px 16px var(--mobile-tab-space);color:var(--android-home-ink); }
+html.native-android .app.view-mobile .hero-eyebrow { font-size:12px;font-weight:500;margin:0 0 8px;color:var(--android-home-accent); }
+html.native-android .app.view-mobile .hero .hero-title { font-size:26px;font-weight:600;line-height:1.35;letter-spacing:-.025em;margin:0 0 8px;color:var(--android-home-ink); }
+html.native-android .app.view-mobile .hero-sub { font-size:13px;line-height:1.5;margin:0 0 20px;color:var(--android-home-muted); }
+html.native-android .app.view-mobile .inspiration-launchpad.simple { border:1px solid var(--android-home-line);border-radius:24px;background:var(--android-home-surface);box-shadow:0 5px 18px -14px #17335a30;backdrop-filter:none; }
+html.native-android .app.view-mobile .inspiration-launchpad.simple:focus-within { border-color:#5485e978;box-shadow:0 0 0 2px #2563eb08; }
+html.native-android .app.view-mobile .unified-start { grid-template-columns:44px minmax(0,1fr) 44px;gap:8px 4px;padding:14px; }
+html.native-android .app.view-mobile .unified-idea { grid-column:1 / -1;grid-row:1;padding:0; }
+html.native-android .app.view-mobile .unified-idea textarea { height:76px;min-height:76px;font-size:14px;line-height:1.65;color:var(--android-home-ink); }
+html.native-android .app.view-mobile .unified-idea textarea::placeholder { color:var(--android-home-muted);opacity:.8; }
+html.native-android .app.view-mobile .unified-attach { display:contents; }
+html.native-android .app.view-mobile .unified-attach-btn { grid-column:1;grid-row:3;position:relative;min-width:44px;min-height:44px;padding:0;background:transparent;border:0;box-shadow:none;color:var(--android-home-muted); }
+html.native-android .app.view-mobile .unified-attach-btn svg { width:18px;height:18px; }
+html.native-android .app.view-mobile .unified-attach-text { display:none; }
+.android-attach-count { position:absolute;top:0;right:0;font-size:10px;background:#2563eb;color:white;min-width:16px;border-radius:8px; }
+html.native-android .app.view-mobile .unified-attach .composer-thumbs { grid-column:1 / -1;grid-row:2;min-width:0;max-width:100%;overflow-x:auto; }
+html.native-android .app.view-mobile .unified-tools { grid-column:2;grid-row:3;display:flex;gap:2px;align-items:center;justify-content:space-evenly;padding:0;min-width:0; }
+html.native-android .app.view-mobile .unified-tools button { flex:0 1 auto;gap:4px;min-width:44px;min-height:44px;padding:4px;border:0;border-radius:10px;box-shadow:none;background:transparent;font-size:12px;font-weight:500;color:var(--android-home-muted);white-space:nowrap; }
+html.native-android .app.view-mobile .unified-tools button[aria-pressed=true] { color:var(--android-home-accent);background:transparent; }
+html.native-android .app.view-mobile .unified-tools button[aria-pressed=true]::after { content:'';width:3px;height:3px;background:currentColor;border-radius:50%; }
+html.native-android .app.view-mobile .unified-tools svg { width:15px;height:15px;flex:none; }
+html.native-android .app.view-mobile .unified-footer { display:contents; }
+html.native-android .app.view-mobile .unified-footer > div { grid-column:1 / -1;grid-row:4; }
+html.native-android .app.view-mobile .unified-footer > div:has([data-actionable=false]) { display:none; }
+html.native-android .app.view-mobile .inspiration-status { font-size:12px;color:var(--android-home-muted);margin:0; }
+html.native-android .app.view-mobile .inspiration-status.error { color:#d34d50; }
+html.native-android .app.view-mobile .unified-submit { grid-column:3;grid-row:3;min-width:44px;width:44px;height:44px;min-height:44px;padding:0;gap:0;box-shadow:none;border:0;border-radius:50%;background:#2563eb;color:white;font-size:23px;font-weight:500; }
+html.native-android .app.view-mobile .unified-submit:disabled { background:#76839b22;color:var(--android-home-muted);opacity:.65; }
+html.native-android .app.view-mobile .unified-submit-label { display:none; }
+.android-quick-starts { display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding:0;margin:16px 0 0; }
+.android-quick-starts button { flex:none;min-height:44px;padding:8px 13px;border:1px solid var(--android-home-line);border-radius:22px;background:var(--android-home-surface);color:var(--android-home-accent);font-size:13px;font-weight:500; }
+html.native-android .app.view-mobile .social-entry { margin-top:16px; }
+html.native-android .app.view-mobile .social-entry > button { grid-template-columns:40px minmax(0,1fr) 12px;gap:10px;min-height:76px;padding:12px;border:1px solid var(--android-home-line);border-radius:20px;background:var(--android-home-surface);box-shadow:none;color:var(--android-home-ink); }
+html.native-android .app.view-mobile .social-entry-people { width:40px;height:40px;display:grid;place-items:center;border-radius:50%;background:#2563eb;color:white; }
+html.native-android .app.view-mobile .social-entry-people::after { display:none; }
+html.native-android .app.view-mobile .social-entry-copy em { color:var(--android-home-accent);font-size:11px; }
+html.native-android .app.view-mobile .social-entry-copy strong { font-size:13px;line-height:1.5;font-weight:500; }
+html.native-android .app.view-mobile .social-entry-cta { display:block;color:var(--android-home-muted);font-size:22px; }
+html.native-android .app.view-mobile .trending-destinations { margin-top:22px; }
+html.native-android .app.view-mobile .trending-destinations-head { margin-bottom:12px; }
+html.native-android .app.view-mobile .trending-destinations-head h2 { font-size:17px;line-height:1.4;margin:0 0 3px;color:var(--android-home-ink); }
+html.native-android .app.view-mobile .trending-destinations-head small { font-size:11px;color:var(--android-home-muted); }
+html.native-android .app.view-mobile .trending-destination-grid { grid-auto-columns:64%;gap:12px; }
+html.native-android .app.view-mobile .destination-card { position:relative;height:142px;min-height:142px;border:0;border-radius:20px;box-shadow:none;overflow:hidden;background:#d5e1ed; }
+html.native-android .app.view-mobile .destination-cover { position:absolute;inset:0;height:100%;min-height:0; }
+html.native-android .app.view-mobile .destination-cover::after { content:'';position:absolute;inset:0;background:linear-gradient(transparent 20%,#152438ba); }
+html.native-android .app.view-mobile .destination-cover em { z-index:1;font-size:11px; }
+html.native-android .app.view-mobile .destination-card-copy { position:absolute;bottom:0;left:0;right:0;z-index:1;padding:12px;text-align:left;color:white; }
+html.native-android .app.view-mobile .destination-card-copy strong { color:white;font-size:16px;font-weight:600; }
+html.native-android .app.view-mobile .destination-card-copy > span { color:#ffffffe0;font-size:11px; }
+html.native-android .app.view-mobile .destination-card-copy small { display:none; }
+html.native-android .app.view-mobile .mobile-bottom-nav { left:12px;right:12px;bottom:8px;min-height:62px;padding:4px;border:1px solid #9aabc236;border-radius:32px;background:#f5f7fbe6;box-shadow:0 4px 18px #20345112;backdrop-filter:blur(16px); }
+html.native-android .app.view-mobile .mobile-bottom-nav::before { display:none; }
+html.native-android .app.view-mobile .mobile-bottom-nav button { min-height:52px;border:0;border-radius:26px;gap:3px; }
+html.native-android .app.view-mobile .mobile-bottom-nav button.active { background:#2563eb12;box-shadow:none; }
+html.native-android .app.view-mobile .mobile-bottom-nav button svg { width:22px;height:22px; }
+/* The native host publishes system night mode without recreating the current draft. */
+html.native-android[data-android-appearance=dark] .app.view-mobile {
+  --android-home-bg:radial-gradient(ellipse at 0 0,#172c58 0,transparent 65%),radial-gradient(ellipse at 100% 48%,#27204490,transparent 60%),#0d111b;
+  --android-home-ink:#f0f2f7;
+  --android-home-muted:#a0a9ba;
+  --android-home-accent:#7ba9ff;
+  --android-home-surface:#ffffff07;
+  --android-home-line:#ffffff1c;
+}
+html.native-android[data-android-appearance=dark] .app.view-mobile:has(.hero) .mobile-bottom-nav { background:#1b1e29e8;border-color:#ffffff20; }
+html.native-android[data-android-appearance=dark] .app.view-mobile:has(.hero) .mobile-bottom-nav button { color:#b5bdca; }
+html.native-android[data-android-appearance=dark] .app.view-mobile:has(.hero) .mobile-bottom-nav button.active { color:#7ba9ff;background:#ffffff12; }
+html.native-android[data-android-appearance=dark] .app.view-mobile .hero .destination-card { background:#252c3d; }
+@media(max-width:359px) {
+ html.native-android .app.view-mobile .unified-start { padding:12px;gap:8px 2px; }
+ html.native-android .app.view-mobile .unified-tools button { gap:3px;font-size:11px;padding:3px; }
+ html.native-android .app.view-mobile .unified-tools button[aria-pressed=true]::after { display:none; }
+ html.native-android .app.view-mobile .hero .hero-title { font-size:24px; }
+}
+html.native-android .app.view-mobile .destination-cover { z-index:0; }
+html.native-android .app.view-mobile .destination-card { backdrop-filter:none; }
+html.native-android .app.view-mobile .destination-card-copy > span { min-height:0; }
+html.native-android .app.view-mobile .social-entry-cta { width:12px;min-width:0;padding:0;margin:0;background:transparent;border:0;border-radius:0;box-shadow:none;backdrop-filter:none; }

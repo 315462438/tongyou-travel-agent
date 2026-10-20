@@ -1,0 +1,9 @@
+目标：Android 冷启动/重建时用品牌启动画面承接 WebView 和 React 初始化，页面实际可绘制后淡入，解决裸露空白；后台返回不强制重播或刷新草稿。
+方案：系统启动背景（含 Android 12+ splash 资源）→原生品牌层（蓝色路线图标、17同游、一起规划，一起出发，轻微入场动效）→React 首页/登录/邀请/连接错误就绪信号→WebView visual state callback→180ms 淡出。无固定等待动画，系统关闭动画时直接交接。原生12s兜底显示重试；Android鉴权8s超时显示可恢复错误，不清token。不以onPageFinished当React首屏完成。
+涉及：Android LaunchOverlay、MainActivity、主题资源；frontend App/nativeAndroid桥接。只发布 Android 0.4.1 (7)，Web/iOS不部署。
+验收：冷启动浅/深、延迟JS、已登录/未登录/连接失败、加载超时可重试、后台恢复不重载草稿、Activity重建、关闭动画、分享参数保留；原有6项原生测试回归、前端构建与测试、Android lint/单测、签名覆盖安装及公网下载校验。
+依据：https://developer.android.com/develop/ui/views/launch/splash-screen
+https://developer.android.com/reference/android/webkit/WebViewClient#onPageFinished(android.webkit.WebView,%20java.lang.String)
+用户追加确认：保持0.4.0截图中的现有UI，只增加开场动画；不改首页CSS/字号/布局。实现保持该边界。
+
+完成：Android 0.4.1 (7) 已发布，网页8组启动场景和原生10项测试全部通过，101前端单测/4Android单测/构建/lint通过（既有前端警告保留）。0.4.0覆盖升级成功；公网下载200、Range206、字节长度/SHA256一致。原有4份页面CSS哈希完全一致。结果见docs/test_cases/android-startup-transition-results-2026-10-19.json。

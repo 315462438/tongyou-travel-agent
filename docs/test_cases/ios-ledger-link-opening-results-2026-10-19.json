@@ -1,0 +1,37 @@
+{
+  "date": "2026-10-19",
+  "ios_version": "1.0.6 (7)",
+  "swift_url_tests": "2 valid forms, 13 rejection cases, persistence/cancellation passed",
+  "xctest_ui": {
+    "cold_link": "passed",
+    "warm_link": "passed",
+    "system_confirmation": "handled when shown; remembered confirmation also allowed",
+    "signed_out_pending_invitation": "passed",
+    "cancel_clears_invitation": "passed"
+  },
+  "web_platform_cases": {
+    "passed": 4,
+    "results": [
+      "iPhone Safari: same HTTPS invitation, no automatic join, correct platform fallback",
+      "iPhone WeChat: same HTTPS invitation, no automatic join, correct platform fallback",
+      "Android browser: same HTTPS invitation, no automatic join, correct platform fallback",
+      "Desktop: same HTTPS invitation, no automatic join, correct platform fallback"
+    ]
+  },
+  "web_unit_tests": 100,
+  "ios_builds": [
+    "iOS Simulator: passed",
+    "Personal Team physical device: passed"
+  ],
+  "installed_on_connected_iphone": true,
+  "web_deployed": true,
+  "web_index_sha256": "d70822c635ab7ffea20baff37e8498e3f52159449ace711ac71c9a2968073fd7",
+  "backend_restarted": false,
+  "shared_url": "https://17tongyou.com/travel/?ledger_join=TOKEN",
+  "ios_opening": "User clicks webpage link, then confirms system prompt if shown; no Associated Domains entitlement",
+  "android_opening": "Verified HTTPS App Links; separately released APK 0.1.0 (1)",
+  "notes": [
+    "Business APIs mocked in web tests; no production membership created by tests",
+    "Manufacturer Android devices and actual WeChat client require friend testing"
+  ]
+}

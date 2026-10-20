@@ -1,0 +1,38 @@
+17同游 Android 好友测试版 — 2026-10-19
+
+目标：生成正式签名、可直接安装与覆盖更新的 APK，复用当前手机版网页及线上账号/数据。
+范围：Android 8+ WebView 容器；固定 HTTPS 自有站点；登录持久化；系统返回逐层关闭；
+键盘/系统栏适配；系统文件选择；图片与文件下载/分享；分享链接打开；离线提示和重试。
+不包含：原生安卓页面重写、离线记账、后台推送、自动安装更新、鸿蒙原生适配、商店发布。
+
+方案：android/ 独立 Java/Gradle 工程，页面 origin 为 https://17tongyou.com/travel/。
+2026-10-19 用户要求三端分开管理：Android 打包固定版本的网页资源，原 URL 下仅精确匹配
+包内资源由 WebView 本地返回，API/用户图片仍请求线上。不部署网页、不构建或安装 iOS。
+网页 Android 兼容代码仅在带安卓版 UA 且存在受限原生 bridge 时启用。
+Android 独立包名 com.tongyou.travel、版本 0.1.0 (1)；发布目录 android/releases/。
+使用限制来源的 WebMessage bridge 与网页沟通（不用任意来源 JavascriptInterface）。
+网页增加 Android 专属返回与分享接入；普通浏览器/iOS 保持现有行为。
+主页面仅加载自有 HTTPS 地址，第三方网页走外部浏览器；禁止任意 file/content URL 导航。
+下载只接受经用户操作且经过校验的来源；使用系统文档保存器和临时 FileProvider 分享。
+签名密钥保存在仓库外用户私有目录，代码仅引用配置，不提交私钥或口令。
+
+涉及：android/；frontend/src 的 Android 桥、页面返回钩子；docs/。
+验收：单测校验 URL/文件名/来源规则；浏览器自动化验证分层返回、分享、布局；
+安卓构建/lint/签名检查；模拟器安装启动、真实 WebView 加载、文件/返回/离线恢复测试；
+签名相同的覆盖安装保留登录；记录结果与不能在模拟器替代的朋友真机体验。
+交付：版本化 APK、SHA-256、安装说明、测试结果与签名备份说明。
+
+2026-10-19 追加：分享链接在已安装 App 的手机上唤起应用。
+本次 Android 增加 autoVerify App Links，域名根路径部署仅含公开包名/签名指纹的
+/.well-known/assetlinks.json，使用正式 release 签名验证，未安装仍打开原网页。
+仅部署域名关联文件，不发布网页 UI 或更新业务后端。检验 HTTPS 200/JSON/无重定向、
+签名匹配、系统 verify-app-links 状态以及真实 intent 打开。
+iOS 当前工程无 Associated Domains 和 onOpenURL，是否处理取决于用户开发者账号状态回复；
+不能假定已安装旧 iOS 包自动获得唤起能力。微信内置浏览器行为需如实说明。
+用户已回复暂无付费开发者账号且不打算开通：此次仅处理 Android App Links，iOS 保持现状。
+
+后续范围调整：用户又明确要求 iOS 加唤起，单独按 ios-ledger-link-opening-2026-10-19.txt
+实施 iOS 1.0.6 (7) 与网页按钮；Android 保持已验证的 0.1.0 (1) 资源快照。
+Android 完成：100 项网页单测、8 组适配浏览器测试、3 宽度回归、4 Java 单测、4 组真实
+WebView 仪器测试全部通过；lint/正式签名/资源摘要校验通过。系统域名状态 verified，
+隐式 HTTPS intent 直接进入正式包，覆盖安装保留邀请；发布产物已保存 android/releases/。

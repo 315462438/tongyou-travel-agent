@@ -1,0 +1,5 @@
+现象：底栏滑动胶囊到下一项时偏移 2px，浏览器自动验收等待对齐超时。
+原因：全局 * { box-sizing:border-box } 不覆盖 ::before。胶囊伪元素仍是 content-box，宽度之外又增加两侧 1px 边框，而 transform 百分比按包含边框的宽度计算。
+修复：为底栏 ::before 明确设置 box-sizing:border-box。五列共享同一胶囊，宽度按容器内宽扣 padding 和列间隙计算。
+验收：读取伪元素的实际 computed transform/width，比较一格移动与按钮边界；三种手机宽度均通过。
+性能：长列表只使用透明渐变和高光，避免为每行分配实时 backdrop-filter；遮罩与弹层只保留弹层模糊；主页面不使用 transform 动画，以免改变内部 fixed 弹层定位。

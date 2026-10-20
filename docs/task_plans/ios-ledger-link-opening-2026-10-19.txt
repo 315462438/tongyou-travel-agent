@@ -1,0 +1,20 @@
+iOS 账本分享链接唤起 — 2026-10-19
+
+用户追加要求：iOS 也接入唤起；当前使用免费个人签名，暂不开通付费开发者账号。
+方案：对外继续分享 https://17tongyou.com/travel/?ledger_join=TOKEN，接收端决定打开方式。
+Android 使用已验证 App Links。iOS 注册 tongyou://ledger/join?token=TOKEN，网页邀请页
+提供明确的“在 App 中打开”动作，只有用户点击才尝试唤起，页面仍可继续加入。
+不宣称免费签名已支持 Universal Links，不添加无法签名的 Associated Domains entitlement。
+iOS 1.0.6 (7) 单独更新；接收严格校验的 token，未登录先保留邀请，登录后展示预览，
+明确点击确认才加入。已登录冷/热启动进入邀请，成功后打开账本；取消清理待处理邀请。
+分享链接不改为私有协议，保证苹果/安卓/电脑互相分享都能访问网页。
+
+涉及：iOS URL parser、RootView/Router、LedgerJoinEditor/LedgerView、Info.plist；
+网页 LedgerJoin 唤起按钮与测试；独立 iOS 构建及网页静态资源发布，不更新后端业务。
+验收：URL 纯函数自动化（有效、恶意域名/路径、重复参数、无效 token）；网页 iOS/Android/
+桌面及微信入口行为；iOS 模拟器构建、真实自定义 URL 打开；个人签名真机构建与安装。
+保留 Android 已完成测试及独立 APK，不用 iOS 版本号覆盖 Android 发布记录。
+
+完成：Swift URL/持久化用例通过，网页 4 种接收端（本地与线上资源）通过，网页 100 项单测
+通过；XCTest 冷/热启动及取消邀请通过。模拟器和个人签名设备构建通过，已安装到连接的
+iPhone。网页静态资源已发布，保留旧 chunk，不重启后端；index 摘要见对应测试结果 JSON。

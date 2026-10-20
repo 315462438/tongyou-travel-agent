@@ -43,6 +43,7 @@ private struct LedgerConversion: Decodable {
 
 struct LedgerView: View {
     var initialTrip: LedgerTrip? = nil
+    @Environment(AppRouter.self) private var router
     @Environment(\.dismiss) private var dismiss
     @State private var allBooks = false
     @State private var joining = false
@@ -98,6 +99,12 @@ struct LedgerView: View {
             .navigationDestination(item: $selectedBook) { ref in LedgerDetailView(bookID: ref.id).onDisappear { Task { await load() } } }
             .sheet(isPresented: $joining) { LedgerJoinEditor { id in selectedBook = LedgerRef(id: id); Task { await load() } } }
             .sheet(isPresented: $creating) { LedgerBookEditor(defaultTrip: allBooks ? nil : initialTrip) { Task { await load() } } }
+            .onChange(of: router.openLedgerID, initial: true) { _, id in
+                guard initialTrip == nil, let id else { return }
+                selectedBook = LedgerRef(id: id)
+                router.openLedgerID = nil
+                Task { await load() }
+            }
             .task {
                 await load()
                 while !Task.isCancelled {

@@ -1,0 +1,8 @@
+现象：桌面浏览器切换手机预览后，接力卡按四列桌面 grid 排版，文案被挤成竖排；布局切换按钮被 Mobile.css 隐藏。首页缺少已在对话页及 iOS 提供的推理/联网开关。
+原因：仅以 viewport media query 适配，未覆盖宽窗口里的 460px 移动容器；隐藏了模式切换的唯一显眼入口；首屏独立 composer 未透传已有状态。
+解决：以 .app.view-mobile 明确设定两列接力卡与隐藏次要信息；保留切回网页端按钮；首屏复用 Home 的 deep/webSearch 与持久化函数，测试 POST 字段和刷新状态。
+补充：collapsed 初始化也必须读取已确定的 layoutMode，否则大窗口刷新已保存的移动模式会展开侧栏挡住内容。手机切回桌面模式时仍按窗口宽度收起抽屉，避免切换按钮被 scrim 遮挡。
+
+Android 样式只放 html.native-android 命名空间，避免重建共享前端时改变网页的视觉。
+原生键盘会压缩整个 WebView，sheet 用 100dvh 限高并内部滚动，保存区 sticky，导航隐藏。320px 日期字段改为单列，避免系统 date 控件截断日期。
+构建 lint 发现 windowLightNavigationBar 需要 API 27，项目最低 API 26：通过 AndroidX InsetsController 设置，保留版本兼容，而非提升最低版本。

@@ -1,0 +1,6 @@
+现象：只缩字号，安卓首页仍比iOS松散。上传、深度、联网、开始分成多层大胶囊，重复状态提示占一行，接力卡过大，热门卡被推到首屏以下。
+原因：移动网页原有footer/attach/tools各自占行；每组都带独立玻璃边框/阴影；字号不是唯一问题。参考iOS应复制信息层级与控件关系，不能继续只在旧布局上调字号。
+解决：唯一composer用三列网格：图片图标、两项开关、发送；附件预览独占可选行；默认冗余提示隐藏，错误/图片/链接反馈保留。推荐词、接力横条、图片卡顺序对齐原生首页，减轻底栏边框和选中镜片。
+深色处理：WebView宿主原来固定浅色主题，不能只写prefers-color-scheme期待随系统变化。读取Android uiMode，以DOCUMENT_START_SCRIPT设置初始属性，onConfigurationChanged更新色彩属性及系统栏，避免重建页面丢失草稿；不支持document-start时page-finished兜底。浏览器测试模拟颜色偏好，原生测试实际切换系统night。
+叠层注意：原图片卡遮罩z-index2曾盖住新叠放的文字。封面建立独立z-index0上下文，文字z-index1在其上。接力右箭头需清掉原桌面CTA的padding/border/background，避免残留被裁切的小胶囊。
+边界：此轮仅Android首页深浅配色，其他业务页继续原配色；未部署Web/iOS；不声称原生SwiftUI玻璃渲染完全相同。

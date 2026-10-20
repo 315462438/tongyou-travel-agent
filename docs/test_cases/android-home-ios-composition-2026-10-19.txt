@@ -1,0 +1,18 @@
+对应计划 android-home-ios-composition-2026-10-19.txt。测试使用假 API，不写正式账号。
+
+新增浏览器自动化 frontend/tests/android-home-browser.mjs：
+- 320/360/390/430浅深两色 + 横屏共9组；输入区≤180px；上传/深度/联网/发送同一行，四个触控目标≥44px且不重叠。
+- 360以上普通竖屏热门卡完整进入底栏上方；页面无横溢；320px字体放大20%无溢出或按钮重叠。
+- 无内容时发送禁用、重复提示隐藏；推荐词只回填唯一输入；发送保留实际内容/深度/联网字段。
+- 图片选择/移除、只传图发送image_ids、链接识别/强制深度、上传错误可见。
+- 暗色输入文字可读、浅色保留；输出两色截图。
+
+既有回归：
+android-layout-browser.mjs：3个安卓尺寸及Web手机/桌面预览7页。
+search-defaults-browser.mjs：Web桌面/手机/Android默认联网开、深度关，显式设置跨刷新与实际POST字段。
+android-trip-browser.mjs：4尺寸协同行程 CRUD/排序/日期/地图/分享/权限/大字/返回。
+frontend单测101项；构建、lint。
+
+原生：HostInstrumentedTest新增 homepageCompositionAndAppearance，共6项。真实cmd uimode night yes/no确认首页配色和系统栏切换，未重载草稿；截图light/dark。原有键盘/返回/持久化/上传/下载/PDF通过。
+Android单测4项、lintRelease、正式签名/包名/内置快照哈希；同签名从0.3.1覆盖到0.4.0；公网200、Range206及SHA核验。
+结果：android-home-ios-composition-results-2026-10-19.json。
