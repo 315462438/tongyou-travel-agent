@@ -27,6 +27,7 @@ enum ISODate {
 }
 
 struct HistoryView: View {
+    @Environment(\.dismiss) private var dismiss
     @State private var conversations: [ConversationSummary] = []
     @State private var search = ""
     @State private var loading = true
@@ -64,10 +65,11 @@ struct HistoryView: View {
                 if loading && conversations.isEmpty { ProgressView() }
                 else if !loading && filtered.isEmpty && error == nil {
                     EmptyState(symbol: "bubble.left.and.text.bubble.right", title: search.isEmpty ? "还没有对话" : "没有找到",
-                               message: search.isEmpty ? "在首页说一个目的地，开始第一次规划。" : "换个关键词试试。")
+                               message: search.isEmpty ? "点「问 AI」说一个目的地，开始第一次规划。" : "换个关键词试试。")
                 }
             }
             .navigationTitle("历史")
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("完成") { dismiss() }.accessibilityIdentifier("closeHistory") } }
             .searchable(text: $search, prompt: "搜索对话")
             .navigationDestination(for: ConversationSummary.self) { ChatView(conversationID: $0.id, title: $0.title) }
             .refreshable { await load() }

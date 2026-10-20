@@ -28,6 +28,9 @@ final class API {
 
     private let session: URLSession = {
         let config = URLSessionConfiguration.default
+        #if DEBUG
+        if JourneyUITestProtocol.enabled { config.protocolClasses = [JourneyUITestProtocol.self] }
+        #endif
         config.timeoutIntervalForRequest = 30
         config.waitsForConnectivity = true
         config.timeoutIntervalForResource = 120

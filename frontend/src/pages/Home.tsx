@@ -5,9 +5,11 @@ import './Mobile.css'
 import './MobileGlass.css'
 import './AndroidHome.css'
 import './AndroidModules.css'
+import './JourneyShell.css'
+import TravelHome from './TravelHome'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { BrandIcon, BrandWordmark } from '../components/Brand'
+import { BrandIcon } from '../components/Brand'
 import { AdminAnnouncements, AnnouncementModal, AnnouncementPanel, useAnnouncementUnread } from '../components/Announcements'
 import { NotificationPanel, type ProductNotification } from '../components/Notifications'
 import type { SocialTab } from '../components/SocialHub'
@@ -289,6 +291,8 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
   const [messages, setMessages] = useState<Msg[]>([])
   const [convs, setConvs] = useState<Conv[]>([])
   const [input, setInput] = useState('')
+  const [aiOpen, setAiOpen] = useState(false)
+  const [createTrip, setCreateTrip] = useState(false)
   const [showSocial, setShowSocial] = useState(false)
   const [socialLaunch, setSocialLaunch] = useState<{ tab: SocialTab; destination: string }>({ tab: 'station', destination: '天堂寨' })
   const openSocial = useCallback((tab: SocialTab = 'station', destination = '天堂寨') => {
@@ -511,15 +515,17 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
       else if (showSupport) setShowSupport(false)
       else if (showAdmin) setShowAdmin(false)
       else if (showSkills) setShowSkills(false)
+      else if (showConnectors) setShowConnectors(false)
       else if (showMemories) setShowMemories(false)
       else if (showSocial) setShowSocial(false)
       else if (mobilePanel) setMobilePanel(null)
+      else if (aiOpen) setAiOpen(false)
       else if (showTrips) return
       else if (window.innerWidth <= 720 && !collapsed) setCollapsed(true)
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [collapsed, mobilePanel, showAdmin, showAnn, showMemories, showNotifications, showSkills, showSocial, showSupport, showTrips, traceFor])
+  }, [aiOpen, collapsed, mobilePanel, showAdmin, showAnn, showConnectors, showMemories, showNotifications, showSkills, showSocial, showSupport, showTrips, traceFor])
   useEffect(() => {
     const update = () => {
       const viewport = window.visualViewport
@@ -664,6 +670,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
 
   const selectConv = useCallback(
     async (id: string) => {
+      setAiOpen(true)
       setMobilePanel(null)
       stopPoll()
       if (window.innerWidth <= 720) setCollapsed(true)  // 手机：选完自动收抽屉
@@ -682,6 +689,8 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
   )
 
   const newChat = useCallback(() => {
+    setAiOpen(true)
+    setInput('')
     setMobilePanel(null)
     stopPoll()
     if (window.innerWidth <= 720) setCollapsed(true)
@@ -702,8 +711,8 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
     setShowAdmin(false)
     setTraceFor(null)
     setCollapsed(true)
-    newChat()
-  }, [newChat])
+    setAiOpen(false)
+  }, [])
 
   const openMobileTrips = useCallback(() => {
     setMobilePanel(null)
@@ -739,18 +748,20 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
     setCollapsed(true)
   }, [])
 
-  const openMobileSocial = useCallback(() => {
-    setMobilePanel(null)
-    setShowLedger(false)
-    setShowTrips(false)
-    setTripsBoard(null)
-    setShowMemories(false)
-    setShowSkills(false)
-    setShowAdmin(false)
-    setTraceFor(null)
-    setCollapsed(true)
-    openSocial('station')
-  }, [openSocial])
+  const openAccount = () => {
+    setAiOpen(false)
+    setShowTrips(false); setShowLedger(false); setShowSocial(false)
+    setMobilePanel('account'); setCollapsed(true)
+  }
+  const openAI = (prompt?: string) => {
+    if (prompt) setInput(prompt)
+    setAiOpen(true)
+  }
+  useAndroidBack(() => {
+    if (!aiOpen || mobilePanel === 'history') return false
+    setAiOpen(false)
+    return true
+  }, 45)
 
   const changeLayoutMode = useCallback((mode: LayoutMode) => {
     localStorage.setItem('travel_layout_mode', mode)
@@ -864,6 +875,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
 
   // Phase 46：从协同板发起「携程实价」——建新会话、强制深度推理（走 guide/携程流水线）、关板打开对话
   const askInChat = useCallback(async (text: string) => {
+    setAiOpen(true)
     try {
       const res = await authFetch(`${API}/chat/conversations`, { method: 'POST' })
       if (!res.ok) return
@@ -983,163 +995,12 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
     const r = m.meta?.confirm_reply
     if (m.role === 'action' && r) confirmReplies.set(r.confirm_id, r.choice)
   }
-  const mobileActive = showTrips ? 'trips' : showLedger ? 'ledger' : showSocial ? 'social' : mobilePanel === 'history' || !empty ? 'history' : 'home'
-  const greeting = `${new Date().getHours() < 11 ? '早上好' : new Date().getHours() < 18 ? '下午好' : '晚上好'}，${user.display_name || user.username}`
+  const mobileActive = showLedger ? 'ledger' : mobilePanel ? 'account' : 'travel'
   const activeConversationTitle = convs.find((conv) => conv.id === cid)?.title || (empty ? '开始新旅程' : '旅行规划')
 
   return (
-    <div className={`app view-${layoutMode}${collapsed ? ' collapsed' : ''}${keyboardOpen ? ' keyboard-open' : ''}`}>
+    <div className={`app journey-shell view-${layoutMode}${collapsed ? ' collapsed' : ''}${keyboardOpen ? ' keyboard-open' : ''}`}>
       {user.must_change_password && <AdminPasswordBanner onDone={onPasswordChanged} />}
-      {!collapsed && <button className="sidebar-scrim" aria-label="关闭侧栏" onClick={() => setCollapsed(true)} />}
-      <aside className="sidebar">
-        <div className="sidebar-brand">
-          <span className="brand-mark">
-            <BrandIcon size={20} />
-          </span>
-          <BrandWordmark className="brand-name" />
-          <button className="sidebar-toggle" aria-label="收起侧栏" onClick={() => setCollapsed(true)}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3" y="4" width="18" height="16" rx="2" />
-              <path d="M9 4v16" />
-            </svg>
-          </button>
-        </div>
-        <button className="nav-item" onClick={newChat}>
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 20h9" />
-            <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-          </svg>
-          <span>新对话</span>
-        </button>
-        <div className="nav-item search-item">
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" />
-          </svg>
-          <input
-            className="search-input"
-            placeholder="搜索对话"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
-
-        <div className="conv-list">
-          {filteredConvs.length === 0 && (
-            <div className="sidebar-empty">{search ? '没有匹配的对话' : '暂无历史对话'}</div>
-          )}
-          {groupConvs(filteredConvs).map((g) => (
-            <div key={g.label}>
-              <div className="sidebar-section">{g.label}</div>
-              {g.items.map((c) => (
-                <div
-                  key={c.id}
-                  className={`conv-item${c.id === cid ? ' active' : ''}`}
-                  onClick={() => selectConv(c.id)}
-                  onKeyDown={(e) => {
-                    if (e.target !== e.currentTarget) return
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault()
-                      selectConv(c.id)
-                    }
-                  }}
-                  role="button"
-                  tabIndex={0}
-                  aria-current={c.id === cid ? 'page' : undefined}
-                  title={c.title}
-                >
-                  <span className="conv-title">{c.title}</span>
-                  <button
-                    className="conv-del"
-                    aria-label="删除对话"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      deleteConv(c.id)
-                    }}
-                  >
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                      <path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
-                    </svg>
-                  </button>
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
-
-        <div className="sidebar-footer">
-          <button className="nav-item" onClick={() => openSocial('station')}>
-            <span className="nav-social-icon" aria-hidden>⌁</span>
-            <span>同游圈</span>
-          </button>
-          <button className="nav-item" onClick={() => setShowTrips(true)}>
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M9 20l-5.5-2V5l5.5 2 6-2 5.5 2v13l-5.5-2zM9 7v13M15 5v13" />
-            </svg>
-            <span>协同行程</span>
-          </button>
-          <button className="nav-item" onClick={openLedger}><NavIcon name="ledger" /><span>旅行记账</span></button>
-          <button className="nav-item" onClick={() => setShowMemories(true)}>
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-            </svg>
-            <span>记忆</span>
-          </button>
-          <button className="nav-item" onClick={() => setShowSkills(true)}>
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 2l2.4 5.2L20 8l-4 4 1 6-5-2.8L7 18l1-6-4-4 5.6-.8z" />
-            </svg>
-            <span>技能</span>
-          </button>
-          <button className="nav-item" onClick={() => setShowConnectors(true)}>
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" />
-            </svg>
-            <span>连接</span>
-          </button>
-          <button className="nav-item" onClick={() => setShowSupport(true)}>
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
-            </svg>
-            <span>联系客服</span>
-            {supportUnread > 0 && <b className="support-badge">{supportUnread}</b>}
-          </button>
-          {user.is_admin && (
-            <button className="nav-item" onClick={() => setShowAdmin(true)}>
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                <circle cx="9" cy="7" r="4" />
-                <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
-              </svg>
-              <span>用户管理</span>
-            </button>
-          )}
-          <div className="user-card">
-            <button className="user-profile-trigger" onClick={() => openSocial('profile')} aria-label="打开个人主页">
-              <span className="user-avatar">{user.avatar_url ? <img src={user.avatar_url} alt="" /> : (user.username[0] || 'U').toUpperCase()}</span>
-              <span className="user-meta">
-                <span className="user-name" title={user.display_name || user.username}>{user.display_name || user.username}</span>
-                <span className="user-plan">{user.is_admin ? '管理员' : `@${user.username}`}</span>
-              </span>
-            </button>
-            <button className="user-logout" onClick={onLogout} aria-label="退出登录" title="退出登录">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />
-              </svg>
-            </button>
-          </div>
-          <a className="sidebar-beian" href="https://beian.miit.gov.cn" target="_blank" rel="noopener noreferrer">
-            鄂ICP备2026020535号-2
-          </a>
-        </div>
-      </aside>
-      {collapsed && (
-        <button className="sidebar-expand" aria-label="展开侧栏" onClick={() => setCollapsed(false)}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16" />
-          </svg>
-        </button>
-      )}
-
       {showLedger && <Suspense fallback={<div className="overlay-loading" role="status">正在打开记账本…</div>}><Ledger initialBookID={ledgerBookID} initialTrip={ledgerTrip} onClose={() => setShowLedger(false)} /></Suspense>}
       {showTrips && (
         <Suspense fallback={<div className="overlay-loading" role="status"><span className="spinner" /> 正在打开协同行程…</div>}>
@@ -1147,11 +1008,12 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
             username={user.username}
             layoutMode={layoutMode}
             initialBoardId={tripsBoard}
+            initialCreate={createTrip}
             openChatSignal={openChatSignal}
             onChatRead={refreshSocialUnread}
             onOpenLedger={(trip) => { openLedger(); setLedgerTrip(trip) }}
             onBoardChange={setTripsBoard}
-            onClose={() => { setShowTrips(false); setTripsBoard(null) }}
+            onClose={() => { setShowTrips(false); setTripsBoard(null); setCreateTrip(false) }}
             onOpenConversation={(convId) => {
               setShowTrips(false)
               setTripsBoard(null)
@@ -1197,7 +1059,15 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
         onDismiss={() => setAnnDismissed(true)}
       />
 
-      <main className="main">
+      {!showTrips && !showLedger && !mobilePanel && <div className="travel-stage" inert={aiOpen}>
+        <TravelHome unread={notificationUnread} name={user.display_name || user.username} cities={trendingDestinations} covers={destinationCovers}
+          onNotifications={() => setShowNotifications(true)} onAsk={openAI}
+          onAll={() => { setCreateTrip(false); openMobileTrips() }}
+          onCreate={() => { setCreateTrip(true); setTripsBoard(null); openMobileTrips() }}
+          onTrip={id => { setCreateTrip(false); setTripsBoard(id); openMobileTrips() }} />
+      </div>}
+      <main className="main ai-workspace" hidden={!aiOpen} aria-label="同游 AI">
+        <header className="journey-ai-header"><button onClick={() => setAiOpen(false)} aria-label="关闭 AI">收起 ↓</button><strong>同游 AI</strong><div><button onClick={openMobileHistory}>历史</button><button onClick={newChat} disabled={running}>新对话</button></div></header>
         <header className="app-topbar">
           <button className="mobile-menu-button" aria-label="我的" onClick={() => setMobilePanel('account')}>
             <span className="mobile-account-avatar">{user.avatar_url ? <img src={user.avatar_url} alt="" /> : (user.display_name || user.username).slice(0, 1)}</span>
@@ -1249,14 +1119,13 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
           <div className="hero">
             <div className="hero-soft-glow" aria-hidden />
             <div className="hero-content">
-              <div className="hero-eyebrow">{layoutMode === 'mobile' ? greeting : '17同游 · 一起规划，一起出发'}</div>
-              <h1 className="hero-title">想去哪儿，<br className="mobile-title-break" />就从这里出发</h1>
+              <div className="hero-eyebrow">旅行里的小事，交给我</div>
+              <h1 className="hero-title">想去哪儿，<br className="mobile-title-break" />一起想想。</h1>
               <p className="hero-sub">{isAndroidApp() ? '说个目的地，或贴一篇攻略。' : '说一个目的地、贴一篇攻略，或者直接问我旅行问题。'}</p>
-              <InspirationLaunchpad
+              {aiOpen && <InspirationLaunchpad
                 running={running}
-                suggestions={starterChips.slice(0, 4)}
-                covers={destinationCovers}
-                onSocial={() => openSocial('station')}
+                idea={input}
+                setIdea={setInput}
                 onLaunch={({ prompt, deepReasoning }: InspirationLaunch) => {
                   if (deepReasoning) enableDeep()
                   void send(prompt, { deepReasoning })
@@ -1269,7 +1138,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
                 webSearch={webSearch}
                 onToggleDeep={toggleDeep}
                 onToggleWebSearch={toggleWebSearch}
-              />
+              />}
             </div>
           </div>
         ) : (
@@ -1357,50 +1226,41 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
           />
         </Suspense>
       )}
-      {layoutMode === 'mobile' && mobilePanel && <section className="mobile-page" aria-label={mobilePanel === 'history' ? '历史记录' : '我的账户'}>
-        <header className="mobile-page-header"><h1>{mobilePanel === 'history' ? '历史' : '我的'}</h1><button onClick={() => setMobilePanel(null)} aria-label="关闭页面">完成</button></header>
+      {mobilePanel && <section inert={showAnn || showSupport || showAdmin || showSkills || showConnectors || showMemories} className={`mobile-page${mobilePanel === 'history' ? ' history-page' : ''}`} aria-label={mobilePanel === 'history' ? '历史记录' : '我的账户'}>
+        <header className="mobile-page-header"><h1>{mobilePanel === 'history' ? '历史' : '我的'}</h1><button onClick={() => setMobilePanel(aiOpen ? null : mobilePanel === 'history' ? 'account' : null)} aria-label="关闭页面">完成</button></header>
         {mobilePanel === 'history' ? <>
           <label className="mobile-history-search">{isAndroidApp() ? <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 5 5" /></svg> : <NavIcon name="history" />}<input aria-label="搜索历史对话" placeholder="搜索对话" value={search} onChange={e => setSearch(e.target.value)} /></label>
           <div className="mobile-history-list">
-            {!filteredConvs.length && <p className="mobile-empty">{search ? '没有找到相关对话，换个关键词试试。' : '还没有对话，在首页说一个目的地开始吧。'}</p>}
+            {!filteredConvs.length && <p className="mobile-empty">{search ? '没有找到相关对话，换个关键词试试。' : '还没有对话，点「问 AI」说一个目的地开始吧。'}</p>}
             {groupConvs(filteredConvs).map(g => <section key={g.label}><h2>{g.label}</h2>{g.items.map(c => <article className="mobile-history-row" key={c.id}>
               <button onClick={() => selectConv(c.id)}><strong>{c.title}</strong><small>{g.label}</small></button>
               <button className="mobile-delete" aria-label={`删除对话 ${c.title}`} onClick={() => void deleteConv(c.id)}>{isAndroidApp() ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden><path d="M3 6h18M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7m4-7v7" /></svg> : '删除'}</button>
             </article>)}</section>)}
           </div>
         </> : <>
-          <button className="mobile-profile-card" onClick={() => openSocial('profile')}><span className="mobile-account-avatar">{user.avatar_url ? <img src={user.avatar_url} alt="" /> : (user.display_name || user.username).slice(0, 1)}</span><span><strong>{user.display_name || user.username}</strong><small>@{user.username} · 查看个人主页</small></span><b aria-hidden>›</b></button>
+          <div className="mobile-profile-card"><span className="mobile-account-avatar">{user.avatar_url ? <img src={user.avatar_url} alt="" /> : (user.display_name || user.username).slice(0, 1)}</span><span><strong>{user.display_name || user.username}</strong><small>@{user.username}</small></span></div>
           <div className="mobile-account-links">
-            {([
-              ['记忆', () => setShowMemories(true)], ['技能', () => setShowSkills(true)], ['连接', () => setShowConnectors(true)],
-              ['公告', () => setShowAnn(true)], ['联系客服', () => setShowSupport(true)],
-              ...(user.is_admin ? [['用户管理', () => setShowAdmin(true)]] : []),
-              ...(!isAndroidApp() ? [['切换桌面布局', () => changeLayoutMode('desktop')]] : []),
-            ] as [string, () => void][]).map(([label, action]) => <button key={label} onClick={() => { setMobilePanel(null); action() }}>{label}<span aria-hidden>›</span></button>)}
+            <button onClick={openMobileHistory}>历史对话<span aria-hidden>›</span></button>
+            <button onClick={() => setShowAnn(true)}>公告<span aria-hidden>›</span></button>
+            <button onClick={() => setShowSupport(true)}>帮助与反馈{supportUnread > 0 ? ` · ${supportUnread}` : ''}<span aria-hidden>›</span></button>
+            {!isAndroidApp() && <button onClick={() => changeLayoutMode(layoutMode === 'desktop' ? 'mobile' : 'desktop')}>切换{layoutMode === 'desktop' ? '移动端' : '桌面'}布局<span aria-hidden>›</span></button>}
           </div>
+          <details className="journey-advanced"><summary>更多工具与设置</summary><div className="mobile-account-links">
+            <button onClick={() => setShowMemories(true)}>旅行偏好与记忆<span aria-hidden>›</span></button>
+            <button onClick={() => setShowSkills(true)}>技能<span aria-hidden>›</span></button>
+            <button onClick={() => setShowConnectors(true)}>连接<span aria-hidden>›</span></button>
+            {user.is_admin && <button onClick={() => setShowAdmin(true)}>用户管理<span aria-hidden>›</span></button>}
+          </div></details>
           <button className="mobile-signout" onClick={onLogout}>退出登录</button>
           {isAndroidApp() && <p className="android-version">17同游 Android {navigator.userAgent.match(/17TongyouAndroid\/([^\s]+)/)?.[1]} · 好友测试版</p>}
         </>}
       </section>}
-      <nav className="mobile-bottom-nav" data-active={mobileActive} aria-label="移动端主导航">
-        <button className={mobileActive === 'home' ? 'active' : ''} aria-current={mobileActive === 'home' ? 'page' : undefined} onClick={openMobileChat}>
-          <NavIcon name="chat" />
-          <small>首页</small>
-        </button>
-        <button className={mobileActive === 'trips' ? 'active' : ''} aria-current={mobileActive === 'trips' ? 'page' : undefined} onClick={openMobileTrips}>
-          <NavIcon name="trip" />
-          <small>行程</small>
-        </button>
+      {!aiOpen && <><nav className="mobile-bottom-nav" data-active={mobileActive} aria-label="主导航">
+        <button className={mobileActive === 'travel' ? 'active' : ''} aria-current={mobileActive === 'travel' ? 'page' : undefined} onClick={openMobileChat}><NavIcon name="trip" /><small>旅行</small></button>
         <button className={mobileActive === 'ledger' ? 'active' : ''} aria-current={mobileActive === 'ledger' ? 'page' : undefined} onClick={openLedger}><NavIcon name="ledger" /><small>记账</small></button>
-        <button className={mobileActive === 'history' ? 'active' : ''} aria-current={mobileActive === 'history' ? 'page' : undefined} onClick={openMobileHistory}>
-          <NavIcon name="history" />
-          <small>历史</small>
-        </button>
-        <button className={mobileActive === 'social' ? 'active' : ''} aria-current={mobileActive === 'social' ? 'page' : undefined} onClick={openMobileSocial}>
-          <NavIcon name="social" />
-          <small>同游圈</small>
-        </button>
-      </nav>
+        <button className={mobileActive === 'account' ? 'active' : ''} aria-current={mobileActive === 'account' ? 'page' : undefined} onClick={openAccount}><NavIcon name="account" /><small>我的</small></button>
+      </nav><button className="journey-ai-fab" onClick={() => openAI()} aria-label={running ? '问 AI，正在生成' : '问 AI'}><NavIcon name="chat" />{running ? '生成中' : '问 AI'}</button></>}
+
     </div>
   )
 }
@@ -1408,12 +1268,13 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
 
 /** 底栏图标：统一 24 网格、1.7 描边、currentColor。
  *  原来是 ✦ / 🗺 / ☰ / ⌁ —— 彩色 emoji 与单色字符混用，且 ⌁ 无法辨认。 */
-function NavIcon({ name }: { name: 'chat' | 'trip' | 'ledger' | 'history' | 'social' }) {
+function NavIcon({ name }: { name: 'chat' | 'trip' | 'ledger' | 'history' | 'social' | 'account' }) {
   const path = {
     chat: <><path d="m12 3 2.4 6.6L21 12l-6.6 2.4L12 21l-2.4-6.6L3 12l6.6-2.4zM20 2v4M18 4h4" /></>,
     trip: <><path d="M9 4 3 6.5v13L9 17l6 2.5 6-2.5v-13L15 7 9 4z" /><path d="M9 4v13M15 7v12.5" /></>,
     ledger: <><rect x="3" y="5" width="18" height="14" rx="3" /><path d="M3 10h18M7 15h4" /></>,
     history: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3.5 2" /></>,
+    account: <><circle cx="12" cy="8" r="3.5" /><path d="M5 21v-2a7 7 0 0 1 14 0v2" /></>,
     social: (
       <>
         <circle cx="9" cy="9" r="3.2" />
@@ -1437,9 +1298,8 @@ function NavIcon({ name }: { name: 'chat' | 'trip' | 'ledger' | 'history' | 'soc
  */
 function InspirationLaunchpad({
   running,
-  suggestions,
-  covers,
-  onSocial,
+  idea,
+  setIdea,
   onLaunch,
   images = [],
   onAddImages,
@@ -1451,9 +1311,8 @@ function InspirationLaunchpad({
   onToggleWebSearch,
 }: {
   running: boolean
-  suggestions: StarterChip[]
-  covers: Record<string, string>
-  onSocial: () => void
+  idea: string
+  setIdea: (value: string) => void
   onLaunch: (launch: InspirationLaunch) => void
   images?: PendingImage[]
   onAddImages?: (files: File[]) => void
@@ -1483,7 +1342,6 @@ function InspirationLaunchpad({
     return () => document.removeEventListener('paste', onPaste)
   }, [onAddImages, images.length])
   const [error, setError] = useState('')
-  const [idea, setIdea] = useState('')
   const ideaRef = useRef<HTMLTextAreaElement>(null)
 
 
@@ -1626,56 +1484,10 @@ function InspirationLaunchpad({
         </form>
       </section>
 
-      {isAndroidApp() && suggestions.length > 0 && <nav className="android-quick-starts" aria-label="旅行灵感">
-        {suggestions.map(item => <button type="button" key={item.label} onClick={() => pickSuggestion(item.label)}>{item.label}</button>)}
-      </nav>}
+      <nav className="journey-ai-tasks" aria-label="AI 快捷任务">
+        {[['规划旅行', '帮我规划一次旅行，目的地是'], ['找美食', '帮我推荐值得体验的当地美食，目的地是'], ['整理攻略', '帮我把这篇攻略整理成行程：'], ['检查路线', '帮我检查这份行程的路线和时间安排：']].map(([label, prompt]) => <button type="button" key={label} onClick={() => pickSuggestion(prompt)}>{label} <span aria-hidden>↗</span></button>)}
+      </nav>
 
-      <section className="social-entry" aria-label="目的地旅行接力站">
-        <button type="button" onClick={onSocial}>
-          <span className="social-entry-people" aria-hidden>
-            {isAndroidApp() ? <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><circle cx="14" cy="4" r="2"/><path d="m12 8-3 5 4 2 2 6M12 8l4 4h4M12 8l-5 1-2 5M9 13l-2 8M20 10v11"/></svg> : <><i>旅</i><i>山</i><i>友</i></>}
-          </span>
-          <span className="social-entry-copy">
-            <em>{isAndroidApp() ? '真实旅行者接力' : 'NEW · 真实旅行者接力'}</em>
-            <strong>有人正在天堂寨，把现场情况留给下一位</strong>
-            <small>看 72 小时现场情报、抄真实路线，也把你的经验接下去</small>
-          </span>
-          <span className="social-entry-meta"><b>准备去</b><b>正在玩</b><b>刚回来</b></span>
-          <span className="social-entry-cta">{isAndroidApp() ? <b aria-hidden>›</b> : <>进入接力站 <b aria-hidden>→</b></>}</span>
-        </button>
-      </section>
-
-      {!!suggestions.length && (
-        <section className="trending-destinations" aria-labelledby="trending-destinations-title">
-          <div className="trending-destinations-head">
-            <div>
-              <span className="trending-kicker">近 30 天真实热问</span>
-              <h2 id="trending-destinations-title">最近大家都想去</h2>
-            </div>
-            <small>选一个，再补充你的预算和节奏</small>
-          </div>
-          <div className="trending-destination-grid">
-            {suggestions.map((item, index) => {
-              const city = item.label.replace(/怎么玩$/, '')
-              const cover = covers[city]
-              return (
-                <button className="destination-card" type="button" key={city} onClick={() => pickSuggestion(city)} aria-label={`选择${city}`}>
-                  <span className={`destination-cover cover-tone-${index % 4}`}>
-                    <span className="destination-cover-fallback" aria-hidden>{item.icon}</span>
-                    {cover && <img src={`${API}/img?u=${encodeURIComponent(cover)}`} alt="" loading="lazy" onError={(event) => { event.currentTarget.hidden = true }} />}
-                    <em>TOP {index + 1}</em>
-                  </span>
-                  <span className="destination-card-copy">
-                    <strong>{city}</strong>
-                    <span>{item.description}</span>
-                    <small>带入规划 <b aria-hidden>↗</b></small>
-                  </span>
-                </button>
-              )
-            })}
-          </div>
-        </section>
-      )}
     </div>
   )
 }

@@ -6,10 +6,27 @@
 
 线上：<https://17tongyou.com>（服务器规模有限，目前邀请制）
 
+## 当前版本与功能（2026-10-20）
+
+| 平台 | 当前状态 | 说明 |
+| --- | --- | --- |
+| Web | 已部署 2026-10-20 修复 | React + TypeScript；手机与桌面布局；[前端说明](frontend/README.md) |
+| Android | **0.8.2 (13)** | 独立签名 APK，打包前端资源快照；[下载 APK](https://17tongyou.com/downloads/android/0.8.2-13/17tongyou-android-0.8.2-13.apk) · [构建说明](android/README.txt) |
+| iOS | **1.0.11 (12)** | 原生 SwiftUI，已安装验证；当前个人签名测试，尚未通过 App Store / TestFlight 分发；[构建说明](ios/README.md) |
+
+主导航收敛为 **旅行 / 记账 / 我的**，独立“问 AI”入口支持收起恢复草稿与会话。同游圈已从主入口移除，历史数据保留。
+
+- **旅行**：旅行册首页、导入与创建、多人协作；地图与可拖动行程面板同屏，地点卡展示缩略图、时间和简短说明，点击查看实景图、地址与攻略摘录。没有图片时使用地点占位；路线连线表示顺序，不等于道路导航。
+- **记账**：独立账本可关联行程，成员权限独立；编辑/只读邀请与分享加入、多币种支出、自选汇总币种、最新参考汇率。说明选填，金额与分类即可记一笔。
+- **我的**：历史、公告、帮助、记忆、技能、连接；管理员可管理用户。已修复 Web/Android 工具弹层被账户页面遮挡的问题。
+- **客户端更新**：Android 0.6.0 起前台检查新版，提示后浏览器下载，由用户确认覆盖安装；系统深浅主题与启动动画保留。网页部署不会更新 APK 内资源，iOS 需单独构建签名。
+
+三端共享账号与后端数据，版本和发布流程独立。详见[三端发布管理](docs/dev_docs/mobile-release-management.txt)。本轮验收记录：[主界面](docs/test_cases/旅行主界面精简与AI入口-2026-10-20.md)、[景点详情](docs/test_cases/地图主视图与景点详情-2026-10-20.md)、[卡片与地图比例](docs/test_cases/行程卡片密度与安卓地图比例-2026-10-20.md)、[我的工具弹层](docs/test_cases/我的工具弹层被账户页遮挡-2026-10-20.md)。
+
 主要复杂度不在「调一次 LLM」，而在**编排、上下文治理、可观测与安全边界**。
 
 > **第一次来？** 如果你想看的是「一个真在跑的 Agent 系统长什么样」，建议这个顺序：
-> [技术亮点](#技术亮点)（5 分钟知道它解决了什么）→ `docs/pitfalls/`（84 篇踩坑，
+> [技术亮点](#技术亮点)（5 分钟知道它解决了什么）→ `docs/pitfalls/`（开发踩坑记录，
 > 记的全是**不报错的 bug**，大概是这个仓库最有价值的部分）→ 想跑起来再看
 > [快速开始](#快速开始)。
 
@@ -22,11 +39,12 @@
 ```bash
 cp backend/.env.example backend/.env           # 见下方「你需要自己准备什么」
 cp frontend/.env.example frontend/.env.local   # 高德 Web端(JS API) key + 安全密钥
-cd backend && python3.12 -m venv .venv && .venv/bin/pip install -r requirements.txt
-cd ../frontend && npm install
+(cd backend && python3.12 -m venv .venv && .venv/bin/pip install -r requirements.txt)
+(cd frontend && npm ci)
 
 backend/scripts/start_chrome.sh                          # Agent 专用调试 Chrome（:9223）
-cd backend && .venv/bin/uvicorn app.main:app --reload --port 8000
+(cd backend && .venv/bin/uvicorn app.main:app --reload --port 8000)
+# 在另一个终端，从仓库根目录启动前端：
 cd frontend && npm run dev                               # → http://localhost:5173
 ```
 
@@ -35,8 +53,8 @@ cd frontend && npm run dev                               # → http://localhost:
 
 ### 你需要自己准备什么
 
-**仓库里一个真密钥都没有**（`.env` / `.env.local` 均已 gitignore，且有测试钉住不许把 key
-写回源码）。下面这些要你自己申请：
+**运行凭据由本地环境配置提供**（`.env` / `.env.local` 均已 gitignore，前端测试禁止把 key
+写回源码）。下面这些需要自行准备：
 
 | 项 | 必需 | 从哪来 |
 | --- | --- | --- |
@@ -278,12 +296,17 @@ evals/                         评估集：路由 / 本体抽取 / 端到端质�
 tests/                         全离线（sqlite + fake LLM），无需真实 API key
 
 frontend/src/pages/
-  Home.tsx                     对话 / 轨迹双标签、思考工作台、子代理面板、海报、预算
-  Trips.tsx                    协同行程板（三栏、地图、记账、行李、群聊）
+  TravelHome.tsx / Home.tsx     旅行册首页、三入口导航、独立 AI、历史与工具
+  Trips.tsx / TripRouteLayout.css  协同行程地图与列表同屏、桌面/移动布局
+  PlaceDetails.tsx              景点图片、事实信息与攻略摘录
+  Ledger.tsx                   独立多币种记账与协作
+
+android/                       WebView 宿主、固定 UI 快照、签名 APK 与更新检查
+ios/                           原生 SwiftUI 客户端与 Xcode 项目
 
 docs/
   dev_docs/                    架构说明（**先读 系统架构总览.md**）
-  task_plans/ pitfalls/ test_cases/    方案 / 62 篇踩坑 / 验收用例
+  task_plans/ pitfalls/ test_cases/    方案 / 踩坑记录 / 验收用例
 ```
 
 ---
@@ -330,7 +353,7 @@ docs/
 后端是 FastAPI（`uvicorn`），同时托管前端构建产物；前面一层 nginx 做反代与 HTTPS。
 
 ```bash
-cd frontend && npm run build && cp -r dist/. ../backend/static/   # 末尾 /. 不能省
+(cd frontend && npm run build && cp -r dist/. ../backend/static/)   # 末尾 /. 不能省
 bash backend/deploy/deploy.sh                                     # rsync + 装依赖 + 重启
 ```
 
@@ -369,4 +392,4 @@ curl -s <你的站点>/ | grep -o 'assets/index-[^"]*\.js'    # 比对 chunk has
 
 想跑起来看看的话，从[快速开始](#快速开始)进；想读懂它怎么运作，
 先看 `docs/dev_docs/系统架构总览.md`，再挑 `docs/pitfalls/` 里感兴趣的翻——
-那 60 多篇踩坑记录大概是这个仓库最有价值的部分。
+这些踩坑记录大概是这个仓库最有价值的部分。

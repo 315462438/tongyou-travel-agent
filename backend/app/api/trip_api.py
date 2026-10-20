@@ -245,6 +245,28 @@ def get_trip(trip_id: str, editing_day: int | None = None,
     return _trip_detail(db, trip)
 
 
+@router.get("/{trip_id}/stops/{stop_id}/details")
+async def stop_details(trip_id: str, stop_id: str, db: Session = Depends(get_db),
+                       user: TravelUser = Depends(get_current_user)):
+    from app.db.models import TravelMessage
+    from app.tools.place_details import public_details, guide_material
+    trip = _member(db, trip_id, user)
+    stop = db.get(TravelTripStop, stop_id)
+    if stop is None or stop.trip_id != trip_id:
+        raise HTTPException(404, "地点不存在")
+    # Copy private data before awaiting external IO; public cache contains no trip material.
+    name, note, location = stop.name, stop.note or "", stop.location or ""
+    excerpt, guide_photos = "", []
+    message = db.get(TravelMessage, trip.source_message_id) if trip.source_message_id else None
+    if message and message.role == "assistant" and message.conversation_id == trip.source_conversation_id:
+        excerpt, guide_photos = guide_material(name, message.content, message.meta_json)
+    result = await public_details(name, location)
+    photos = {p["url"]: p for p in result["photos"] + guide_photos}
+    return {**result, "id": stop_id, "name": name, "description": note,
+            "description_source": "行程说明", "guide_excerpt": excerpt,
+            "photos": list(photos.values())[:8]}
+
+
 @router.get("/{trip_id}/source-guide")
 def get_source_guide(
     trip_id: str,

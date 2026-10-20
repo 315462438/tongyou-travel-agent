@@ -1,7 +1,7 @@
 17同游 Android 好友测试版
 
-当前发布：0.6.0 (9)，启动时检查更新；系统深浅外观覆盖登录页及更新提示。保留0.5.0各模块排版、首页字号与开场动画。
-下载：https://17tongyou.com/downloads/android/0.6.0-9/17tongyou-android-0.6.0-9.apk
+当前发布：0.8.2 (13)，修复“我的”页面工具弹层遮挡；旅行 / 记账 / 我的三入口、独立问 AI；协同行程大地图 + 58% 可拖动行程面板、缩略图与紧凑时间摘要、景点图文详情，保留首页字号、开场动画、系统深浅外观及启动检查更新。
+下载：https://17tongyou.com/downloads/android/0.8.2-13/17tongyou-android-0.8.2-13.apk
 直接覆盖安装，无需卸载旧版。0.1.0 (1) 历史产物与旧链接保留。
 
 三端边界
@@ -25,7 +25,7 @@
   python3 scripts/package-release.py
 
 也可直接运行已启动的专用模拟器（避开 Gradle UTP 首次额外下载）：
-  python3 scripts/test-emulator.py --serial emulator-5556
+  python3 scripts/test-emulator.py --serial emulator-5554
 该脚本仅接受模拟器，测试包使用本地假数据，不登录真实账号。
 
 网页专项测试：先在 frontend 启动 npm run dev -- --host 127.0.0.1 --port 4181，
@@ -65,7 +65,15 @@ App内更新（0.6.0起）
 - 更新清单无账号信息，不发送用户token；仅接受官方HTTPS精确版本化APK地址。
 - 0.5.0及以前没有此能力，必须先手动覆盖安装0.6.0一次；不能通过发布清单给旧包远程添加检查功能。
 - 发布新版：先递增versionCode并构建/测试/package-release，再执行（仓库根目录）：
-  backend/.venv/bin/python android/scripts/publish-release.py --release 0.6.0-9 --notes-file android/release-notes/0.6.0.txt
-  backend/.venv/bin/python android/scripts/verify-download.py --release 0.6.0-9 --latest
+  backend/.venv/bin/python android/scripts/publish-release.py --release 0.8.2-13 --notes-file android/release-notes/0.8.2.txt
+  backend/.venv/bin/python android/scripts/verify-download.py --release 0.8.2-13 --latest
 - 以后替换上述版本参数和更新说明。脚本先上传校验APK、再原子切换latest清单，旧下载URL继续保留；禁止降级和同versionCode替换不同包。
 - 紧急暂停提示可将服务端latest.json的enabled设为false（保留schema/platform/application_id）；已下载APK不受影响。不要将清单指向尚未上传或未经测试的版本。
+
+当前回归（2026-10-20 / 0.8.2）
+- 专用 API35 模拟器 18 项、Android 单元 8 项、lintRelease/assembleRelease、更新清单 5 项通过。
+- 共享前端 99 单测、主流程 6 组、账户工具 6 组通过；正式网页再验证六组账户工具。
+- 公告/用户管理等一次点击立即显示，关闭或系统返回仍停在我的；工具打开时账户背景 inert。
+- 新版 APK 的签名、包内快照、HTTPS 下载、Range、下载页与 latest 更新清单已校验。
+- 详情见 ../docs/test_cases/我的工具弹层被账户页遮挡-2026-10-20.md。
+- 当前主流程浏览器回归使用 frontend 端口 4185：npm run test:journey / test:trip-route / test:account。

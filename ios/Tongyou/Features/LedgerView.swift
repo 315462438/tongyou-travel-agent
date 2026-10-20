@@ -83,7 +83,7 @@ struct LedgerView: View {
                                 TotalsView(totals: book.totals)
                                 Text(book.trip.map { "关联行程：\($0.title)" } ?? "独立账本").font(.caption).foregroundStyle(.secondary)
                                 Text("\(book.count) 笔支出 · \(ledgerRoleName(book.role))").font(.caption).foregroundStyle(.secondary)
-                            }.padding(18).frame(maxWidth: .infinity, alignment: .leading).glassCard(cornerRadius: 22)
+                            }.padding(18).frame(maxWidth: .infinity, alignment: .leading).glassCard(cornerRadius: 22).contentShape(Rectangle())
                         }.buttonStyle(.plain)
                     }
                 }.padding(16)

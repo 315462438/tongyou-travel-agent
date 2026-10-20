@@ -1,0 +1,14 @@
+{
+  "release": "20261020T045351Z",
+  "backup": "/home/ubuntu/travel-agent/deploy-backups/journey-20261020T045351Z",
+  "index_sha256": "9f7528ecd206956cd4bf92174839b58d065d3af3357da0455c9ab555520a9add",
+  "entry_assets_verified": [
+    "/travel/assets/index-CKgpnSim.js",
+    "/travel/assets/rolldown-runtime-QTnfLwEv.js",
+    "/travel/assets/index-Bc_gG_sC.css"
+  ],
+  "health": {
+    "status": "ok"
+  },
+  "backend_restarted": false
+}

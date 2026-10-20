@@ -16,7 +16,10 @@
     "test:mobile": "node tests/mobile-browser.mjs",
     "test:mobile:glass": "node tests/mobile-glass-browser.mjs",
     "test:android": "node tests/android-browser.mjs",
-    "test:links": "node tests/link-opening-browser.mjs"
+    "test:links": "node tests/link-opening-browser.mjs",
+    "test:journey": "node tests/journey-browser.mjs",
+    "test:trip-route": "node tests/trip-route-browser.mjs",
+    "test:account": "node tests/account-panels-browser.mjs"
   },
   "dependencies": {
     "@amap/amap-jsapi-loader": "^1.0.1",

@@ -1,0 +1,133 @@
+/* Three destinations, one contextual assistant. Loaded after legacy platform styles. */
+.app.journey-shell { --journey-ink:#202a39;--journey-muted:#6d7889;--journey-card:#ffffffb8;--journey-line:#8b9bb326;--journey-bg:#f5f7fb;--journey-accent:#2563eb;display:block; }
+.journey-shell [hidden] { display:none!important; }
+.journey-shell>.sidebar,.journey-shell>.sidebar-expand,.journey-shell>.sidebar-scrim { display:none!important; }
+.travel-stage { height:100%;overflow:auto;overscroll-behavior:contain;background:radial-gradient(ellipse at 10% 0,#dce8fd 0,transparent 50%),var(--journey-bg);color:var(--journey-ink); }
+.travel-home { width:min(100%,1000px);margin:auto;padding:24px 32px 130px;box-sizing:border-box; }
+.travel-toolbar,.travel-section-head,.travel-primary-actions,.travel-book-top,.travel-book-footer { display:flex;align-items:center;justify-content:space-between;gap:12px; }
+.travel-toolbar button,.travel-section-head button { min-height:44px;border:0;background:transparent;color:var(--journey-ink); }
+.travel-toolbar button { width:44px;border-radius:50%;background:var(--journey-card);display:grid;place-items:center; }
+.travel-wordmark { font-size:17px;font-weight:700;letter-spacing:-.03em; }
+.travel-wordmark>span { font-size:12px;font-weight:400;color:var(--journey-muted);margin-left:12px; }
+.travel-welcome { margin:38px 0 22px; }
+.travel-welcome p { margin:0 0 8px;font-size:13px;color:var(--journey-muted); }
+.travel-welcome h1 { font-size:34px;line-height:1.35;font-weight:600;letter-spacing:-.025em;margin:0; }
+.travel-primary-actions { justify-content:flex-start;margin-bottom:36px; }
+.travel-home button { cursor:pointer;font-family:inherit; }
+.travel-primary-actions button,.travel-empty button { min-height:44px;border-radius:24px;padding:10px 20px;border:1px solid var(--journey-line);font-size:14px; }
+.travel-primary { background:var(--journey-ink);color:var(--journey-bg); }
+.travel-secondary,.travel-empty button { background:var(--journey-card);color:var(--journey-ink); }
+.travel-primary-actions span { margin-right:4px;font-size:18px; }
+.travel-section-head { margin-bottom:16px; }
+.travel-section-head h2 { font-size:18px;font-weight:600;margin:0; }
+.travel-section-head>span,.travel-section-head>button { font-size:12px;color:var(--journey-muted); }
+.travel-book-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px; }
+.travel-tone-0 { --book:#d8e6f5;--book-ink:#294c76; }
+.travel-tone-1 { --book:#e3e9da;--book-ink:#41583e; }
+.travel-tone-2 { --book:#eee1d4;--book-ink:#765235; }
+.travel-tone-3 { --book:#e3dff2;--book-ink:#564777; }
+.travel-book { position:relative;isolation:isolate;display:flex;flex-direction:column;align-items:stretch;gap:12px;min-width:0;padding:20px 20px 16px 28px;min-height:206px;border:1px solid #ffffff80;border-radius:8px 22px 22px 8px;background:var(--book);color:var(--book-ink);text-align:left;box-shadow:0 7px 0 -3px var(--journey-card),0 10px 0 -5px var(--journey-line),0 15px 25px -20px #152d4d60;transition:transform .24s cubic-bezier(.2,.8,.2,1),box-shadow .24s; }
+.travel-book-spine { position:absolute;left:10px;top:0;bottom:0;width:1px;background:currentColor;opacity:.1; }
+.travel-book-top { font-size:12px; }
+.travel-book-top>span:first-child { overflow:hidden;white-space:nowrap;text-overflow:ellipsis; }
+.travel-book-top>span:last-child { white-space:nowrap; }
+.travel-book-art { height:55px;opacity:.5;overflow:hidden; }
+.travel-book-art svg { width:100%;height:100%; }
+.travel-book>strong { font-size:17px;line-height:1.4;font-weight:600;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden; }
+.travel-book-footer { font-size:11px;margin-top:auto;opacity:.8; }
+.travel-inspiration { margin-top:36px; }
+.travel-destinations { display:grid;grid-auto-flow:column;grid-auto-columns:calc((100% - 42px)/4);gap:14px;overflow-x:auto;scroll-snap-type:x mandatory;padding:4px 0 14px;scrollbar-width:none; }
+.travel-destination { position:relative;isolation:isolate;display:flex;flex-direction:column;justify-content:flex-end;align-items:flex-start;min-height:160px;padding:18px;border:0;border-radius:22px;overflow:hidden;text-align:left;background:var(--book);color:var(--book-ink);scroll-snap-align:start;transition:transform .22s; }
+.travel-destination img { position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:-2; }
+.travel-destination:has(img:not([hidden])) { color:white; }
+.travel-destination:has(img:not([hidden]))::after { content:'';position:absolute;inset:0;background:linear-gradient(transparent,#122033a8);z-index:-1; }
+.travel-destination strong { font-size:17px; }.travel-destination small { font-size:11px;opacity:.85;margin-top:4px; }
+.travel-destination-mark { position:absolute;right:16px;top:12px;font-size:25px;opacity:.6; }
+.travel-empty { text-align:center;border:1px solid var(--journey-line);border-radius:24px;padding:25px;background:var(--journey-card); }
+.travel-empty h3 { font-size:17px;font-weight:600;margin:18px 0 8px; }.travel-empty p,.travel-loading { font-size:13px;color:var(--journey-muted); }.travel-loading { padding:32px; }
+.travel-paper-art { position:relative;height:70px;width:110px;margin:8px auto 0; }
+.travel-paper-art span,.travel-paper-art i { position:absolute;display:grid;place-items:center;width:75px;height:65px;border:4px solid var(--journey-card);background:#d6e6f7;border-radius:8px;transform:rotate(-12deg);color:#345b84;font-size:13px;font-style:normal;box-shadow:0 8px 20px #152d4d18; }
+.travel-paper-art i { left:30px;top:3px;transform:rotate(12deg);background:#dce9df;color:#49634a; }
+/* Dedicated dock also works on desktop. Overrides legacy five-column platform rules. */
+html .app.journey-shell.journey-shell .mobile-bottom-nav { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));position:fixed;z-index:90;left:50%;right:auto;transform:translateX(-50%);bottom:max(14px,env(safe-area-inset-bottom));width:290px;min-height:64px;padding:4px;border:1px solid var(--journey-line);border-radius:36px;background:var(--journey-card);backdrop-filter:blur(20px);box-shadow:0 8px 32px #17324c14; }
+html .app.journey-shell.journey-shell .mobile-bottom-nav::before,html .app.journey-shell.journey-shell .mobile-bottom-nav::after { display:none; }
+html .app.journey-shell.journey-shell .mobile-bottom-nav button { min-width:0;min-height:54px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:var(--journey-muted);border:0;border-radius:28px;background:transparent;transition:background .22s,color .22s,transform .18s; }
+html .app.journey-shell.journey-shell .mobile-bottom-nav button.active { background:#829bb51a;color:var(--journey-accent);box-shadow:none; }
+html .app.journey-shell.journey-shell .mobile-bottom-nav button svg { width:22px;height:22px; }html .app.journey-shell.journey-shell .mobile-bottom-nav small { font-size:11px; }
+.journey-ai-fab { position:fixed;z-index:91;bottom:max(18px,env(safe-area-inset-bottom));left:calc(50% + 160px);height:58px;min-width:86px;border:0;border-radius:30px;display:flex;align-items:center;justify-content:center;gap:7px;background:var(--journey-ink);color:var(--journey-bg);font-size:14px;box-shadow:0 8px 22px #17324c20;transition:transform .2s; }
+.journey-ai-fab svg { width:20px;height:20px; }
+.journey-shell .main.ai-workspace { position:fixed;inset:0;z-index:100;display:flex;margin:0;width:100%;height:100dvh;background:var(--journey-bg);color:var(--journey-ink);animation:journey-sheet-in .28s cubic-bezier(.2,.8,.2,1); }
+.journey-shell .ai-workspace>.app-topbar { display:none; }
+.journey-ai-header { display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px max(16px,calc((100% - 950px)/2));flex:none;border-bottom:1px solid var(--journey-line); }
+.journey-ai-header>button,.journey-ai-header>div>button { min-height:44px;padding:8px 12px;border:0;border-radius:22px;background:var(--journey-card);color:var(--journey-ink);font-size:13px; }
+.journey-ai-header>div { display:flex;gap:6px; }.journey-ai-header strong { font-size:15px; }
+.journey-shell .ai-workspace .hero { padding-bottom:24px; }.journey-shell .ai-workspace .hero-title { color:var(--journey-ink)!important; }.journey-shell .ai-workspace .hero-sub { color:var(--journey-muted)!important; }
+.journey-ai-tasks { display:flex;flex-wrap:wrap;gap:8px;margin:20px 0; }.journey-ai-tasks button { min-height:44px;padding:8px 14px;border:1px solid var(--journey-line);border-radius:24px;background:var(--journey-card);color:var(--journey-ink);font-size:13px; }
+.app.journey-shell .mobile-page { position:fixed;z-index:60;inset:0;margin:0;overflow:auto;padding:32px max(18px,calc((100% - 900px)/2)) 130px;background:var(--journey-bg);color:var(--journey-ink);animation:journey-sheet-in .24s ease-out; }
+.app.journey-shell .mobile-page.history-page { z-index:110; }
+.journey-shell .mobile-account-links { display:grid;gap:1px; }.journey-shell .mobile-account-links button { min-height:50px;color:var(--journey-ink); }
+.journey-advanced { padding:14px 0; }.journey-advanced summary { cursor:pointer;min-height:44px;display:flex;align-items:center;color:var(--journey-muted);font-size:13px; }
+.journey-shell .mobile-profile-card { width:100%;color:var(--journey-ink); }.journey-shell .mobile-profile-card small { color:var(--journey-muted); }
+.journey-shell .trips-overlay,.journey-shell .ledger-shell { animation:journey-sheet-in .24s ease-out; }
+.journey-shell button:focus-visible { outline:2px solid var(--journey-accent);outline-offset:3px; }
+.journey-shell :is(.travel-book,.travel-destination,.journey-ai-fab,.travel-primary-actions button,.journey-ai-tasks button):active { transform:scale(.97); }
+@media(hover:hover) { .travel-book:hover { transform:translateY(-5px) rotate(-.7deg); }.travel-destination:hover { transform:translateY(-3px); } }
+@keyframes journey-sheet-in { from { opacity:0;transform:translateY(14px); } to { opacity:1;transform:translateY(0); } }
+@media(max-width:600px) {
+ .travel-home { padding:16px 18px 120px; }.travel-welcome { margin-top:28px; }.travel-welcome h1 { font-size:26px; }.travel-section-head h2 { font-size:17px; }
+ .travel-book-grid { gap:20px;grid-template-columns:minmax(0,1fr); }.travel-book { min-height:178px;padding:16px 18px 15px 26px; }.travel-book-art { height:36px; }.travel-book>strong { font-size:16px; }
+ .travel-destinations { grid-auto-columns:68%; }.travel-destination { min-height:145px; }
+ html .app.journey-shell.journey-shell .mobile-bottom-nav { left:12px;right:112px;width:auto;transform:none;bottom:max(12px,env(safe-area-inset-bottom)); }
+ .journey-ai-fab { left:auto;right:12px;min-width:84px;bottom:max(16px,env(safe-area-inset-bottom)); }
+ .app.journey-shell .mobile-page { padding-top:24px; }.journey-shell .mobile-page-header h1 { font-size:26px; }
+}
+@media(prefers-color-scheme:dark) {
+ .app.journey-shell { --journey-ink:#eef2f8;--journey-muted:#a1acbd;--journey-card:#202737dd;--journey-line:#ffffff15;--journey-bg:#0f1521;--journey-accent:#8bb6ff; }
+ .travel-stage { background:radial-gradient(ellipse at 0 0,#1b3155 0,transparent 55%),var(--journey-bg); }
+ .travel-tone-0 { --book:#243c57;--book-ink:#c6dcf6; }.travel-tone-1 { --book:#2c403b;--book-ink:#d3e5d6; }.travel-tone-2 { --book:#463c36;--book-ink:#e8d5c5; }.travel-tone-3 { --book:#36344d;--book-ink:#dcd6f3; }
+ .travel-book { border-color:#ffffff15; }
+}
+html.native-android[data-android-appearance=dark] .app.journey-shell { --journey-ink:#eef2f8;--journey-muted:#a1acbd;--journey-card:#202737dd;--journey-line:#ffffff15;--journey-bg:#0f1521;--journey-accent:#8bb6ff; }
+@media(prefers-reduced-motion:reduce) { .journey-shell *,.journey-shell *::before,.journey-shell *::after { animation:none!important;transition:none!important;scroll-behavior:auto!important; }.journey-shell .travel-book:hover,.journey-shell .travel-destination:hover { transform:none; } }
+/* Keep the same stacking order for desktop and mobile, including lazy-loaded modules. */
+.app.journey-shell .trips-overlay,.app.journey-shell .ledger-shell { z-index:55;bottom:0; }
+.app.journey-shell .ledger-content { padding-bottom:130px; }
+.app.journey-shell .ai-workspace { z-index:170; }
+.app.journey-shell .mobile-page.history-page { z-index:180; }
+.app.journey-shell:has(.ledger-modal-backdrop,.modal-mask,.trip-chat-panel) :is(.mobile-bottom-nav,.journey-ai-fab) { visibility:hidden; }
+.app.journey-shell .trips-list { padding-bottom:130px; }
+html .app.journey-shell.journey-shell .mobile-bottom-nav { gap:2px;--journey-index:0; }
+html .app.journey-shell.journey-shell .mobile-bottom-nav[data-active=ledger] { --journey-index:1; }
+html .app.journey-shell.journey-shell .mobile-bottom-nav[data-active=account] { --journey-index:2; }
+html .app.journey-shell.journey-shell .mobile-bottom-nav::before { display:block;content:'';position:absolute;left:4px;top:4px;bottom:4px;width:calc((100% - 12px)/3);border:0;border-radius:28px;background:#829bb51a;box-shadow:none;transform:translateX(calc(var(--journey-index) * (100% + 2px)));transition:transform .28s cubic-bezier(.2,.8,.2,1);pointer-events:none; }
+html .app.journey-shell.journey-shell .mobile-bottom-nav button.active { background:transparent; }
+@media(max-width:600px) {
+ .travel-book-grid { grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:86%;overflow-x:auto;scroll-snap-type:x mandatory;padding:5px 0 14px;scrollbar-width:none;gap:14px; }
+ .travel-book { scroll-snap-align:start; }
+}
+
+.travel-toolbar button { position:relative; }
+.travel-unread { position:absolute;top:0;right:0;min-width:16px;padding:2px;border-radius:9px;background:#d7444e;color:white;font-size:10px;line-height:12px; }
+
+@media(prefers-reduced-motion:reduce) { .journey-shell :is(.travel-book,.travel-destination,.journey-ai-fab,.travel-primary-actions button,.journey-ai-tasks button):active { transform:none; } }
+/* Existing functional panels inherit the shell appearance, including desktop dark mode. */
+.app.journey-shell {
+ --bg:var(--journey-bg);--surface:var(--journey-card);--text:var(--journey-ink);
+ --text-secondary:var(--journey-muted);--text-muted:var(--journey-muted);--border:var(--journey-line);
+ --x-glass:var(--journey-card);--mobile-page-bg:var(--journey-bg);
+}
+.app.journey-shell .ledger-shell { background:var(--journey-bg);color:var(--journey-ink); }
+.app.journey-shell :is(.mobile-profile-card,.mobile-account-links,.mobile-history-row) { background:var(--journey-card);border-color:var(--journey-line); }
+.app.journey-shell :is(.mobile-history-row button,.mobile-history-search input) { color:var(--journey-ink); }
+.app.journey-shell :is(.mobile-account-links button,.mobile-history-row) { border-color:var(--journey-line); }
+.app.journey-shell :is(.mobile-history-row small,.mobile-history-list h2) { color:var(--journey-muted); }
+.app.journey-shell .trips-overlay { background:var(--journey-bg);color:var(--journey-ink); }
+.app.journey-shell .trips-overlay :is(.trip-card,.trip-create) { background:var(--journey-card);border-color:var(--journey-line); }
+.app.journey-shell .trips-overlay :is(.trip-list-intro h1,.trip-create h2,.trip-card-title,.trip-create-row input) { color:var(--journey-ink); }
+.app.journey-shell .trips-overlay :is(.trip-list-intro p,.trip-list-intro small,.trip-card-sub,.trip-create-row label) { color:var(--journey-muted); }
+.app.journey-shell .ledger-header { background:var(--journey-card);border-color:var(--journey-line); }
+.app.journey-shell .trips-overlay .trips-head { background:var(--journey-card);color:var(--journey-ink); }
+.app.journey-shell .trips-overlay .trip-create :is(input,textarea) { background:var(--journey-bg);color:var(--journey-ink);border-color:var(--journey-line); }
+
+/* Global tools must sit above account (60), navigation (90) and AI/history (170/180). */
+.app.journey-shell > .modal-mask { z-index: 240; }

@@ -65,13 +65,31 @@ public class HostInstrumentedTest {
         device.waitForIdle();SystemClock.sleep(400);
         device.takeScreenshot(new File(activity.getExternalFilesDir(null),"android-home.png"));
     }
+    @Test public void accountToolsOpenAboveAccountAndReturn() throws Exception {
+        js("[...document.querySelectorAll('.mobile-bottom-nav button')].find(x=>x.innerText.includes('我的')).click()");
+        until("document.querySelector('.mobile-page')");
+        for (String title : new String[]{"公告", "用户管理"}) {
+            js("document.querySelector('.journey-advanced').open=true");
+            js("[...document.querySelectorAll('.mobile-account-links button')].find(x=>x.innerText.startsWith("+org.json.JSONObject.quote(title)+")).click()");
+            until("document.querySelector('.app > .modal-mask .modal-close')");
+            assertEquals("true", js("(()=>{const e=document.querySelector('.app > .modal-mask .modal-close'),r=e.getBoundingClientRect();return e.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))})()"));
+            assertEquals("true",js("document.querySelector('.mobile-page').inert"));
+            device.pressBack();until("!document.querySelector('.app > .modal-mask')");
+            assertEquals("false",js("document.querySelector('.mobile-page').inert"));
+            assertEquals("true",js("document.querySelector('.mobile-page h1').textContent==='我的'"));
+        }
+    }
     @Test public void tripWorkspaceLayoutAndSystemBack() throws Exception {
-        js("[...document.querySelectorAll('.mobile-bottom-nav button')].find(x=>x.innerText==='行程').click()");until("document.querySelector('.trip-card')");
-        js("document.querySelector('.trip-card').click()");until("document.querySelector('.android-trip-stop')");
-        assertEquals("true",js("(()=>{const e=document.querySelector('.android-trip-stop'),r=e.getBoundingClientRect();return r.bottom<=innerHeight && document.documentElement.scrollWidth<=innerWidth})()"));
+        until("document.querySelector('.travel-book')");
+        js("document.querySelector('.travel-book').click()");until("document.querySelector('.android-trip-stop')");
+        assertEquals("true",js("(()=>{const e=document.querySelector('.android-trip-stop'),r=e.getBoundingClientRect();return r.top<innerHeight-60 && document.documentElement.scrollWidth<=innerWidth})()"));
         assertEquals("\"none\"",js("getComputedStyle(document.querySelector('.mobile-bottom-nav')).display"));
+        assertEquals("true",js("(()=>{const s=document.querySelectorAll('.trip-stop-summary')[1].getBoundingClientRect(),c=document.querySelector('.trip-view-day').getBoundingClientRect();return s.top<c.bottom-20 && document.querySelector('.android-trip-stop').querySelectorAll('time').length===1})()"));
+        assertEquals("true",js("(()=>{const map=document.querySelector('.trip-col-map'),row=document.querySelector('.android-trip-stop');return getComputedStyle(map).display!=='none' && map.getBoundingClientRect().top+80<row.getBoundingClientRect().top && !document.querySelector('.android-trip-segments')})()"));
         device.waitForIdle();SystemClock.sleep(400);
         device.takeScreenshot(new File(activity.getExternalFilesDir(null),"android-trip.png"));
+        js("document.querySelector('.trip-stop-focus').click()");until("document.querySelector('.place-detail')");
+        device.pressBack();until("!document.querySelector('.place-detail')");
         js("document.querySelector('[aria-label=\"行程更多操作\"]').click()");until("document.querySelector('.android-trip-sheet')");
         device.pressBack();until("!document.querySelector('.android-trip-sheet')");
         assertEquals("true",js("!!document.querySelector('.android-trip-board')"));
@@ -90,6 +108,9 @@ public class HostInstrumentedTest {
     @Test public void homepageCompositionAndAppearance() throws Exception {
         device.executeShellCommand("cmd uimode night no");
         until("document.documentElement.dataset.androidAppearance==='light'");
+        assertEquals("true",js("Boolean(document.querySelector('.travel-home'))"));
+        assertEquals("false",js("Boolean(document.querySelector('.social-entry'))"));
+        js("document.querySelector('.journey-ai-fab').click()");until("document.querySelector('.unified-idea textarea')");
         assertEquals("true",js("document.querySelector('.unified-submit').disabled"));
         assertEquals("true",js("document.querySelector('.unified-start').getBoundingClientRect().height<=180"));
         device.waitForIdle();SystemClock.sleep(400);
@@ -143,7 +164,8 @@ public class HostInstrumentedTest {
             InstrumentationRegistry.getInstrumentation().runOnMainSync(()->activity.web.loadUrl(UrlPolicy.HOME+"__android_test__?startup=slow"));
             SystemClock.sleep(600);assertTrue(launching());
             device.takeScreenshot(new File(activity.getExternalFilesDir(null),"android-startup-dark.png"));
-            until("document.querySelector('.unified-idea textarea')");launchFinished();
+            until("document.querySelector('.travel-home')");launchFinished();
+            js("document.querySelector('.journey-ai-fab').click()");until("document.querySelector('.unified-idea textarea')");
             js("(()=>{const e=document.querySelector('.unified-idea textarea');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,'保留旅程草稿');e.dispatchEvent(new Event('input',{bubbles:true}));window.startupMarker='same-document'})()");
             device.pressHome();SystemClock.sleep(300);
             activity.startActivity(new Intent(activity,MainActivity.class).setAction(Intent.ACTION_MAIN).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP));
@@ -176,21 +198,22 @@ public class HostInstrumentedTest {
         try {
             device.executeShellCommand("cmd uimode night yes");
             until("document.documentElement.dataset.androidAppearance==='dark'");
-            String[] tabs={"行程","记账","历史","同游圈"};
-            String[] labels={".trip-card-title",".ledger-book h2",".mobile-history-row strong",".relay-card>p"};
+            String[] tabs={"旅行","记账","我的"};
+            String[] labels={".travel-home h1",".ledger-book h2",".mobile-page-header h1"};
+            assertEquals("3",js("document.querySelectorAll('.mobile-bottom-nav button').length"));
             for(int i=0;i<tabs.length;i++) {
                 js("[...document.querySelectorAll('.mobile-bottom-nav button')].find(x=>x.innerText==='"+tabs[i]+"').click()");
-                // Empty history fixtures are allowed; the page title must still inherit night mode.
-                String selector=i==2?".mobile-page-header h1":labels[i];
+                String selector=labels[i];
                 until("document.querySelector('"+selector+"')");
-                assertEquals("\"rgb(240, 242, 247)\"",js("getComputedStyle(document.querySelector('"+selector+"')).color"));
+                assertEquals("true",js("(()=>{const c=getComputedStyle(document.querySelector('"+selector+"')).color.match(/\\d+/g).map(Number);return (c[0]+c[1]+c[2])/3>180})()"));
                 assertEquals("true",js("document.documentElement.scrollWidth<=innerWidth"));
             }
-            SystemClock.sleep(300);device.takeScreenshot(new File(activity.getExternalFilesDir(null),"android-modules-social-dark.png"));
-            assertEquals("true",js("document.querySelector('.android-relay-actions').getBoundingClientRect().height>=44"));
+            js("[...document.querySelectorAll('.mobile-account-links button')].find(x=>x.innerText.includes('历史对话')).click()");
+            until("document.querySelector('.mobile-history-search')");
+            device.takeScreenshot(new File(activity.getExternalFilesDir(null),"android-history-dark.png"));
             device.executeShellCommand("cmd uimode night no");until("document.documentElement.dataset.androidAppearance==='light'");
-            assertEquals("\"rgb(25, 35, 53)\"",js("getComputedStyle(document.querySelector('.relay-card>p')).color"));
-            device.pressBack();until("!document.querySelector('.social-overlay')");
+            assertEquals("true",js("(()=>{const c=getComputedStyle(document.querySelector('.mobile-page-header h1')).color.match(/\\d+/g).map(Number);return (c[0]+c[1]+c[2])/3<100})()"));
+            device.pressBack();until("!document.querySelector('.history-page')");
         } finally { device.executeShellCommand("cmd uimode night no"); }
     }
     @Test public void exportIsDecodedByNativeHost() throws Exception {

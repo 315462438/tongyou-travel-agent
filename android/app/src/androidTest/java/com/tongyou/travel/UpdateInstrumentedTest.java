@@ -28,7 +28,7 @@ public class UpdateInstrumentedTest {
         ui(()->activity.web.evaluateJavascript(script,v->{result.set(v);latch.countDown();}));
         assertTrue(latch.await(10,TimeUnit.SECONDS));return result.get();
     }
-    private UpdateInfo release() { return new UpdateInfo(10,"0.7.0","https://17tongyou.com/downloads/android/0.7.0-10/17tongyou-android-0.7.0-10.apk","更新测试：跟随系统外观",3000000,"a".repeat(64),26); }
+    private UpdateInfo release() { return new UpdateInfo(BuildConfig.VERSION_CODE+1,"0.9.0","https://17tongyou.com/downloads/android/0.9.0-"+(BuildConfig.VERSION_CODE+1)+"/17tongyou-android-0.9.0-"+(BuildConfig.VERSION_CODE+1)+".apk","更新测试：跟随系统外观",3000000,"a".repeat(64),26); }
     private void install(AppUpdates.Source source,boolean foreground) {
         ui(()-> {
             activity.updates.close();
@@ -37,7 +37,7 @@ public class UpdateInstrumentedTest {
             if(foreground)activity.updates.onResume();
         });
     }
-    private void prompt() { assertTrue(device.wait(Until.hasObject(By.text("发现新版本 0.7.0")),5000)); }
+    private void prompt() { assertTrue(device.wait(Until.hasObject(By.text("发现新版本 0.9.0")),5000)); }
     @Before public void before() throws Exception {
         device=UiDevice.getInstance(InstrumentationRegistry.getInstrumentation());
         device.executeShellCommand("cmd uimode night no");
@@ -47,6 +47,10 @@ public class UpdateInstrumentedTest {
         assertEquals("true",js("Boolean(document.querySelector('.mobile-bottom-nav'))"));
         // Wait for the native first frame transition before replacing its optional checker.
         SystemClock.sleep(300);
+        js("document.querySelector('.journey-ai-fab').click()");
+        until=SystemClock.elapsedRealtime()+5000;
+        while(!"true".equals(js("Boolean(document.querySelector('.unified-idea textarea'))")) && SystemClock.elapsedRealtime()<until)SystemClock.sleep(100);
+        assertEquals("true",js("Boolean(document.querySelector('.unified-idea textarea'))"));
         prefs=activity.getSharedPreferences("update_test",0);prefs.edit().clear().commit();
     }
     @After public void after() throws Exception {
@@ -55,9 +59,9 @@ public class UpdateInstrumentedTest {
     }
     @Test public void parseRejectsUnsafeBrokenAndOversizedMetadata() throws Exception {
         JSONObject m=new JSONObject().put("schema_version",1).put("enabled",true).put("platform","Android")
-                .put("application_id","com.tongyou.travel").put("version_code",10).put("version","0.7.0")
+                .put("application_id","com.tongyou.travel").put("version_code",release().code).put("version","0.9.0")
                 .put("url",release().url).put("bytes",3000000).put("sha256","a".repeat(64)).put("notes","改进体验").put("min_sdk",26);
-        assertEquals(10,AppUpdates.parse(m.toString()).code);
+        assertEquals(release().code,AppUpdates.parse(m.toString()).code);
         for(Object[] replacement:new Object[][]{{"application_id","other"},{"platform","iOS"},{"schema_version",2},
                 {"url","https://evil.test/a.apk"},{"version_code",9999999999L},{"version_code",10.5},{"sha256","bad"}}) {
             JSONObject bad=new JSONObject(m.toString()).put((String)replacement[0],replacement[1]);
@@ -71,8 +75,8 @@ public class UpdateInstrumentedTest {
     @Test public void laterPersistsAndDoesNotRepeatOnResumeOrRestart() throws Exception {
         AtomicInteger calls=new AtomicInteger();install(()->{calls.incrementAndGet();return release();},true);prompt();
         device.findObject(By.text("稍后")).click();
-        assertTrue(device.wait(Until.gone(By.text("发现新版本 0.7.0")),2000));
-        assertEquals(10,prefs.getInt("deferred_code",0));assertTrue(prefs.getLong("deferred_until",0)>System.currentTimeMillis());
+        assertTrue(device.wait(Until.gone(By.text("发现新版本 0.9.0")),2000));
+        assertEquals(release().code,prefs.getInt("deferred_code",0));assertTrue(prefs.getLong("deferred_until",0)>System.currentTimeMillis());
         ui(()->{activity.updates.onPause();activity.updates.onResume();});
         device.waitForIdle();assertEquals(1,calls.get());assertFalse(device.hasObject(By.text("下载更新")));
         CountDownLatch fetched=new CountDownLatch(1);install(()->{fetched.countDown();return release();},true);
@@ -88,7 +92,7 @@ public class UpdateInstrumentedTest {
         assertEquals("\"dark\"",js("document.documentElement.dataset.androidAppearance"));
         prompt();device.waitForIdle();device.takeScreenshot(new File(activity.getExternalFilesDir(null),"android-update-dark.png"));
         device.findObject(By.text("下载更新")).click();
-        assertTrue(device.wait(Until.gone(By.text("发现新版本 0.7.0")),2000));
+        assertTrue(device.wait(Until.gone(By.text("发现新版本 0.9.0")),2000));
         assertEquals(release().url,downloaded.get());
         assertEquals("\"厦门三天草稿\"",js("document.querySelector('.unified-idea textarea').value"));
     }

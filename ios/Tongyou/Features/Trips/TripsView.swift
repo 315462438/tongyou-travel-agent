@@ -140,14 +140,16 @@ struct TripDetailView: View {
     @State private var error: String?
     @State private var camera: MapCameraPosition = .automatic
     @State private var selectedStop: String?
+    @State private var viewingStop: TripDetail.Stop?
     @State private var editing: TripDetail.Stop?
     @State private var adding = false
     @State private var sheet: Sheet?
-    @State private var showingMap = false
     @State private var showingLedger = false
     @State private var retryingImport = false
     @State private var confirmingRemoval = false
     @State private var removing = false
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
     @Environment(AppSession.self) private var session
@@ -158,10 +160,17 @@ struct TripDetailView: View {
     }
 
     var body: some View {
-        ScrollView {
+        Group {
             if let trip {
-                VStack(alignment: .leading, spacing: 18) {
-                    header(trip)
+                TripMapPanel { inset in
+                    map(trip).safeAreaInset(edge: .bottom) { Color.clear.frame(height: inset) }
+                } content: {
+                VStack(spacing: 10) {
+                daySelector(trip)
+                dayOverview(trip)
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 14) {
                     if let error {
                         Label(error, systemImage: "exclamationmark.circle")
                             .font(.subheadline).foregroundStyle(.secondary)
@@ -175,13 +184,7 @@ struct TripDetailView: View {
                         }
                         .padding(16).frame(maxWidth: .infinity, alignment: .leading).glassCard(cornerRadius: 18)
                     }
-                    daySelector(trip)
-                    dayOverview(trip)
-                    Picker("当天视图", selection: $showingMap) {
-                        Label("当天行程", systemImage: "list.bullet.rectangle").tag(false)
-                        Label("路线地图", systemImage: "map").tag(true)
-                    }.pickerStyle(.segmented)
-                    if showingMap { map(trip) } else { timeline(trip) }
+                            timeline(trip)
                     if let expenses, expenses.count > 0 { expenseCard(expenses) }
                     if let review = trip.aiReview, !review.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
@@ -203,8 +206,21 @@ struct TripDetailView: View {
                         }
                         .padding(16).glassCard(cornerRadius: 22)
                     }
+                        }.padding(.bottom, 18)
+                    }
+                    .accessibilityIdentifier("tripTimeline")
+                    .onChange(of: selectedStop) { _, id in
+                        guard let id else { return }
+                        if reduceMotion { proxy.scrollTo(id, anchor: .top) }
+                        else { withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(id, anchor: .top) } }
+                        if let coordinate = trip.stops.first(where: { $0.id == id })?.coordinate {
+                            camera = .region(MKCoordinateRegion(center: coordinate, span: MKCoordinateSpan(latitudeDelta: 0.025, longitudeDelta: 0.025)))
+                        }
+                    }
+                    .refreshable { await load() }
                 }
-                .padding(16)
+                }
+                }
             } else if let error {
                 EmptyState(symbol: "exclamationmark.triangle", title: "打不开这个行程", message: error)
             } else {
@@ -214,6 +230,14 @@ struct TripDetailView: View {
         .screenBackground()
         .navigationTitle(trip?.title ?? "行程")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(item: $viewingStop) { stop in
+            PlaceDetailView(tripID: tripID, stop: stop) {
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(350))
+                    editing = stop
+                }
+            }
+        }
         .sheet(isPresented: $showingLedger) { LedgerView(initialTrip: LedgerTrip(id: tripID, title: trip?.title ?? "行程")) }
         .toolbar(.hidden, for: .tabBar)
         .toolbar {
@@ -269,50 +293,36 @@ struct TripDetailView: View {
             }
         }
         .task { await load(); await poll() }
-        .refreshable { await load() }
     }
 
     private func header(_ trip: TripDetail) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("一起规划 · 一起出发").font(.caption).foregroundStyle(.secondary)
-            Text(trip.title).font(.title2.bold()).fixedSize(horizontal: false, vertical: true)
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), alignment: .leading)], alignment: .leading, spacing: 8) {
-                if let destination = trip.destination, !destination.isEmpty { Chip(text: destination, symbol: "mappin") }
-                Chip(text: "\(trip.dayCount) 天", symbol: "calendar")
-                if let start = trip.startDate, !start.isEmpty { Chip(text: start, symbol: "airplane.departure") }
-                if let budget = trip.budget { Chip(text: "¥\(Int(budget))", symbol: "yensign") }
-            }
-            if let members = trip.members, members.count > 1 {
-                HStack(spacing: -8) {
-                    ForEach(members.prefix(6), id: \.self) { member in
-                        Text(String(member.username.prefix(1)))
-                            .font(.caption.bold()).foregroundStyle(.white)
-                            .frame(width: 30, height: 30)
-                            .background(Palette.sky.gradient, in: .circle)
-                            .overlay(alignment: .bottomTrailing) {
-                                if member.online == true { Circle().fill(.green).frame(width: 9, height: 9).overlay(Circle().stroke(.white, lineWidth: 1.5)) }
-                            }
-                    }
-                    Text("  \(members.count) 人同行").font(.caption).foregroundStyle(.secondary)
-                }
-            }
+        HStack(spacing: 8) {
+            Text([trip.destination, "\(trip.dayCount) 天", trip.startDate].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            Button { sheet = .members } label: {
+                Label("\(trip.members?.count ?? 1) 人同行", systemImage: "person.2")
+            }.accessibilityLabel("成员与邀请")
         }
+        .font(.caption).foregroundStyle(.secondary)
+        .frame(minHeight: 30)
     }
 
     private func dayOverview(_ trip: TripDetail) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(trip.dayTitles?[String(day)] ?? "第 \(day) 天").font(.title3.bold())
-            Text("\(trip.stops(on: day).count) 项安排 · \(trip.stops(on: day).filter { $0.coordinate != nil }.count) 处已定位")
-                .font(.subheadline).foregroundStyle(.secondary)
-            HStack(spacing: 10) {
-                Button { adding = true } label: { Label("添加地点", systemImage: "plus").frame(maxWidth: .infinity) }
-                    .buttonStyle(.glassProminent).tint(Palette.sky).disabled(trip.aiStatus == "seeding")
-                Button { sheet = .copilot } label: { Label("AI 调整", systemImage: "wand.and.stars").frame(maxWidth: .infinity) }
-                    .buttonStyle(.glass).disabled(["seeding", "reviewing", "copilot"].contains(trip.aiStatus ?? ""))
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(trip.dayTitles?[String(day)] ?? "当天安排").font(.subheadline.bold()).lineLimit(1)
+                Text("\(trip.stops(on: day).count) 个地点")
+                    .font(.caption2).foregroundStyle(.secondary)
             }
-            .font(.subheadline.weight(.semibold))
+            Spacer(minLength: 0)
+            Button { sheet = .copilot } label: { Image(systemName: "wand.and.stars").frame(width: 30, height: 30) }
+                .buttonStyle(.glass).accessibilityLabel("AI 调整行程")
+                .disabled(["seeding", "reviewing", "copilot"].contains(trip.aiStatus ?? ""))
+            Button { adding = true } label: { Image(systemName: "plus").frame(width: 30, height: 30) }
+                .buttonStyle(.glassProminent).tint(Palette.sky).accessibilityLabel("添加地点")
+                .disabled(trip.aiStatus == "seeding")
         }
-        .padding(18).glassCard(cornerRadius: 22)
     }
 
     private func daySelector(_ trip: TripDetail) -> some View {
@@ -321,17 +331,15 @@ struct TripDetailView: View {
                 HStack(spacing: 8) {
                     ForEach(1...trip.dayCount, id: \.self) { value in
                         Button {
-                            withAnimation(.snappy) { day = value; camera = .automatic }
+                            day = value; selectedStop = nil; camera = .automatic
                         } label: {
                             VStack(spacing: 1) {
                                 Text("Day \(value)").font(.subheadline.weight(.semibold))
-                                if let title = trip.dayTitles?[String(value)], !title.isEmpty {
-                                    Text(title).font(.caption2).lineLimit(1)
-                                }
                             }
                             .foregroundStyle(day == value ? .white : .primary)
                             .padding(.horizontal, 14).padding(.vertical, 8)
                         }
+                        .accessibilityIdentifier("tripDay_\(value)")
                         .glassEffect(day == value ? .regular.tint(Palette.sky).interactive() : .regular.interactive(), in: .capsule)
                     }
                 }
@@ -342,10 +350,11 @@ struct TripDetailView: View {
     }
 
     @ViewBuilder private func map(_ trip: TripDetail) -> some View {
-        let stops = trip.stops(on: day).filter { $0.coordinate != nil }
-        if !stops.isEmpty {
+        let stops = trip.stops(on: day)
+        let located = Array(stops.enumerated()).filter { $0.element.coordinate != nil }
+        if !located.isEmpty {
             Map(position: $camera, selection: $selectedStop) {
-                ForEach(Array(stops.enumerated()), id: \.element.id) { index, stop in
+                ForEach(located, id: \.element.id) { index, stop in
                     Marker(stop.name, monogram: Text("\(index + 1)"), coordinate: stop.coordinate!)
                         .tint(Palette.sky)
                         .tag(stop.id)
@@ -355,67 +364,56 @@ struct TripDetailView: View {
                 }
             }
             .mapStyle(.standard(pointsOfInterest: .excludingAll))
-            .frame(height: 240)
-            .clipShape(.rect(cornerRadius: 24))
-            .overlay(RoundedRectangle(cornerRadius: 24).strokeBorder(.white.opacity(0.4), lineWidth: 0.5))
+            .accessibilityIdentifier("tripRouteMap")
+            .overlay(alignment: .topTrailing) {
+                Button { selectedStop = nil; camera = .automatic } label: { Label("全览", systemImage: "arrow.up.left.and.arrow.down.right").font(.caption).padding(8) }
+                    .buttonStyle(.glass).padding(8)
+            }
         } else {
-            EmptyState(symbol: "mappin.slash", title: "位置还在补充", message: "行程已保留。可以先切回当天行程查看安排，位置补齐后会自动显示。")
+            VStack(spacing: 8) {
+                Image(systemName: "mappin.slash").font(.title2).foregroundStyle(Palette.sky)
+                Text("这一天还没有定位的地点").font(.subheadline)
+                Text("可以继续编辑下方行程，补充位置后自动显示").font(.caption).foregroundStyle(.secondary)
+            }.frame(maxWidth: .infinity, maxHeight: .infinity).background(Palette.sky.opacity(0.07)).accessibilityIdentifier("tripRouteMapEmpty")
         }
     }
 
     private func timeline(_ trip: TripDetail) -> some View {
         let stops = trip.stops(on: day)
-        return VStack(alignment: .leading, spacing: 0) {
+        return LazyVStack(alignment: .leading, spacing: 18) {
             if stops.isEmpty {
-                EmptyState(symbol: "calendar.badge.plus", title: "这一天还没有安排", message: "点下方“添加地点”，或者让 AI 帮你排。")
+                EmptyState(symbol: "calendar.badge.plus", title: "这一天还没有安排", message: "添加一个地点，或者让 AI 帮你规划。")
             }
             ForEach(Array(stops.enumerated()), id: \.element.id) { index, stop in
-                HStack(alignment: .top, spacing: 14) {
-                    VStack(spacing: 0) {
-                        Text("\(index + 1)").font(.caption.bold()).foregroundStyle(.white)
-                            .frame(width: 26, height: 26).background(Palette.sky, in: .circle)
-                        if index < stops.count - 1 {
-                            Rectangle().fill(Palette.sky.opacity(0.25)).frame(width: 2).frame(maxHeight: .infinity)
-                        }
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        Button { selectedStop = stop.id; viewingStop = stop } label: {
+                            HStack(spacing: 12) {
+                                TripStopThumbnail(tripID: tripID, stop: stop, index: index + 1)
+                                Text(stop.name).font(.system(size: 16, weight: .semibold)).foregroundStyle(.primary).multilineTextAlignment(.leading).lineLimit(2)
+                                Spacer(minLength: 0)
+                            }.contentShape(.rect)
+                        }.buttonStyle(.plain).accessibilityIdentifier("tripStop_\(stop.id)")
+                        Menu {
+                            Button("在地图上看", systemImage: "map") { selectedStop = stop.id }
+                            if let url = stop.navigationURL { Button("导航", systemImage: "location.north") { openURL(url) } }
+                            Button("调整当天顺序", systemImage: "arrow.up.arrow.down") { sheet = .reorder }
+                        } label: { Image(systemName: "ellipsis").foregroundStyle(.secondary).frame(width: 32, height: 44) }
                     }
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(alignment: .firstTextBaseline) {
-                            Text(stop.name).font(.headline)
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack {
+                            Text(stop.compactTimeRange).font(.system(size: 12, weight: .semibold)).monospacedDigit()
                             Spacer()
-                            if let time = stop.startTime, !time.isEmpty { Text(time).font(.subheadline.monospacedDigit()).foregroundStyle(.secondary) }
+                            Button { editing = stop } label: { Image(systemName: "pencil").font(.system(size: 15)).foregroundStyle(.secondary).frame(width: 38, height: 34) }
+                                .buttonStyle(.plain).accessibilityLabel("编辑\(stop.name)")
                         }
-                        if let note = stop.note, !note.isEmpty { Text(note).font(.subheadline).foregroundStyle(.secondary) }
-                        HStack(spacing: 6) {
-                            if let stay = stop.stayMin, stay > 0 { Chip(text: stay >= 60 ? "\(stay / 60)小时\(stay % 60 > 0 ? "\(stay % 60)分" : "")" : "\(stay)分钟", symbol: "clock") }
-                            if let transport = stop.transport, !transport.isEmpty { Chip(text: transport, symbol: "figure.walk") }
-                            if let price = stop.ticketPrice { Chip(text: "参考 ¥\(Int(price))", symbol: "ticket") }
-                            else { Text("费用待补充").font(.caption).foregroundStyle(.secondary) }
-                            Spacer()
-                            if stop.coordinate == nil { Text(trip.aiStatus == "locating" ? "位置补充中" : "暂未定位").font(.caption).foregroundStyle(.secondary) }
-                        }
-                        HStack(spacing: 12) {
-                            Button { editing = stop } label: { Label("编辑", systemImage: "pencil") }
-                                .accessibilityLabel("编辑\(stop.name)")
-                            if let url = stop.navigationURL {
-                                Button { openURL(url) } label: { Label("导航", systemImage: "location.north") }
-                                    .accessibilityLabel("导航到\(stop.name)")
-                            }
-                            Menu {
-                                Button("在地图上看", systemImage: "map") { showingMap = true; selectedStop = stop.id }
-                                Button("调整当天顺序", systemImage: "arrow.up.arrow.down") { sheet = .reorder }
-                            } label: { Label("更多", systemImage: "ellipsis") }
-                        }
-                        .font(.subheadline.weight(.medium)).buttonStyle(.glass).padding(.top, 6)
-                    }
-                    .padding(14)
-                    .glassCard(cornerRadius: 20)
-                    .padding(.bottom, 12)
-                    .contentShape(.rect)
-                    .contextMenu {
-                        Button("编辑", systemImage: "pencil") { editing = stop }
-                        Button("在地图上看", systemImage: "map") { showingMap = true; selectedStop = stop.id }
-                    }
-                }
+                        if let note = stop.note, !note.isEmpty { Text(note).font(.system(size: 13)).foregroundStyle(.secondary).lineLimit(2) }
+                        if let price = stop.ticketPrice { Text("参考 ¥\(Int(price))").font(.caption2).foregroundStyle(.secondary) }
+                        if stop.coordinate == nil { Text(trip.aiStatus == "locating" ? "位置补充中" : "位置待补充").font(.caption2).foregroundStyle(.secondary) }
+                    }.padding(.horizontal, 10).padding(.bottom, 8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.quaternary.opacity(0.25), in: .rect(cornerRadius: 12)).padding(.leading, 66)
+                }.id(stop.id)
             }
             GlassEffectContainer(spacing: 10) {
                 HStack(spacing: 10) {
@@ -467,7 +465,7 @@ struct TripDetailView: View {
 }
 
 /// Invitations to other people's trips, accepted or declined in place.
-private struct PendingInvites: View {
+struct PendingInvites: View {
     let onChange: () -> Void
     struct Invite: Decodable, Identifiable { var tripId: String; var title: String?; var inviter: String?; var id: String { tripId } }
     @State private var invites: [Invite] = []

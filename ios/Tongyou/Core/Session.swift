@@ -29,6 +29,9 @@ final class AppSession {
     private(set) var account: AccountInfo?
 
     init() {
+        #if DEBUG
+        if JourneyUITestProtocol.enabled { API.shared.token = "local-ui-fixture" }
+        #endif
         state = API.shared.token == nil ? .signedOut : .checking
         API.shared.onUnauthorized = { [weak self] in self?.signOutLocally() }
     }

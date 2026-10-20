@@ -1,0 +1,17 @@
+{
+  "backup": "/home/ubuntu/travel-agent/deploy-backups/place-20261020T045249Z",
+  "files": [
+    {
+      "path": "app/tools/place_details.py",
+      "sha256": "b586604bd4c9872050529dbe98cc0c005f8811883eceaaa8a45e3717c9007dac"
+    },
+    {
+      "path": "app/api/trip_api.py",
+      "sha256": "bc483f6e588691efb3e495a14b77465cf001c6e2737fe0efdd3d18a6e5b3102c"
+    }
+  ],
+  "health": {
+    "status": "ok"
+  },
+  "anonymous_details_status": 401
+}

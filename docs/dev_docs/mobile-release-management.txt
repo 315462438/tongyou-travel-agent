@@ -1,4 +1,4 @@
-17同游三端发布管理（2026-10-19）
+17同游三端发布管理（更新于 2026-10-20）
 
 平台        工程/源码                    版本来源                     产物/发布方式
 Web         frontend/                    部署清单/构建资源 hash       Vite dist → Web 部署脚本
@@ -76,3 +76,12 @@ Android 0.6.0 (9) / 2026-10-20
 - 下载：https://17tongyou.com/downloads/android/0.6.0-9/17tongyou-android-0.6.0-9.apk
 - 仅发布Android APK与更新清单；Web/iOS/API未部署。0.5.0→0.6.0同签名覆盖安装通过。
 - 17项设备测试通过，末次登录前景色/弹窗按钮色修正后复跑相关6项通过；8项Android单测、5项发布脚本测试、101前端单测通过。详见docs/test_cases/android-in-app-updates-results-2026-10-20.json。
+
+2026-10-20 当前发布汇总（以下替代此前版本作为当前状态）
+- Web：旅行/记账/我的三入口与独立 AI；协同行程地图、可拖动面板、景点图文详情和紧凑卡片；账户工具弹层修复已上线。最近入口 SHA256 fa990cc765c5364874c39e99be713affa1b7759c6e9adb393b629c4d6dacb735。
+- Android 0.7.0 (10) 为旅行首页与 AI 改造，0.8.0 (11) 为地图/景点详情，0.8.1 (12) 为卡片密度/地图比例，最新 0.8.2 (13) 修复我的工具遮挡。旧版本下载保留。
+- 当前 APK：https://17tongyou.com/downloads/android/0.8.2-13/17tongyou-android-0.8.2-13.apk
+- 当前 APK SHA256：45e422fb59fc8a7edde7916ede4bf976f01b5cc499d7ca2ecac6dd27f20ba6f4；2843712 bytes。
+- iOS 1.0.11 (12)：地图与行程面板同屏、景点图文详情、紧凑卡片与单一底栏；个人签名安装/启动验证完成。未发布 TestFlight/App Store。
+- 后端新增成员鉴权地点详情接口 GET /api/trips/{trip_id}/stops/{stop_id}/details；使用真实 POI 图片/事实、原攻略摘录与备注。私有行程内容不进入共享缓存，旧客户端 API 兼容。
+- 验收：docs/test_cases/ 下 2026-10-20 主界面、地图与详情、卡片比例、我的工具弹层文档。APK/签名私钥/本地环境配置不进 GitHub；代码提交与线上发布是独立步骤。

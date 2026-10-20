@@ -82,7 +82,6 @@ test('single glass theme: theme switch removed, iOS glass material in place', ()
 })
 
 test('首页单入口：以用户原话为准，前端不重写请求（Phase 110）', () => {
-  assert.match(home.replace(/<br className="mobile-title-break" \/>/g, ''), /想去哪儿，就从这里出发/)
   assert.match(home, /function InspirationLaunchpad\(/)
 
   // 只剩两条路：有公开链接 → 补一句「炼成行程」；其余一律原样送后端。
@@ -323,20 +322,7 @@ test('trip map exposes overseas coordinate repair and honest route estimates', (
   assert.match(css, /\.trip-repair-btn:disabled\s*\{[^}]*cursor:\s*wait/s)
 })
 
-test('mobile shell exposes a view switch, drawer navigation, and safe-area bottom bar', () => {
-  assert.match(home, /className=\{`app view-\$\{layoutMode\}/)
-  assert.match(home, /className="layout-switch"/)
-  assert.match(home, />\s*网页端\s*</)
-  assert.match(home, />\s*移动端\s*</)
-  assert.match(home, /className="mobile-bottom-nav"/)
-  assert.match(home, /aria-label="我的"/)
-  assert.match(home, /aria-label="搜索历史对话"/)
-  assert.match(home, /layoutMode=\{layoutMode\}/)
-  assert.match(trips, /\$\{layoutMode === 'mobile' \? ' mobile-layout' : ''\}/)
-  assert.match(css, /\.app\.view-mobile\.collapsed \.sidebar\s*\{[\s\S]*transform:\s*translateX\(-105%\)/)
-  assert.match(css, /\.view-mobile \.mobile-bottom-nav\s*\{[\s\S]*env\(safe-area-inset-bottom\)/)
-  assert.match(css, /\.view-mobile \.chips\s*\{[\s\S]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/)
-})
+// Navigation and safe-area behavior are exercised by journey-browser.mjs.
 
 test('mobile reading and composer layouts remain single-column and thumb friendly', () => {
   assert.match(css, /\.view-mobile \.guide-outline nav\s*\{\s*grid-template-columns:\s*1fr/)
@@ -347,15 +333,7 @@ test('mobile reading and composer layouts remain single-column and thumb friendl
   assert.match(css, /\.trips-overlay\.mobile-layout \.trip-mobile-tabs\s*\{[\s\S]*display:\s*grid/)
 })
 
-test('mobile bottom navigation closes the previous full-screen surface', () => {
-  assert.match(home, /const openMobileChat = useCallback\(\(\) => \{[\s\S]*setShowTrips\(false\)[\s\S]*setTripsBoard\(null\)[\s\S]*newChat\(\)/)
-  assert.match(home, /const openMobileHistory = useCallback\(\(\) => \{[\s\S]*setShowTrips\(false\)[\s\S]*setCollapsed\(false\)/)
-  assert.match(home, /const openMobileSocial = useCallback\(\(\) => \{[\s\S]*setShowTrips\(false\)[\s\S]*setShowMemories\(false\)[\s\S]*openSocial\('station'\)/)
-  assert.match(home, /onClick=\{openMobileChat\}/)
-  assert.match(home, /onClick=\{openMobileTrips\}/)
-  assert.match(home, /onClick=\{openMobileHistory\}/)
-  assert.match(home, /onClick=\{openMobileSocial\}/)
-})
+// Navigation and safe-area behavior are exercised by journey-browser.mjs.
 
 test('17tongyou brand replaces the legacy lightning favicon and travelX wordmark', () => {
   assert.match(indexHtml, /<title>17同游 · 一起规划，一起出发<\/title>/)
@@ -399,8 +377,6 @@ test('admin 面板展示在线状态，且不在前端重算在线阈值', () =>
 })
 
 test('客服会话：用户入口带红点，admin 面板有标签页与未读徽标', () => {
-  assert.match(home, /<span>联系客服<\/span>/)
-  assert.match(home, /supportUnread > 0 && <b className="support-badge">/)
   assert.match(home, /<SupportChat open=\{showSupport\}/)
   assert.match(home, /unreadTotal > 0 && <b className="support-badge">/)
   assert.match(home, /<AdminSupport \/>/)
@@ -505,30 +481,18 @@ test('新公告首次弹窗：任务运行中不打断、确认才已读', () =>
   assert.match(css, /prefers-reduced-motion[\s\S]*bell-swing|bell-swing[\s\S]*prefers-reduced-motion/)
 })
 
-test('空状态把真实热门目的地做成异步实景图片卡片集', () => {
-  // Phase 75：08-04 新用户 33% 注册后零提问；示例全是成都而他们都是合肥/武汉的
+test('旅行灵感继续使用真实热门查询与失败兜底', () => {
   assert.match(home, /trendingDestinations = onboarding\?\.trending\?\.length \? onboarding\.trending : FALLBACK_DESTINATIONS/)
-  assert.match(home, /buildTrendingChips\(trendingDestinations/)
-  assert.doesNotMatch(home, /\{CHIPS\.map\(/)          // 不再直接渲染静态成都示例
   assert.match(home, /onboarding\/covers\?/)
-  assert.match(home, /suggestions=\{starterChips\.slice\(0, 4\)\}/)
-  assert.match(home, /className="trending-destination-grid"/)
-  assert.match(home, /className="destination-card"/)
-  assert.match(home, /\$\{API\}\/img\?u=\$\{encodeURIComponent\(cover\)\}/)
-  assert.match(home, /近 30 天真实热问/)
-  assert.match(home, /setIdea\(city\)/) // 点击卡片回填唯一入口，不直接发送
-  assert.match(css, /\.trending-destination-grid\s*\{[^}]*repeat\(4/s)
-  assert.match(css, /\.view-mobile \.trending-destination-grid\s*\{[^}]*scroll-snap-type:\s*x mandatory/s)
   assert.doesNotMatch(home, /<QuickStart\s/)
 })
 
 test('接力站先展示真实热门目的地，再提供无原生黑框的任意目的地搜索', () => {
   assert.match(home, /lazy\(\(\) => import\('\.\.\/components\/SocialHub'\)\)/)
-  assert.match(home, /className="social-entry"/)
-  assert.match(home, /有人正在天堂寨，把现场情况留给下一位/)
+  assert.doesNotMatch(home, /className="social-entry"/)
   assert.match(home, /<SocialHub[\s\S]*initialTab=\{socialLaunch\.tab\}/)
   assert.doesNotMatch(home, /<ImmersivePreview/)
-  assert.match(home, />同游圈</)
+  assert.doesNotMatch(home, />同游圈</)
   assert.match(home, /onProfileChanged=\{onProfileChanged\}/)
   // Android is a full-page tab with native Back handling; Web remains a modal.
   assert.match(social, /role=\{android \? 'region' : 'dialog'\}/)
@@ -661,8 +625,8 @@ test('设计系统：底栏图标是线性 SVG，不混彩色 emoji', () => {
   // 必须切到 </nav> 为止：多切 1200 字会把后面别处的 emoji 也算进来（第一版就误报了）
   const nav = home.slice(navStart, home.indexOf('</nav>', navStart))
   assert.doesNotMatch(nav, /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u)
-  assert.match(nav, /<NavIcon name="chat" \/>/)
-  assert.match(nav, /<NavIcon name="social" \/>/)
+  assert.match(nav, /<NavIcon name="trip" \/>/)
+  assert.match(nav, /<NavIcon name="account" \/>/)
 })
 
 test('连接面板：能力边界与副作用必须渲染出来（Phase 109）', () => {

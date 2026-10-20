@@ -371,14 +371,14 @@ struct NotificationsView: View {
         switch item.targetKind {
         case "relay":
             router.socialDestination = item.meta?["destination"]?.string
-            router.tab = .social
+            router.tab = .me
             dismiss()
         case "trip":
             router.openTripID = item.meta?["trip_id"]?.string ?? item.targetId
-            router.tab = .trips
+            router.tab = .home
             dismiss()
         default:
-            router.tab = .social
+            router.tab = .me
             dismiss()
         }
     }

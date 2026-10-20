@@ -1,10 +1,12 @@
 import SwiftUI
 
-/// Account hub opened from the avatar at the top left of Home: personal tools for everyone,
+/// Account tab: personal tools for everyone,
 /// plus the admin console (users, invite codes, announcements, support inbox) for admins.
 struct MeView: View {
+    var isRoot = false
     @Environment(AppSession.self) private var session
     @Environment(\.dismiss) private var dismiss
+    @State private var showHistory = false
     @State private var supportUnread = 0
     @State private var adminSupportUnread = 0
 
@@ -26,9 +28,12 @@ struct MeView: View {
                 }
 
                 Section("我的") {
+                    Button { showHistory = true } label: { Label("历史对话", systemImage: "clock.arrow.circlepath") }
+                    DisclosureGroup("更多工具与设置") {
                     NavigationLink { MemoryView() } label: { Label("记忆", systemImage: "brain.head.profile") }
                     NavigationLink { SkillsView() } label: { Label("技能", systemImage: "puzzlepiece.extension") }
                     NavigationLink { ConnectorsView() } label: { Label("连接", systemImage: "link") }
+                    }
                     NavigationLink { AnnouncementsView() } label: { Label("公告", systemImage: "megaphone") }
                     NavigationLink { SupportChatView(mode: .user) } label: {
                         Label("联系客服", systemImage: "questionmark.bubble").badge(supportUnread)
@@ -56,9 +61,11 @@ struct MeView: View {
             }
             .scrollContentBackground(.hidden)
             .screenBackground()
+            .toolbar(.hidden, for: .tabBar)
             .navigationTitle("我的")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
+            .toolbar { if !isRoot { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } } }
+            .sheet(isPresented: $showHistory) { HistoryView() }
             .task { await loadBadges() }
         }
     }

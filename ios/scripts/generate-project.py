@@ -49,7 +49,7 @@ for scope in ['project', 'target']:
                 'SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD':'NO',
                 'ASSETCATALOG_COMPILER_APPICON_NAME':'AppIcon',
                 'ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME':'AccentColor',
-                'MARKETING_VERSION':'1.0.7', 'CURRENT_PROJECT_VERSION':'8',
+                'MARKETING_VERSION':'1.0.11', 'CURRENT_PROJECT_VERSION':'12',
                 'LD_RUNPATH_SEARCH_PATHS':'$(inherited) @executable_path/Frameworks',
                 'SWIFT_STRICT_CONCURRENCY':'minimal', 'ENABLE_PREVIEWS':'YES',
             })
@@ -66,7 +66,9 @@ add('project', f'isa = PBXProject; attributes = {{ BuildIndependentTargetsInPara
 add('uiFile', 'isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UITests/LedgerLinkUITests.swift"; sourceTree = SOURCE_ROOT;')
 add('uiBuild', f'isa = PBXBuildFile; fileRef = {uid("uiFile")};')
 add('uiProduct', 'isa = PBXFileReference; explicitFileType = wrapper.cfbundle; path = TongyouUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR;')
-add('uiPhase', f'isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = ({uid("uiBuild")},); runOnlyForDeploymentPostprocessing = 0;')
+add('journeyUiFile', 'isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UITests/JourneyUITests.swift"; sourceTree = SOURCE_ROOT;')
+add('journeyUiBuild', f'isa = PBXBuildFile; fileRef = {uid("journeyUiFile")};')
+add('uiPhase', f'isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = ({uid("uiBuild")},{uid("journeyUiBuild")},); runOnlyForDeploymentPostprocessing = 0;')
 add('uiFrameworks', 'isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0;')
 add('uiProxy', f'isa = PBXContainerItemProxy; containerPortal = {uid("project")}; proxyType = 1; remoteGlobalIDString = {uid("target")}; remoteInfo = Tongyou;')
 add('uiDependency', f'isa = PBXTargetDependency; target = {uid("target")}; targetProxy = {uid("uiProxy")};')

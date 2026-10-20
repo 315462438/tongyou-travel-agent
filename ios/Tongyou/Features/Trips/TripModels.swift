@@ -52,6 +52,14 @@ struct TripDetail: Decodable {
             return nav?.domestic == true || ChinaCoordinates.isInMainland(point) ? ChinaCoordinates.gcjToWGS(point) : point
         }
 
+        var compactTimeRange: String {
+            guard let startTime, !startTime.isEmpty else { return "时间待定" }
+            let parts = startTime.split(separator: ":").compactMap { Int($0) }
+            guard parts.count == 2, let stayMin, stayMin > 0 else { return startTime }
+            let end = parts[0] * 60 + parts[1] + stayMin
+            return startTime + " – " + (end >= 1440 ? "次日 " : "") + String(format: "%02d:%02d", (end / 60) % 24, end % 60)
+        }
+
         var navigationURL: URL? {
             let preferred = nav?.domestic == true ? (nav?.amap ?? nav?.apple) : (nav?.apple ?? nav?.amap)
             return preferred.flatMap(URL.init(string:))

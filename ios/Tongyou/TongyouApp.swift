@@ -28,23 +28,36 @@ struct RootView: View {
             case .signedOut:
                 LoginView().transition(.opacity)
             case .signedIn:
-                TabView(selection: $router.tab) {
-                    Tab("首页", systemImage: "sparkles", value: AppRouter.TabID.home) { HomeView() }
-                    Tab("行程", systemImage: "map", value: AppRouter.TabID.trips) { TripsView() }
-                    Tab("记账", systemImage: "creditcard", value: AppRouter.TabID.ledger) { LedgerView() }
-                    Tab("历史", systemImage: "clock.arrow.circlepath", value: AppRouter.TabID.history) {
-                        HistoryView().id(router.historyVersion)
+                ZStack {
+                    ZStack {
+                        HomeView().opacity(router.tab == .home ? 1 : 0)
+                            .allowsHitTesting(router.tab == .home).accessibilityHidden(router.tab != .home)
+                            .zIndex(router.tab == .home ? 1 : 0)
+                        LedgerView().opacity(router.tab == .ledger ? 1 : 0)
+                            .allowsHitTesting(router.tab == .ledger).accessibilityHidden(router.tab != .ledger)
+                            .zIndex(router.tab == .ledger ? 1 : 0)
+                        MeView(isRoot: true).opacity(router.tab == .me ? 1 : 0)
+                            .allowsHitTesting(router.tab == .me).accessibilityHidden(router.tab != .me)
+                            .zIndex(router.tab == .me ? 1 : 0)
                     }
-                    Tab("同游圈", systemImage: "person.2", value: AppRouter.TabID.social) { SocialView() }
+                    .safeAreaInset(edge: .bottom) {
+                        if router.tab != .home || !router.travelDetailOpen { JourneyDock() }
+                    }
+                    .allowsHitTesting(!router.aiOpen)
+                    .accessibilityHidden(router.aiOpen)
+                    AssistantView()
+                        .opacity(router.aiOpen ? 1 : 0)
+                        .allowsHitTesting(router.aiOpen)
+                        .accessibilityHidden(!router.aiOpen)
+                        .zIndex(router.aiOpen ? 2 : -1)
                 }
-                .tabBarMinimizeBehavior(.onScrollDown)
                 .transition(.opacity)
             }
         }
         .animation(.easeOut(duration: 0.3), value: session.state)
         .task { await session.restore() }
         .onOpenURL { url in
-            if router.ledgerLinks.receive(url) { router.tab = .ledger }
+            if router.ledgerLinks.receive(url) { router.aiOpen = false; router.tab = .ledger }
         }
         .safeAreaInset(edge: .top) {
             if session.state == .signedOut, router.ledgerLinks.pending != nil {
@@ -78,5 +91,44 @@ struct LaunchView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .screenBackground()
+    }
+}
+
+
+struct JourneyDock: View {
+    @Environment(AppRouter.self) private var router
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Namespace private var selection
+    var body: some View {
+        HStack(spacing: 12) {
+            HStack(spacing: 2) {
+                item("旅行", icon: "map", tab: .home)
+                item("记账", icon: "creditcard", tab: .ledger)
+                item("我的", icon: "person", tab: .me)
+            }
+            .padding(5)
+            .glassEffect(.regular, in: .capsule)
+            Button { withAnimation(reduceMotion ? nil : .easeOut(duration: 0.22)) { router.aiOpen = true } } label: {
+                Label("问 AI", systemImage: "sparkles").font(.subheadline.weight(.semibold))
+                    .padding(.horizontal, 15).frame(height: 56)
+            }
+            .buttonStyle(.glassProminent).tint(Palette.sky)
+            .accessibilityIdentifier("openAI")
+        }
+        .padding(.horizontal, 14).padding(.bottom, 4)
+    }
+    private func item(_ title: String, icon: String, tab: AppRouter.TabID) -> some View {
+        Button {
+            withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85)) { router.tab = tab }
+        } label: {
+            VStack(spacing: 3) { Image(systemName: icon).font(.system(size: 21)); Text(title).font(.caption2) }
+                .frame(maxWidth: .infinity).frame(height: 50).contentShape(Capsule())
+                .foregroundStyle(router.tab == tab ? Palette.sky : .secondary)
+                .background {
+                    if router.tab == tab { Capsule().fill(Palette.sky.opacity(0.12)).matchedGeometryEffect(id: "selection", in: selection) }
+                }
+        }
+        .buttonStyle(.plain).accessibilityAddTraits(router.tab == tab ? .isSelected : [])
+        .accessibilityIdentifier("journeyTab_" + title)
     }
 }
