@@ -17,6 +17,7 @@
     "test:mobile:glass": "node tests/mobile-glass-browser.mjs",
     "test:android": "node tests/android-browser.mjs",
     "test:links": "node tests/link-opening-browser.mjs",
+    "test:ai-contrast": "node tests/ai-contrast-browser.mjs",
     "test:journey": "node tests/journey-browser.mjs",
     "test:trip-route": "node tests/trip-route-browser.mjs",
     "test:account": "node tests/account-panels-browser.mjs"

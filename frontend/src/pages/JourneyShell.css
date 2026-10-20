@@ -131,3 +131,32 @@ html .app.journey-shell.journey-shell .mobile-bottom-nav button.active { backgro
 
 /* Global tools must sit above account (60), navigation (90) and AI/history (170/180). */
 .app.journey-shell > .modal-mask { z-index: 240; }
+
+/* AI text uses the shell palette; legacy x-n colours remain light-theme-only. */
+html .app.journey-shell .ai-workspace {
+ --ai-muted:color-mix(in srgb,var(--journey-ink) 72%,var(--journey-bg));
+ --ai-error:color-mix(in srgb,#dc3545 65%,var(--journey-ink));
+}
+html .app.journey-shell .ai-workspace .hero .hero-title {
+ background:none;-webkit-text-fill-color:currentColor;color:var(--journey-ink);
+}
+html .app.journey-shell .ai-workspace .hero .hero-eyebrow { color:var(--journey-accent); }
+html .app.journey-shell .ai-workspace .hero .hero-sub { color:var(--ai-muted)!important; }
+html .app.journey-shell .ai-workspace .unified-idea > span,
+html .app.journey-shell .ai-workspace .unified-idea textarea { color:var(--journey-ink); }
+html .app.journey-shell .ai-workspace .unified-idea textarea::placeholder { color:var(--ai-muted);opacity:1; }
+html .app.journey-shell .ai-workspace .unified-attach small,
+html .app.journey-shell .ai-workspace .inspiration-status { color:var(--ai-muted); }
+html .app.journey-shell .ai-workspace .inspiration-status.error { color:var(--ai-error); }
+html .app.journey-shell .ai-workspace .unified-attach { border-color:var(--journey-line); }
+html .app.journey-shell .ai-workspace .unified-attach-btn,
+html .app.journey-shell .ai-workspace .unified-tools button {
+ color:var(--ai-muted);background:transparent;border-color:var(--journey-line);
+}
+html .app.journey-shell .ai-workspace .unified-tools button[aria-pressed=true] { color:var(--journey-accent); }
+html .app.journey-shell .ai-workspace .unified-attach-btn:hover:not(:disabled) { background:var(--journey-card); }
+/* Pair light text with a dark card; mobile glass formerly kept its white gradient. */
+html .app.journey-shell .ai-workspace .inspiration-launchpad.simple {
+ background:var(--journey-card);border-color:var(--journey-line);
+}
+html .app.journey-shell .ai-workspace .inspiration-launchpad.simple:focus-within { border-color:var(--journey-accent); }

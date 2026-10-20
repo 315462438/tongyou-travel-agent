@@ -1,6 +1,6 @@
 # 17同游 Web 与 Android 共享界面
 
-React + TypeScript + Vite，部署基路径 `/travel/`，后端 API 为 `/travel/api`。截至 2026-10-20：旅行 / 记账 / 我的三入口、独立问 AI；协同行程地图与行程同屏、景点图文详情、紧凑卡片；修复我的页面工具弹层遮挡。Android 0.8.2 (13) 打包此界面快照，iOS 为独立 SwiftUI 实现。
+React + TypeScript + Vite，部署基路径 `/travel/`，后端 API 为 `/travel/api`。截至 2026-10-20：旅行 / 记账 / 我的三入口、独立问 AI；协同行程地图与行程同屏、景点图文详情、紧凑卡片；修复我的页面工具弹层遮挡。本次补充 AI 明暗文字及输入卡配色修复。Android 0.8.2 (13) 为此前发布的界面快照，尚不包含这次配色修复，iOS 为独立 SwiftUI 实现。
 
 ## 本地开发
 
@@ -41,6 +41,7 @@ npm run lint
 npm run test:journey
 npm run test:trip-route
 npm run test:account
+npm run test:ai-contrast
 ```
 
 以上测试拦截业务 API 使用 fixture，不修改生产数据。`REAL_MAP=1 QA_CASE=web-mobile` 可验证真实高德 SDK；正式域名测试见[地图验收](../docs/test_cases/行程卡片密度与安卓地图比例-2026-10-20.md)。本轮 99 单测、主流程 6 组、地图 7 组、账户工具 6 组通过，结果见 `../docs/test_cases/`；lint 为额外检查入口，不等于本轮所有规则均无历史告警。
