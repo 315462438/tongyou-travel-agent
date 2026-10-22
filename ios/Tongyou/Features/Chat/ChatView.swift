@@ -77,8 +77,15 @@ struct ChatView: View {
                 await store.send(text)
             }
         }
-        .onDisappear { store.stopPolling() }
-        .onChange(of: store.petTask, initial: true) { _, task in router.updatePet(task, conversation: store.conversationID) }
+        .onAppear { router.chatShown(store.conversationID) }
+        .onChange(of: store.conversationID) { old, new in router.chatHidden(old); router.chatShown(new) }
+        .onDisappear {
+            store.stopPolling()
+            router.chatHidden(store.conversationID)
+            let phase = store.petTask.phase
+            if (phase == .working || phase == .waiting), let id = store.conversationID { router.followPet(conversation: id, title: title) }
+        }
+        .onChange(of: store.petTask, initial: true) { _, task in router.updatePet(task, conversation: store.conversationID, title: title) }
     }
 }
 

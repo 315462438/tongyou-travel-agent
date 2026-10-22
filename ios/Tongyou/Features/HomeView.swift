@@ -31,6 +31,44 @@ final class AppRouter {
     }
     private var petUsername: String?
     private var petLiveTurn: (conversation: String?, turn: String)?
+    /// 游游跟着的那个对话：气泡点进去直达它；离开对话页后由 followPet 接着拉进度。
+    private(set) var petChat: PetChatRoute?
+    /// AssistantView 消费：把这个对话推到 AI 面板最上层。
+    var petChatRequest: PetChatRoute?
+    /// 正在显示的对话页（栈），已在最上层就不重复推。
+    private(set) var chatsShown: [String] = []
+    private var petFollow: Task<Void, Never>?
+    private var petFollowing: String?
+
+    func chatShown(_ id: String?) { if let id { chatsShown.append(id) } }
+    func chatHidden(_ id: String?) { if let id, let i = chatsShown.lastIndex(of: id) { chatsShown.remove(at: i) } }
+
+    /// 打开 AI 面板；带 chat 时直达游游正在跟的对话。
+    func openPetChat() {
+        if let petChat, chatsShown.last != petChat.id { petChatRequest = petChat }
+    }
+
+    /// 对话页关掉时本轮还没完，就由这里接着轮询，完成提醒照常出现。
+    func followPet(conversation id: String, title: String) {
+        petFollow?.cancel()
+        petFollowing = id
+        let store = ChatStore(conversationID: id)
+        petFollow = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(2))
+                guard !Task.isCancelled, let self, self.petLiveTurn?.conversation == id else { return }
+                guard let running = await store.refresh() else { continue }
+                guard !Task.isCancelled, self.petFollowing == id else { return }
+                self.applyPet(store.petTask, conversation: id, title: title)
+                if !running {
+                    if store.petTask.phase == .ready { UINotificationFeedbackGenerator().notificationOccurred(.success) }
+                    self.historyVersion += 1
+                    self.petFollowing = nil
+                    return
+                }
+            }
+        }
+    }
 
     func configurePet(username: String?) {
         guard username != petUsername else { return }
@@ -40,9 +78,18 @@ final class AppRouter {
         #endif
         petPreferences = PetPreferences.read(username.flatMap { UserDefaults.standard.data(forKey: "travelPet.v1.\($0)") })
         petTask = PetTask(); petLiveTurn = nil; petCelebration = 0; petToolsOpen = false
+        petFollow?.cancel(); petFollowing = nil; petChat = nil
     }
 
-    func updatePet(_ task: PetTask, conversation: String?) {
+    /// 对话页上报：页面回来了就由它自己轮询，停掉后台跟进。
+    func updatePet(_ task: PetTask, conversation: String?, title: String) {
+        if let conversation, conversation == petFollowing { petFollow?.cancel(); petFollowing = nil }
+        applyPet(task, conversation: conversation, title: title)
+    }
+
+    private func applyPet(_ task: PetTask, conversation: String?, title: String) {
+        guard TravelPetLogic.accepts(task, from: conversation, live: petLiveTurn) else { return }
+        if let conversation, task.phase != .idle { petChat = PetChatRoute(id: conversation, title: title) }
         if task.phase == .working || task.phase == .waiting { petLiveTurn = (conversation, task.turn) }
         else {
             if task.phase == .ready, let live = petLiveTurn, live.conversation == conversation, live.turn == task.turn { petCelebration += 1 }
@@ -50,6 +97,11 @@ final class AppRouter {
         }
         petTask = task
     }
+}
+
+struct PetChatRoute: Hashable {
+    var id: String
+    var title: String
 }
 
 struct ChatLaunch: Hashable {
@@ -101,6 +153,21 @@ struct AssistantView: View {
                             Button("收起") { router.aiOpen = false }.accessibilityIdentifier("closeAI")
                         }
                     }
+            }
+            .navigationDestination(for: PetChatRoute.self) { route in
+                ChatView(conversationID: route.id, title: route.title) { router.historyVersion += 1 }
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("收起") { router.aiOpen = false }.accessibilityIdentifier("closeAI")
+                        }
+                    }
+            }
+            .onChange(of: router.petChatRequest) { _, route in
+                guard let route else { return }
+                showHistory = false
+                var next = NavigationPath(); next.append(route)
+                path = next
+                router.petChatRequest = nil
             }
             .sheet(isPresented: $showHistory) { HistoryView() }
             .onChange(of: router.aiPrompt) { _, prompt in

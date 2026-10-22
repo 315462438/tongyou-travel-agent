@@ -61,6 +61,15 @@ import Foundation
         check(TravelPetLogic.bubble(task: PetTask(phase: .ready), finished: true, tip: .ask)?.kind == .done)
         check(TravelPetLogic.bubble(task: PetTask(), finished: false, tip: .ask)?.kind == .tip && TravelPetLogic.bubble(task: PetTask(), finished: false, tip: nil) == nil)
         check(PetPreferences.read(Data("{\"tipsSeen\":[\"ask\"]}".utf8)).tipsSeen == ["ask"])
+        // Done bubble names the conversation it opens; old finished chats can't overwrite a live turn elsewhere.
+        check(TravelPetLogic.bubble(task: PetTask(phase: .ready), finished: true, tip: nil, title: "延吉烤海鲜")?.text == "「延吉烤海鲜」写好啦，点我看看")
+        check(TravelPetLogic.bubble(task: PetTask(phase: .ready), finished: true, tip: nil, title: "新对话")?.text == "回复准备好啦，点我看看")
+        check(TravelPetLogic.bubble(task: PetTask(phase: .ready), finished: true, tip: nil, title: "哈尔滨延吉五日冰雪美食路线")!.text.contains("…」"))
+        let liveA: (conversation: String?, turn: String)? = ("A", "u1")
+        check(!TravelPetLogic.accepts(PetTask(phase: .ready), from: "B", live: liveA))
+        check(TravelPetLogic.accepts(PetTask(phase: .ready), from: "A", live: liveA))
+        check(TravelPetLogic.accepts(PetTask(phase: .working), from: "B", live: liveA))
+        check(TravelPetLogic.accepts(PetTask(), from: "B", live: nil))
         print("\(count) TravelPet checks passed")
     }
 }

@@ -98,3 +98,16 @@ test('bubble priority and one-time tips', async () => {
   assert.deepEqual(readPetPreferences('{"tipsSeen":["ask",3,null,"drag"]}').tipsSeen, ['ask', 'drag'])
   assert.equal(readPetPreferences('{}').tipsSeen, undefined)
 })
+
+test('trip board dark theme flips surfaces together with text', async () => {
+  const fs = await import('node:fs/promises')
+  const css = await fs.readFile(new URL('../src/pages/TripWorkspace.css', import.meta.url), 'utf8')
+  const media = css.slice(css.indexOf('@media (prefers-color-scheme: dark)'))
+  for (const token of ['--trip-surface:', '--tx-surface:', '--x-n100:', '--x-glass:', '--tw-surface:', '--tw-ink:'])
+    assert.ok(media.includes(token), `dark block sets ${token}`)
+  assert.ok(css.includes('html.native-android[data-android-appearance=dark] .app.journey-shell .trips-overlay'), 'Android dark copy')
+  // Light palette stays exactly the pre-dark values.
+  assert.match(css, /--tw-surface: #fff; --tw-canvas: #f5f7fb;/)
+  const lightPart = css.slice(css.indexOf('*/') + 2, css.indexOf('/* ---------- 深色主题'))
+  assert.equal((lightPart.match(/#fff(?![0-9a-f])/gi) || []).length, 1, 'no hard-coded white surfaces outside the token block')
+})

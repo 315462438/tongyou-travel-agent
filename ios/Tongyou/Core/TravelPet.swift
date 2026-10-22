@@ -70,14 +70,25 @@ enum TravelPetLogic {
         return PetTip.allCases.first { !(seen ?? []).contains($0.rawValue) }
     }
 
-    /// 停靠处气泡选哪条：任务状态优先于指引。
-    static func bubble(task: PetTask, finished: Bool, tip: PetTip?) -> PetBubble? {
+    /// 对话页之外的更新能不能改游游：另一个对话还在跑时，打开一条已结束的旧对话不能把它的进度盖掉。
+    static func accepts(_ task: PetTask, from conversation: String?, live: (conversation: String?, turn: String)?) -> Bool {
+        if task.phase == .working || task.phase == .waiting { return true }
+        guard let live else { return true }
+        return live.conversation == conversation
+    }
+
+    /// 停靠处气泡选哪条：任务状态优先于指引。完成提醒带上对话名，点进去去的就是它。
+    static func bubble(task: PetTask, finished: Bool, tip: PetTip?, title: String? = nil) -> PetBubble? {
         switch task.phase {
         case .waiting: return PetBubble(kind: .waiting, text: "有件事需要你确认，点我去看看")
         case .error: return PetBubble(kind: .error, text: "这次没能完成，点我看看")
         case .working: return PetBubble(kind: .progress, text: task.detail ?? task.label)
         default:
-            if finished { return PetBubble(kind: .done, text: "回复准备好啦，点我看看") }
+            if finished {
+                let name = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                if name.isEmpty || name == "新对话" { return PetBubble(kind: .done, text: "回复准备好啦，点我看看") }
+                return PetBubble(kind: .done, text: "「\(name.count > 10 ? String(name.prefix(9)) + "…" : name)」写好啦，点我看看")
+            }
             if let tip { return PetBubble(kind: .tip, text: tip.text, tip: tip) }
             return nil
         }

@@ -456,6 +456,12 @@ selection 触感，保存点 `Haptics.success()`。reduced-motion 全部降级�
 **气泡互动**：停靠处气泡按「确认/出错/进度 > 完成提醒 > 指引」选一条（`petBubble` / `TravelPetLogic.bubble`）；
 进度取本轮最新进度消息清洗成 ≤22 字；三句指引每句只说一次（`tipsSeen` 存偏好）、一次会话最多一句。
 iOS `PetPreferences` 逐键容错解码——**加字段不能让老用户设置被重置**。
+**离页继续跟进**（iOS 1.0.18）：游游状态原来只靠 `ChatView` 轮询，对话页一走就冻结在最后一条进度；现在
+`onDisappear` 时本轮未完则 `AppRouter.followPet` 接手，点气泡经 `openPetChat()` 直达该对话（`petChat`），
+气泡为带尾巴的 `PetBubbleShape`，完成提醒带对话名且不自动消失。坑见 `docs/pitfalls/状态只靠页面轮询离页就冻结-2026-10-22.md`。
+**行程板深色主题**：`TripWorkspace.css` 色值改 `--tw-*` 角色变量，深色块在 `prefers-color-scheme: dark` 与
+`html.native-android[data-android-appearance=dark]` 各生成一份；`:root` 派生变量已在 `:root` 求值，必须在作用域内重定义。
+坑见 `docs/pitfalls/深色主题只换了字色没换底色-2026-10-22.md`。
 计划 `docs/task_plans/游游动作与问AI衔接动画-2026-10-22.md`。
 
 **Phase 113 — 切换 DeepSeek V4.1 + 视觉切片按像素预算重校准**（读 `deepseek-harness` 上游

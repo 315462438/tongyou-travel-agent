@@ -239,6 +239,13 @@ final class ChatStore {
 
     func stopPolling() { pollTask?.cancel() }
 
+    /// 拉一次消息（游游在对话页之外继续跟进度用）；返回本轮是否还在跑，失败返回 nil。
+    func refresh() async -> Bool? {
+        guard let conversationID, let reply = try? await API.shared.get("chat/\(conversationID)/messages", as: MessagesReply.self) else { return nil }
+        apply(reply)
+        return reply.running
+    }
+
     private func apply(_ reply: MessagesReply) {
         if reply.messages != messages { messages = reply.messages }
         running = reply.running

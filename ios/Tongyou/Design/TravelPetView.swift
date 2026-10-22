@@ -123,16 +123,18 @@ struct PetCompanionButton: View {
     private var calm: Bool { router.petTask.phase == .idle || router.petTask.phase == .ready }
     private var bubble: PetBubble? {
         guard router.petPreferences.visible, !router.aiOpen else { return nil }
-        return TravelPetLogic.bubble(task: router.petTask, finished: finished, tip: tip)
+        return TravelPetLogic.bubble(task: router.petTask, finished: finished, tip: tip, title: router.petChat?.title)
     }
-    private func openAI() {
+    /// chat=true 时直达游游正在跟的那个对话，不用再去历史里找。
+    private func openAI(chat: Bool = false) {
         if router.petPreferences.visible && !router.petPreferences.quiet && !reduceMotion && router.petBadgeFrame != .zero { router.petFlight += 1 }
         finished = false; tip = nil
+        if chat { router.openPetChat() }
         router.aiOpen = true
     }
     var body: some View {
         Button {
-            openAI()
+            openAI(chat: !calm || finished)
         } label: {
             if router.petPreferences.visible {
                 VStack(spacing: -3) {
@@ -166,25 +168,24 @@ struct PetCompanionButton: View {
         })
         .overlay(alignment: router.petPreferences.side == "left" ? .topLeading : .topTrailing) {
             if let bubble {
-                PetBubbleView(bubble: bubble, quiet: router.petPreferences.quiet, onTap: {
+                PetBubbleView(bubble: bubble, quiet: router.petPreferences.quiet, leading: router.petPreferences.side == "left", onTap: {
                     switch bubble.tip {
                     case .tools: tip = nil; router.petToolsOpen = true
                     case .drag: tip = nil
-                    default: openAI()
+                    default: openAI(chat: true)
                     }
                 }, onClose: bubble.kind == .tip || bubble.kind == .done ? { tip = nil; finished = false } : nil)
-                .alignmentGuide(.top) { $0[.bottom] + 4 }
+                .alignmentGuide(.top) { $0[.bottom] + 2 }
                 .transition(.scale(scale: 0.6, anchor: router.petPreferences.side == "left" ? .bottomLeading : .bottomTrailing).combined(with: .opacity))
             }
         }
         .animation(reduceMotion || router.petPreferences.quiet ? nil : .spring(response: 0.35, dampingFraction: 0.7), value: bubble)
-        // 完成提醒留 8 秒；空闲 6 秒后说一句还没说过的指引，9 秒后收起。
+        // 完成提醒一直留着，直到点开、点✕或开始下一轮；空闲 6 秒后说一句还没说过的指引，9 秒后收起。
         .task(id: router.petCelebration) {
             guard router.petCelebration > 0 else { return }
             finished = true
-            do { try await Task.sleep(for: .seconds(8)) } catch { return }
-            finished = false
         }
+        .onChange(of: router.petTask.phase) { _, phase in if phase == .working || phase == .waiting { finished = false } }
         .task(id: router.petPreferences.visible && calm && !router.aiOpen && !finished && !router.petTipShown) {
             guard router.petPreferences.visible, calm, !router.aiOpen, !finished, !router.petTipShown else { return }
             do { try await Task.sleep(for: .seconds(6)) } catch { return }
@@ -205,9 +206,11 @@ struct PetCompanionButton: View {
 struct PetBubbleView: View {
     var bubble: PetBubble
     var quiet: Bool
+    var leading = false
     var onTap: () -> Void
     var onClose: (() -> Void)?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private var shape: PetBubbleShape { PetBubbleShape(leading: leading) }
     var body: some View {
         HStack(spacing: 0) {
             Button(action: onTap) {
@@ -215,11 +218,15 @@ struct PetBubbleView: View {
                     if bubble.kind == .progress {
                         Circle().fill(Palette.sky).frame(width: 7, height: 7)
                             .phaseAnimator(quiet || reduceMotion ? [1.0] : [0.35, 1.0]) { dot, value in dot.opacity(value) } animation: { _ in .easeInOut(duration: 0.6) }
+                    } else if bubble.kind == .done {
+                        Image(systemName: "checkmark.circle.fill").font(.footnote).foregroundStyle(Palette.sky)
+                    } else if bubble.kind == .error {
+                        Image(systemName: "exclamationmark.circle.fill").font(.footnote).foregroundStyle(.red)
                     }
-                    Text(bubble.text).font(.caption).multilineTextAlignment(.leading).lineLimit(2)
+                    Text(bubble.text).font(.footnote).multilineTextAlignment(.leading).lineLimit(2)
                         .id(bubble.text).transition(.opacity)
                 }
-                .padding(.leading, 12).padding(.trailing, onClose == nil ? 12 : 2).padding(.vertical, 9)
+                .padding(.leading, 13).padding(.trailing, onClose == nil ? 13 : 2).padding(.vertical, 9)
                 .contentShape(Rectangle())
             }.buttonStyle(.plain)
             if let onClose {
@@ -227,13 +234,16 @@ struct PetBubbleView: View {
                     .buttonStyle(.plain).accessibilityLabel("收起提示")
             }
         }
+        .padding(.bottom, PetBubbleShape.tail)
         .fixedSize(horizontal: false, vertical: true)
-        .frame(maxWidth: 210, alignment: .leading)
+        .frame(maxWidth: 220, alignment: .leading)
         .fixedSize()
-        .background(bubble.kind == .tip ? AnyShapeStyle(Palette.sky.opacity(0.12)) : AnyShapeStyle(.regularMaterial), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(border, lineWidth: 1))
-        .shadow(color: .black.opacity(0.08), radius: 10, y: 4)
+        .background {
+            shape.fill(.regularMaterial)
+            if bubble.kind == .tip || bubble.kind == .done { shape.fill(Palette.sky.opacity(0.1)) }
+        }
+        .overlay(shape.stroke(border, lineWidth: 1))
+        .shadow(color: .black.opacity(0.1), radius: 10, y: 4)
         .accessibilityElement(children: .contain)
     }
     private var border: Color {
@@ -242,6 +252,24 @@ struct PetBubbleView: View {
         case .error: Color.red.opacity(0.45)
         default: Color.primary.opacity(0.08)
         }
+    }
+}
+
+/// 对话气泡：圆角主体 + 底部指向游游头顶的小尾巴（游游在哪侧，尾巴就在哪侧）。
+struct PetBubbleShape: Shape {
+    static let tail: CGFloat = 8
+    var leading = false
+    func path(in rect: CGRect) -> Path {
+        let body = CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: rect.height - Self.tail)
+        // 停靠按钮宽 84，游游头顶在离边 42 处；气泡与按钮同侧对齐。
+        let x = leading ? rect.minX + 42 : rect.maxX - 42
+        let lean: CGFloat = leading ? -3 : 3
+        var tail = Path()
+        tail.move(to: CGPoint(x: x - 8, y: body.maxY - 1))
+        tail.addQuadCurve(to: CGPoint(x: x + lean, y: rect.maxY), control: CGPoint(x: x - 2, y: body.maxY + 2))
+        tail.addQuadCurve(to: CGPoint(x: x + 8, y: body.maxY - 1), control: CGPoint(x: x + 3, y: body.maxY + 2))
+        tail.closeSubpath()
+        return Path(roundedRect: body, cornerRadius: 18, style: .continuous).union(tail)
     }
 }
 
