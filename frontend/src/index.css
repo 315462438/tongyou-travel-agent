@@ -2192,7 +2192,7 @@ html.ua-android { --glass-k: .45; --x-glass-blur: 11px; }
 /* ---------- Phase 43：移动端适配（微信分享进来的手机用户） ---------- */
 @media (max-width: 720px) {
   /* 对话主界面 */
-  .thread-inner { padding: 16px 12px 8px; }
+  .thread-inner { padding: 16px 16px 8px; }
   .msg-user > div { max-width: 86%; font-size: 14px; }
   .msg-assistant { font-size: 14px; }
   .composer-wrap { padding: 0 10px; }
@@ -4056,7 +4056,7 @@ body { color: var(--tx-ink); background: var(--x-n96); }
 .view-mobile .thread { min-height: 0; overscroll-behavior: contain; }
 .view-mobile .thread-inner {
   width: 100%;
-  padding: 8px 13px 18px;
+  padding: 8px 18px 18px;
 }
 .view-mobile .msg-user { margin: 13px 0; }
 .view-mobile .msg-user > div {

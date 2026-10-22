@@ -214,3 +214,11 @@ def test_embed_images_never_leaves_a_split_table():
     lines = out.split("\n")
     rows = [i for i, ln in enumerate(lines) if ln.startswith("|")]
     assert rows == list(range(rows[0], rows[0] + 5)), f"表格被劈开了：{out}"
+
+
+def test_placeholder_in_parentheses_leaves_no_orphan_brackets():
+    from app.agent.orchestrator import _embed_images
+    out = _embed_images("正午安排室内（博物馆）。（[[img:广州]]）\n\nDay 1", {"广州": "/api/img?u=x"}, streaming=True)
+    assert "![广州](/api/img?u=x)" in out
+    assert "(" not in out.replace("(/api/img?u=x)", "") and "）。（" not in out
+    assert "（博物馆）" in out  # 普通括号原样保留

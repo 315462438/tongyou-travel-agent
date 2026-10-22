@@ -122,11 +122,18 @@ export function nextPetTip(seen: readonly string[] | undefined, phase: PetPhase)
 
 export type PetBubble = { kind: 'progress' | 'waiting' | 'error' | 'done'; text: string } | { kind: 'tip'; text: string; tip: PetTip }
 /** 停靠处气泡选哪条：任务状态优先于指引，指引只在空闲时出现。 */
-export function petBubble(task: PetTask, finished: boolean, tip: PetTip | null): PetBubble | null {
+/** 完成提醒带上对话名（点进去去的就是它）；没名字或「新对话」退回通用文案。与 iOS TravelPetLogic.bubble 一致。 */
+export function petDoneText(title?: string | null): string {
+  const name = (title || '').trim()
+  if (!name || name === '新对话') return '回复准备好啦，点我看看'
+  return `「${[...name].length > 10 ? [...name].slice(0, 9).join('') + '…' : name}」写好啦，点我看看`
+}
+
+export function petBubble(task: PetTask, finished: boolean, tip: PetTip | null, title?: string | null): PetBubble | null {
   if (task.phase === 'waiting') return { kind: 'waiting', text: '有件事需要你确认，点我去看看' }
   if (task.phase === 'error') return { kind: 'error', text: '这次没能完成，点我看看' }
   if (task.phase === 'working') return { kind: 'progress', text: task.detail || task.label }
-  if (finished) return { kind: 'done', text: '回复准备好啦，点我看看' }
+  if (finished) return { kind: 'done', text: petDoneText(title) }
   if (tip) return { kind: 'tip', text: tip.text, tip }
   return null
 }

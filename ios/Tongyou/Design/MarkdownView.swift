@@ -16,7 +16,7 @@ enum MarkdownBlock: Equatable {
     static func parse(_ text: String) -> [MarkdownBlock] {
         var blocks: [MarkdownBlock] = []
         var paragraph: [String] = []
-        var lines = text.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n")[...]
+        var lines = InlineText.imagesOnOwnLines(text.replacingOccurrences(of: "\r\n", with: "\n")).components(separatedBy: "\n")[...]
         func flush() {
             let joined = paragraph.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
             if !joined.isEmpty { blocks.append(.paragraph(joined)) }
@@ -117,6 +117,17 @@ struct InlineText: View {
     var body: some View {
         Text(Self.attributed(source))
     }
+    /// 模型偶尔把配图写成「（![](…)）」或塞在句中：去掉包着图的括号，并让图独占一行，不再留下孤零零的「(」「)」。
+    static func imagesOnOwnLines(_ text: String) -> String {
+        let image: String = #"!\[[^\]\n]*\]\([^)\s]+\)"#
+        let wrapped: String = #"[(（]\s*("# + image + #")\s*[)）]"#
+        let before: String = #"(?<=\S)[ \t]*("# + image + ")"
+        let after: String = "(" + image + #")[ \t]*(?=\S)"#
+        var out: String = text.replacingOccurrences(of: wrapped, with: "\n$1\n", options: .regularExpression)
+        out = out.replacingOccurrences(of: before, with: "\n$1", options: .regularExpression)
+        return out.replacingOccurrences(of: after, with: "$1\n", options: .regularExpression)
+    }
+
     static func attributed(_ source: String) -> AttributedString {
         let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace,
                                                               failurePolicy: .returnPartiallyParsedIfPossible)
@@ -244,11 +255,15 @@ private struct MarkdownBlockView: View, Equatable {
         case .image(let url, _) where exporting:
             // Off-screen renders cannot wait for downloads: use images the chat has already shown.
             if let image = ImageCache.url(for: url).flatMap({ ImageCache.shared.cached($0) }) {
-                Image(uiImage: image).resizable().scaledToFill()
-                    .frame(maxWidth: .infinity).frame(height: 200).clipShape(.rect(cornerRadius: 12))
+                Color.clear.frame(maxWidth: .infinity).frame(height: 200)
+                    .overlay { Image(uiImage: image).resizable().scaledToFill() }
+                    .clipShape(.rect(cornerRadius: 12))
             }
         case .image(let url, _):
-            RemoteImage(path: url).frame(maxWidth: .infinity).frame(height: 200).clipShape(.rect(cornerRadius: 16))
+            // 填充缩放的图片会把理想宽度报得比屏幕还宽，整列文字跟着被撑到贴边；放进 overlay 只占给定的框。
+            Color.clear.frame(maxWidth: .infinity).frame(height: 200)
+                .overlay { RemoteImage(path: url) }
+                .clipShape(.rect(cornerRadius: 16))
         case .rule:
             Divider().padding(.vertical, 4)
         }

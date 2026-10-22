@@ -111,3 +111,12 @@ test('trip board dark theme flips surfaces together with text', async () => {
   const lightPart = css.slice(css.indexOf('*/') + 2, css.indexOf('/* ---------- 深色主题'))
   assert.equal((lightPart.match(/#fff(?![0-9a-f])/gi) || []).length, 1, 'no hard-coded white surfaces outside the token block')
 })
+
+test('done bubble names the conversation it opens', async () => {
+  const { petBubble, petDoneText } = await import('../src/travelPet.ts')
+  assert.equal(petDoneText('延吉烤海鲜'), '「延吉烤海鲜」写好啦，点我看看')
+  assert.equal(petDoneText('新对话'), '回复准备好啦，点我看看')
+  assert.equal(petDoneText(undefined), '回复准备好啦，点我看看')
+  assert.ok(petDoneText('哈尔滨延吉五日冰雪美食路线').includes('…」'))
+  assert.equal(petBubble({ phase: 'ready', label: '', turn: '' }, true, null, '广州').text, '「广州」写好啦，点我看看')
+})

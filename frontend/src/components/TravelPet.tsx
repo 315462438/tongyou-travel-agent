@@ -109,18 +109,20 @@ function usePetTip(enabled: boolean, phase: PetTask['phase'], seen: readonly str
   return [tip, setTip] as const
 }
 
-export default function TravelPet({ task, conversation, preferences, hidden, onAsk, onTools, onTipSeen }: {
-  task: PetTask; conversation: string | null; preferences: PetPreferences; hidden: boolean
-  onAsk: (from?: HTMLElement | null) => void; onTools: () => void; onTipSeen: (id: string) => void
+export default function TravelPet({ task, conversation, title, preferences, hidden, onAsk, onTools, onTipSeen }: {
+  task: PetTask; conversation: string | null; title?: string; preferences: PetPreferences; hidden: boolean
+  /** toTask=true：点的是进度/完成提醒，要回到游游正在跟的那个对话。 */
+  onAsk: (from?: HTMLElement | null, toTask?: boolean) => void; onTools: () => void; onTipSeen: (id: string) => void
 }) {
   const host = useRef<HTMLDivElement>(null)
   const gesture = useRef<{ x: number; y: number; moved: boolean; long: boolean } | null>(null)
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const liveTurn = useRef<{ conversation: string; turn: string } | null>(null)
   const [finished, setFinished] = useState(false)
+  const [cheer, setCheer] = useState(0)
   const act = usePetAct(preferences.visible && !preferences.quiet && !hidden && petActAllowed(task.phase) && !finished)
   const [tip, setTip] = usePetTip(preferences.visible && !hidden && petActAllowed(task.phase) && !finished, task.phase, preferences.tipsSeen, onTipSeen)
-  const bubble = preferences.visible ? petBubble(task, finished, tip) : null
+  const bubble = preferences.visible ? petBubble(task, finished, tip, title) : null
   const art = () => host.current?.querySelector<HTMLElement>('.travel-pet-fab .yp-art')
   const tapBubble = () => {
     if (bubble?.kind === 'tip') {
@@ -130,7 +132,7 @@ export default function TravelPet({ task, conversation, preferences, hidden, onA
       return
     }
     setFinished(false)
-    onAsk(art())
+    onAsk(art(), true)
   }
   const [side, setSide] = useState(preferences.side)
   useEffect(() => setSide(preferences.side), [preferences.side])
@@ -139,14 +141,11 @@ export default function TravelPet({ task, conversation, preferences, hidden, onA
     else {
       const previous = liveTurn.current
       liveTurn.current = null
-      if (task.phase === 'ready' && previous && previous.conversation === conversation && previous.turn === task.turn) setFinished(true)
+      if (task.phase === 'ready' && previous && previous.conversation === conversation && previous.turn === task.turn) { setFinished(true); setCheer(count => count + 1) }
     }
+    // 完成提醒一直留着，直到点开、点✕或开始下一轮。
+    if (task.phase === 'working' || task.phase === 'waiting') setFinished(false)
   }, [conversation, task.phase, task.turn])
-  useEffect(() => {
-    if (!finished) return
-    const timer = setTimeout(() => setFinished(false), 8000)
-    return () => clearTimeout(timer)
-  }, [finished])
   const clearPress = () => { if (pressTimer.current) clearTimeout(pressTimer.current); pressTimer.current = null }
   useEffect(() => () => { if (pressTimer.current) clearTimeout(pressTimer.current) }, [])
   const suppressed = useRef(false)
@@ -185,13 +184,14 @@ export default function TravelPet({ task, conversation, preferences, hidden, onA
     }
   }
   return <div ref={host} className="travel-pet-dock" data-side={side} data-quiet={preferences.quiet} hidden={hidden}>
+    {cheer > 0 && !preferences.quiet && preferences.visible && <span key={cheer} className="pet-cheer" aria-hidden="true">{['🎉', '✨', '💙', '👏', '🌟'].map(emoji => <i key={emoji}>{emoji}</i>)}</span>}
     {bubble && <div className="travel-pet-bubble" data-kind={bubble.kind} aria-live="polite">
-      <button key={bubble.text} className="pet-bubble-main" onClick={tapBubble}>{bubble.kind === 'progress' && <i aria-hidden="true" />}{bubble.text}</button>
+      <button key={bubble.text} className="pet-bubble-main" onClick={tapBubble}>{bubble.kind === 'progress' && <i aria-hidden="true" />}{bubble.kind === 'done' && <b aria-hidden="true">✓</b>}{bubble.text}</button>
       {(bubble.kind === 'tip' || bubble.kind === 'done') && <button className="pet-bubble-close" aria-label="收起提示" onClick={() => { setTip(null); setFinished(false) }}>✕</button>}
     </div>}
     <button className={`journey-ai-fab${preferences.visible ? ' travel-pet-fab' : ''}`} data-no-press={preferences.visible || undefined} aria-label={task.phase === 'working' || task.phase === 'waiting' ? '问 AI，正在生成' : '问 AI'}
       aria-description={preferences.visible ? '游游旅行搭子，长按打开旅行工具，拖动到左右两侧' : undefined}
-      onClick={event => { if (suppressed.current) { suppressed.current = false; return } onAsk(event.currentTarget.querySelector<HTMLElement>('.yp-art')) }}
+      onClick={event => { if (suppressed.current) { suppressed.current = false; return } onAsk(event.currentTarget.querySelector<HTMLElement>('.yp-art'), finished || !petActAllowed(task.phase)) }}
       onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={() => { clearPress(); gesture.current = null; if (host.current) { host.current.style.translate = ''; delete host.current.dataset.drag; delete host.current.dataset.lean } }}
       onContextMenu={event => { event.preventDefault(); if (preferences.visible) onTools() }}>
       {preferences.visible ? <PetArt pose={finished ? 'happy' : task.phase} act={act} /> : <span aria-hidden="true">✦</span>}

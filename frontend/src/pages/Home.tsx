@@ -627,6 +627,30 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
   }, [])
   useEffect(() => () => stopPoll(), [stopPoll])
 
+  // 游游的后台跟进：切走时那一轮还没完，就由这里每 2.5s 拉一次，完成后照常出完成提醒。
+  const [petWatch, setPetWatch] = useState<{ cid: string; messages: Msg[]; running: boolean } | null>(null)
+  const lastConv = useRef<{ cid: string | null; messages: Msg[]; running: boolean }>({ cid: null, messages: [], running: false })
+  useEffect(() => {
+    const previous = lastConv.current
+    if (previous.cid && previous.cid !== cid && previous.running) setPetWatch({ cid: previous.cid, messages: previous.messages, running: true })
+    else setPetWatch(current => (current && current.cid === cid ? null : current))
+  }, [cid])
+  useEffect(() => { lastConv.current = { cid, messages, running } })
+  useEffect(() => {
+    if (!petWatch?.running) return
+    const id = petWatch.cid
+    const timer = window.setInterval(async () => {
+      try {
+        const res = await authFetch(`${API}/chat/${id}/messages`)
+        if (!res.ok) return
+        const data = await res.json()
+        setPetWatch(current => (current && current.cid === id ? { cid: id, messages: data.messages, running: data.running } : current))
+        if (!data.running) loadConvs()
+      } catch { /* 下一轮再试 */ }
+    }, 2500)
+    return () => window.clearInterval(timer)
+  }, [petWatch?.cid, petWatch?.running, loadConvs])
+
   // 单次拉取（2026-08-13）：轮询间隔与「切回页面立即补拉」共用同一份逻辑
   const pullOnce = useCallback(async (conv: string) => {
     const res = await authFetch(`${API}/chat/${conv}/messages`)
@@ -1001,7 +1025,11 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
   }
   const mobileActive = showLedger ? 'ledger' : mobilePanel ? 'account' : 'travel'
   const activeConversationTitle = convs.find((conv) => conv.id === cid)?.title || (empty ? '开始新旅程' : '旅行规划')
-  const companionTask = petTask(messages, running, petStopped, petFailed)
+  // 切到别的对话时上一轮还在跑：游游接着跟它（Home 只轮询当前对话），点气泡回到它。
+  const watchingPet = !!petWatch && petWatch.cid !== cid && !running
+  const companionTask = watchingPet ? petTask(petWatch!.messages, petWatch!.running) : petTask(messages, running, petStopped, petFailed)
+  const companionConv = watchingPet ? petWatch!.cid : cid
+  const companionTitle = convs.find((conv) => conv.id === companionConv)?.title
 
   return (
     <div data-pet-side={petPreferences.side} className={`app journey-shell view-${layoutMode}${collapsed ? ' collapsed' : ''}${keyboardOpen ? ' keyboard-open' : ''}`}>
@@ -1266,7 +1294,8 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
         <button className={mobileActive === 'ledger' ? 'active' : ''} aria-current={mobileActive === 'ledger' ? 'page' : undefined} onClick={openLedger}><NavIcon name="ledger" /><small>记账</small></button>
         <button className={mobileActive === 'account' ? 'active' : ''} aria-current={mobileActive === 'account' ? 'page' : undefined} onClick={openAccount}><NavIcon name="account" /><small>我的</small></button>
       </nav></>}
-      <TravelPet task={companionTask} conversation={cid} preferences={petPreferences} onAsk={from => { flyPetToAI(from, petPreferences.quiet); openAI() }} onTools={() => setShowPetTools(true)}
+      <TravelPet task={companionTask} conversation={companionConv} title={companionTitle} preferences={petPreferences}
+        onAsk={(from, toTask) => { flyPetToAI(from, petPreferences.quiet); if (toTask && watchingPet) void selectConv(petWatch!.cid); else openAI() }} onTools={() => setShowPetTools(true)}
         onTipSeen={id => setPetPreferences(current => ({ ...current, tipsSeen: [...(current.tipsSeen || []).filter(seen => seen !== id), id] }))}
         hidden={aiOpen || keyboardOpen || !!(showTrips && tripsBoard) || showMemories || showConnectors || showSkills || showAdmin || showSocial || showNotifications || showAnn || showAnnModal || showSupport || !!traceFor} />
       {showPetTools && <PetTools preferences={petPreferences} onChange={setPetPreferences} onClose={() => setShowPetTools(false)} onAsk={() => openAI()}

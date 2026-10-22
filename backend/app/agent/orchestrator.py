@@ -128,6 +128,8 @@ from urllib.parse import quote as _urlquote
 
 # 兼容模型写歪的变体：单括号 [img:...]、全角冒号（线上真实出现过单括号原样漏进正文）
 _IMG_PLACEHOLDER = re.compile(r"\[\[?img[:：]([^\]]{1,60})\]\]?")
+# 模型偶尔把占位符写在括号里「（[[img:广州]]）」：图片换成独占一行后，括号会变成孤零零的「(」「)」。
+_IMG_IN_PARENS = re.compile(r"[(（]\s*(\[\[?img[:：][^\]]{1,60}\]\]?)\s*[)）]")
 
 # 模型偶发把工具调用（collect_source 等）以 DeepSeek/Anthropic 标记吐进正文（复杂多城请求时
 # 它以为还在工具循环）。正文永远不该有这些 → 从首个标记处截断剥掉（｜为全角 U+FF5C）。
@@ -285,7 +287,7 @@ def _sub_placeholders_table_safe(text: str, image_map: dict) -> str:
             pending.append(f"![{name}]({url})")
         return ""
 
-    for line in text.split("\n"):
+    for line in _IMG_IN_PARENS.sub(r"\1", text).split("\n"):
         if _is_table_line(line):
             out_lines.append(_IMG_PLACEHOLDER.sub(repl_defer, line))
             continue

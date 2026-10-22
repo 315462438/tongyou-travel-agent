@@ -40,3 +40,12 @@ xcrun swiftc -module-cache-path /tmp/tongyou-pet-module-cache ios/Tongyou/Core/T
 | 离开对话页仍跟进度 | 发起提问 → 返回 AI 首页并收起 → 等完成 | 气泡进度持续变化，完成后出现完成提醒与触感 | 真机手测 |
 | 点气泡直达对话 | 生成中/完成后点气泡 | AI 面板直接显示该对话，不经历史 | 真机手测 |
 | 气泡形状 | 左右两侧停靠各看一次 | 尾巴指向游游头顶 | 真机手测 |
+
+## 追加：网页对齐
+
+| 用例 | 预期 | 自动化 |
+| --- | --- | --- |
+| 占位符在括号里 | 终稿只剩图片，普通括号保留 | `backend/tests/test_images.py::test_placeholder_in_parentheses_leaves_no_orphan_brackets` |
+| 老攻略括号兜底 | `prepareMarkdown` 去掉包图括号 | `frontend/tests/interaction-utils.test.mjs` |
+| 完成提醒带对话名 | `petDoneText` / `petBubble(..., title)` | `frontend/tests/travel-pet.test.mjs` |
+| 切走后继续跟进 + 点气泡回到对话 | 发送 → 新对话 → 关面板：气泡仍显示进度；完成后出带名提醒 + 5 个表情，9 秒后仍在；点气泡打开原对话、无孤立括号、留白 18px | 定向 Playwright 脚本（390×844，已通过） |

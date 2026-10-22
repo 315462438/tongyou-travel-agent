@@ -542,3 +542,11 @@ test('剪贴板取图：clipboardData 为 null 不抛异常', async () => {
   assert.deepEqual(extractClipboardImages(null, 4), [])
   assert.deepEqual(extractClipboardImages(undefined, 4), [])
 })
+
+test('prepareMarkdown drops parentheses wrapped around an image', async () => {
+  const { prepareMarkdown } = await import('../src/interaction.ts')
+  const out = prepareMarkdown('糖水店）。(\n![广州](/api/img?u=x)\n)\nDay 1')
+  assert.ok(out.includes('![广州](/api/img?u=x)'))
+  assert.doesNotMatch(out, /^\s*[()（）]\s*$/m)
+  assert.equal(prepareMarkdown('费用（约 30 元）'), '费用（约 30 元）')
+})

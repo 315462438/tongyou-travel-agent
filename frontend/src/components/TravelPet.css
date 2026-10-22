@@ -94,3 +94,20 @@ html.ua-android .app.journey-shell .main.ai-workspace.ai-from-pet{animation:ai-f
 [data-quiet=true] .yp-art,[data-quiet=true] .yp-art *,[data-quiet=true] .yp-art:before,[data-quiet=true] .yp-art:after{animation:none!important;transition:none!important;}
 @media(prefers-reduced-motion:reduce){.yp-art,.yp-art *,.yp-art:before,.yp-art:after{animation:none!important;transition:none!important;}}
 @media(max-height:500px){.travel-pet-fab .yp-art{width:40px;}.travel-pet-dock .travel-pet-fab{min-height:70px;}.travel-pet-bubble{display:none;}}
+/* 聊天气泡：圆角 + 底部尾巴指向游游头顶（随停靠侧换边）；完成时跳两下 + 冒表情。 */
+.travel-pet-dock .travel-pet-bubble{bottom:114px;border-radius:18px;}
+.travel-pet-dock[data-side=left] .travel-pet-bubble{border-radius:18px;}
+.travel-pet-bubble::after{content:"";position:absolute;bottom:-7px;right:34px;width:12px;height:12px;background:inherit;border:inherit;border-top-color:transparent;border-left-color:transparent;border-radius:0 0 4px 0;transform:rotate(45deg);pointer-events:none;}
+.travel-pet-dock[data-side=left] .travel-pet-bubble::after{right:auto;left:34px;}
+.pet-bubble-main b{flex:none;width:16px;height:16px;border-radius:50%;display:grid;place-items:center;font-size:10px;color:#fff;background:var(--journey-accent,#2563eb);}
+.travel-pet-fab .yp-happy .yp-otter{animation:yp-hop .62s ease 2 both;}
+.pet-cheer{position:absolute;left:50%;bottom:84px;width:0;height:0;pointer-events:none;z-index:3;}
+.pet-cheer i{position:absolute;left:-10px;top:0;font-style:normal;font-size:18px;line-height:1;opacity:0;animation:pet-cheer 1.3s ease-out both;}
+.pet-cheer i:nth-child(1){--x:-38px;--y:-58px;}
+.pet-cheer i:nth-child(2){--x:-14px;--y:-80px;animation-delay:.06s;}
+.pet-cheer i:nth-child(3){--x:14px;--y:-70px;animation-delay:.12s;}
+.pet-cheer i:nth-child(4){--x:38px;--y:-52px;animation-delay:.18s;}
+.pet-cheer i:nth-child(5){--x:0px;--y:-100px;font-size:14px;animation-delay:.24s;}
+@keyframes pet-cheer{0%{opacity:1;translate:0 0;scale:.3;}25%{opacity:1;scale:1;}100%{opacity:0;translate:var(--x) var(--y);scale:1;}}
+@media(prefers-reduced-motion:reduce){.pet-cheer{display:none;}.travel-pet-fab .yp-happy .yp-otter{animation:none;}}
+@media(max-height:500px){.pet-cheer{display:none;}}

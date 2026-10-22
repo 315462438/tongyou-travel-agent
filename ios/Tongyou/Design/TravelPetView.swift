@@ -99,15 +99,23 @@ struct PetFeedbackArt: View {
     var pose = "idle"
     var trigger = 0
     var quiet = false
+    /// 完成时的庆祝：跳两下、带一点转身，比摸摸的小弹跳更明显。
+    var celebrate = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var bounce = false
+    @State private var hops = 0
     var body: some View {
-        PetLiveArt(pose: pose, quiet: quiet).offset(y: bounce ? -6 : 0).scaleEffect(bounce ? 1.04 : 1)
+        PetLiveArt(pose: pose, quiet: quiet).offset(y: bounce ? (celebrate ? -18 : -6) : 0).scaleEffect(bounce ? 1.04 : 1)
+            .rotationEffect(.degrees(bounce && celebrate ? (hops % 2 == 0 ? -8 : 8) : 0), anchor: .bottom)
             .task(id: trigger) {
                 guard trigger > 0, !quiet, !reduceMotion else { bounce = false; return }
-                withAnimation(.easeOut(duration: 0.16)) { bounce = true }
-                do { try await Task.sleep(nanoseconds: 180_000_000) } catch { return }
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) { bounce = false }
+                for hop in 0..<(celebrate ? 2 : 1) {
+                    hops = hop
+                    withAnimation(.easeOut(duration: 0.16)) { bounce = true }
+                    do { try await Task.sleep(nanoseconds: 180_000_000) } catch { return }
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) { bounce = false }
+                    do { try await Task.sleep(nanoseconds: 220_000_000) } catch { return }
+                }
             }
             .onChange(of: quiet) { _, value in if value { bounce = false } }
             .onChange(of: reduceMotion) { _, value in if value { bounce = false } }
@@ -138,8 +146,9 @@ struct PetCompanionButton: View {
         } label: {
             if router.petPreferences.visible {
                 VStack(spacing: -3) {
-                    PetFeedbackArt(pose: router.petTask.phase.rawValue, trigger: router.petCelebration, quiet: router.petPreferences.quiet)
+                    PetFeedbackArt(pose: router.petTask.phase.rawValue, trigger: router.petCelebration, quiet: router.petPreferences.quiet, celebrate: true)
                         .frame(width: 66, height: 80)
+                        .overlay(alignment: .top) { PetEmojiBurst(trigger: router.petCelebration, quiet: router.petPreferences.quiet) }
                     Text(router.petTask.phase == .working || router.petTask.phase == .waiting ? "生成中" : "问 AI")
                         .font(.caption.weight(.medium)).padding(.horizontal, 12).padding(.vertical, 5)
                         .background(.regularMaterial, in: Capsule())
@@ -239,11 +248,11 @@ struct PetBubbleView: View {
         .frame(maxWidth: 220, alignment: .leading)
         .fixedSize()
         .background {
-            shape.fill(.regularMaterial)
+            shape.fill(Color(.secondarySystemGroupedBackground))
             if bubble.kind == .tip || bubble.kind == .done { shape.fill(Palette.sky.opacity(0.1)) }
         }
         .overlay(shape.stroke(border, lineWidth: 1))
-        .shadow(color: .black.opacity(0.1), radius: 10, y: 4)
+        .shadow(color: .black.opacity(0.12), radius: 12, y: 5)
         .accessibilityElement(children: .contain)
     }
     private var border: Color {
@@ -255,21 +264,54 @@ struct PetBubbleView: View {
     }
 }
 
-/// 对话气泡：圆角主体 + 底部指向游游头顶的小尾巴（游游在哪侧，尾巴就在哪侧）。
+/// 聊天气泡：圆角主体 + 底角弯向游游的尾巴（像 iMessage；游游在哪侧，尾巴就在哪侧）。
 struct PetBubbleShape: Shape {
-    static let tail: CGFloat = 8
+    static let tail: CGFloat = 11
     var leading = false
     func path(in rect: CGRect) -> Path {
         let body = CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: rect.height - Self.tail)
-        // 停靠按钮宽 84，游游头顶在离边 42 处；气泡与按钮同侧对齐。
-        let x = leading ? rect.minX + 42 : rect.maxX - 42
-        let lean: CGFloat = leading ? -3 : 3
+        // 停靠按钮宽 84，游游头顶在离边 42 处；尾巴尖落在头顶外侧一点。
+        let d: CGFloat = leading ? -1 : 1
+        let root = leading ? rect.minX + 50 : rect.maxX - 50
+        let tip = CGPoint(x: root + d * 20, y: rect.maxY)
         var tail = Path()
-        tail.move(to: CGPoint(x: x - 8, y: body.maxY - 1))
-        tail.addQuadCurve(to: CGPoint(x: x + lean, y: rect.maxY), control: CGPoint(x: x - 2, y: body.maxY + 2))
-        tail.addQuadCurve(to: CGPoint(x: x + 8, y: body.maxY - 1), control: CGPoint(x: x + 3, y: body.maxY + 2))
+        tail.move(to: CGPoint(x: root - d * 6, y: body.maxY - 2))
+        tail.addQuadCurve(to: tip, control: CGPoint(x: root + d * 4, y: body.maxY + Self.tail * 0.9))
+        tail.addQuadCurve(to: CGPoint(x: root + d * 14, y: body.maxY - 2), control: CGPoint(x: root + d * 12, y: body.maxY + 4))
         tail.closeSubpath()
         return Path(roundedRect: body, cornerRadius: 18, style: .continuous).union(tail)
+    }
+}
+
+/// 完成时从游游头顶冒出几个表情，飘起来淡掉；安静模式/减少动态效果时不出现。
+struct PetEmojiBurst: View {
+    var trigger: Int
+    var quiet = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var flying = false
+    @State private var shown = false
+    private static let items: [(String, CGFloat, CGFloat)] = [("🎉", -34, -58), ("✨", -12, -76), ("💙", 14, -66), ("👏", 34, -50), ("🌟", 0, -96)]
+    var body: some View {
+        ZStack {
+            if shown {
+                ForEach(Array(Self.items.enumerated()), id: \.offset) { index, item in
+                    Text(item.0).font(.system(size: index == 4 ? 15 : 19))
+                        .offset(x: flying ? item.1 : 0, y: flying ? item.2 : 0)
+                        .scaleEffect(flying ? 1 : 0.3)
+                        .opacity(flying ? 0 : 1)
+                        .animation(.easeOut(duration: 1.3).delay(Double(index) * 0.06), value: flying)
+                }
+            }
+        }
+        .allowsHitTesting(false).accessibilityHidden(true)
+        .task(id: trigger) {
+            guard trigger > 0, !quiet, !reduceMotion else { return }
+            flying = false; shown = true
+            do { try await Task.sleep(for: .milliseconds(30)) } catch { return }
+            flying = true
+            do { try await Task.sleep(for: .seconds(1.8)) } catch { return }
+            shown = false; flying = false
+        }
     }
 }
 

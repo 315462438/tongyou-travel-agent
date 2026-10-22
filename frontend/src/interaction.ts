@@ -96,7 +96,10 @@ export function extractGuideHeadings(markdown: string): GuideHeading[] {
  * 会互相配成删除线把中间吞掉），见各 ReactMarkdown 挂载点。
  */
 export function prepareMarkdown(markdown: string): string {
-  return markdown.replace(/\*\*([^*\n]+?)\*\*/g, '**\u200b$1\u200b**')
+  return markdown
+    // 老攻略里模型把配图写在括号里「（![](…)）」，图独占一行后括号会孤零零留在上下两行
+    .replace(/[(（]\s*(!\[[^\]\n]*\]\([^)\s]+\))\s*[)）]/g, '\n\n$1\n\n')
+    .replace(/\*\*([^*\n]+?)\*\*/g, '**\u200b$1\u200b**')
 }
 
 export function formatThinkingElapsed(totalSeconds: number): string {
