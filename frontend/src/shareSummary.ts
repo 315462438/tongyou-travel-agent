@@ -1,6 +1,9 @@
 export interface ShareStop { name: string; time: string }
 export interface ShareDay { title: string; stops: ShareStop[] }
 export interface ShareSummary { title: string; days: ShareDay[]; isItinerary: boolean }
+type StopSource = 'table' | 'route' | 'line'
+// 「今日路线：」「路线：」这类行首标签不是地点。
+const ROUTE_LABEL = /^[^→：:]{1,8}[：:]\s*/
 
 export function sharePlain(value: string): string {
   return value.replace(/!\[[^\]]*\]\([^)]*\)/g, '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
@@ -12,11 +15,21 @@ export function parseShareSummary(markdown: string, fallback = '我的旅行计�
   const title = sharePlain(markdown.split('\n').slice(0, 8).find(l => /^#{1,6}\s/.test(l)) || fallback) || '我的旅行计划'
   const days: ShareDay[] = [], notes: ShareStop[] = []
   let current: ShareDay | undefined, header: string[] = [], code = false
-  const flush = () => { if (current) days.push(current); current = undefined }
-  const add = (value: string, time = '') => {
+  // 攻略模板每天先写「今日路线：A → B」再给时间表，后面还跟几条提示——三处说的是同一批地点。
+  // 按来源分桶，一天结束时只取最可靠的一种：表格 > 带时间的行 > 路线行 > 其他行。
+  let buckets: Record<StopSource, ShareStop[]> = {table: [], route: [], line: []}
+  const flush = () => {
+    if (current) {
+      const timed = buckets.line.some(s => s.time)
+      current.stops = buckets.table.length ? buckets.table : timed ? buckets.line : buckets.route.length ? buckets.route : buckets.line
+      days.push(current)
+    }
+    current = undefined; buckets = {table: [], route: [], line: []}
+  }
+  const add = (value: string, time = '', source: StopSource = 'line') => {
     const stop = {name: sharePlain(value), time: sharePlain(time)}
     if (!stop.name) return
-    const target = current?.stops || notes, last = target.at(-1)
+    const target = current ? buckets[source] : notes, last = target.at(-1)
     if (last?.name !== stop.name || last.time !== stop.time) target.push(stop)
   }
   for (const raw of markdown.replace(/\r\n/g, '\n').split('\n')) {
@@ -38,15 +51,15 @@ export function parseShareSummary(markdown: string, fallback = '我的旅行计�
       if (cells.every(c => /^[-: ]*$/.test(c))) continue
       if (!header.length) { header = cells; continue }
       const place = header.findIndex(c => /地点|景点|安排|活动|行程|项目|去哪里/.test(c)), time = header.findIndex(c => /时间|时段/.test(c))
-      if (place >= 0 && place < cells.length) add(cells[place], cells[time] || '')
-      else if (current) add(cells.filter((_, i) => i !== time).join(' · '), cells[time] || '')
+      if (place >= 0 && place < cells.length) add(cells[place], cells[time] || '', 'table')
+      else if (current) add(cells.filter((_, i) => i !== time).join(' · '), cells[time] || '', 'table')
       continue
     }
     header = []
     if (/^(---|\*\*\*|___)$/.test(line) || line.startsWith('>')) continue
     const stripped = text.replace(/^(?:[-+•]\s*|\d+[.、)]\s*)/, '')
     if (current) {
-      if (stripped.includes('→')) stripped.split('→').forEach(s => add(s))
+      if (stripped.includes('→')) stripped.replace(ROUTE_LABEL, '').split('→').forEach(s => add(s, '', 'route'))
       else {
         const time = /^(?:[0-2]?\d[:：][0-5]\d(?:\s*[-–—~～至]\s*[0-2]?\d[:：][0-5]\d)?|上午|中午|下午|傍晚|晚上|早餐|午餐|晚餐)/.exec(stripped)
         if (time) add(stripped.slice(time[0].length).replace(/^[ ：:·｜|\-–—]+/, '') || stripped, time[0])

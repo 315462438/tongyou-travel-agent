@@ -48,3 +48,17 @@ test('success and error toasts double as native result haptics', () => {
   const java = readFileSync(new URL('../../android/app/src/main/java/com/tongyou/travel/MainActivity.java', import.meta.url), 'utf8')
   assert.match(java, /case "haptic": haptic\(source,m\.optString\("kind"\)\)/)
 })
+
+test('answer action row keeps only what users act on', () => {
+  const home = readFileSync(new URL('../src/pages/Home.tsx', import.meta.url), 'utf8')
+  const row = home.slice(home.indexOf('<div className="message-actions" aria-label="回复操作">'), home.indexOf('<div className="next-steps">'))
+  assert.doesNotMatch(row, /复制/, 'copy button removed')
+  assert.match(row, /isGuide && \(\s*<button className="export-btn guide-export"/, 'share only on real guides')
+  assert.match(home, /onToggleTrace=\{user\.is_admin \? toggleTrace : undefined\}/, 'trace is an admin tool')
+  const preview = readFileSync(new URL('../src/components/GuideSharePreview.tsx', import.meta.url), 'utf8')
+  assert.doesNotMatch(preview, /下载完整文字|fullText/)
+  const ios = readFileSync(new URL('../../ios/Tongyou/Features/Chat/ChatView.swift', import.meta.url), 'utf8')
+  assert.doesNotMatch(ios, /UIPasteboard|GuideShareMenu/)
+  const exporter = readFileSync(new URL('../../ios/Tongyou/Features/Chat/GuideExporter.swift', import.meta.url), 'utf8')
+  assert.doesNotMatch(exporter, /PDF|pdf\(/)
+})

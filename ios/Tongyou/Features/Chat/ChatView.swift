@@ -303,32 +303,29 @@ private struct AssistantRow: View {
             Label("已记住：" + saved.compactMap { $0["content"]?.string ?? $0["key"]?.string }.joined(separator: "；"), systemImage: "brain.head.profile")
                 .font(.caption).foregroundStyle(.secondary)
         }
-        if !message.streaming && !message.content.isEmpty { actions }
+        if !message.streaming && message.isGuide { actions }
     }
 
     private var actions: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             GlassEffectContainer(spacing: 8) {
                 HStack(spacing: 8) {
-                    Button { UIPasteboard.general.string = message.content } label: { Label("复制", systemImage: "doc.on.doc") }
-                    GuideShareMenu(markdown: message.content, fallbackTitle: store.title)
-                    if message.isGuide {
-                        Button { store.requestExtra("budget", messageID: message.id) } label: { Label("预算明细", systemImage: "yensign.circle") }
-                            .disabled(store.running)
-                        Button { store.requestExtra("poster", messageID: message.id) } label: { Label("手账海报", systemImage: "photo.on.rectangle.angled") }
-                            .disabled(store.running)
-                        Button {
-                            if let id = message.importedTripID { openTrip = TripRef(id: id); return }
-                            importing = true
-                            Task {
-                                if let id = await store.importTrip(messageID: message.id) { openTrip = TripRef(id: id) }
-                                importing = false
-                            }
-                        } label: {
-                            Label(message.importedTripID == nil ? "转成协同行程" : "打开协同行程", systemImage: "map")
+                    GuideShareButton(markdown: message.content, fallbackTitle: store.title)
+                    Button { store.requestExtra("budget", messageID: message.id) } label: { Label("预算明细", systemImage: "yensign.circle") }
+                        .disabled(store.running)
+                    Button { store.requestExtra("poster", messageID: message.id) } label: { Label("手账海报", systemImage: "photo.on.rectangle.angled") }
+                        .disabled(store.running)
+                    Button {
+                        if let id = message.importedTripID { openTrip = TripRef(id: id); return }
+                        importing = true
+                        Task {
+                            if let id = await store.importTrip(messageID: message.id) { openTrip = TripRef(id: id) }
+                            importing = false
                         }
-                        .disabled(importing)
+                    } label: {
+                        Label(message.importedTripID == nil ? "转成协同行程" : "打开协同行程", systemImage: "map")
                     }
+                    .disabled(importing)
                 }
                 .font(.footnote.weight(.medium))
                 .buttonStyle(.glass)

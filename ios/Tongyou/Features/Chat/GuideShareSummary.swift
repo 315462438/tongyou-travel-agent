@@ -29,13 +29,24 @@ struct GuideShareSummary: Equatable {
         var header: [String] = []
         var fallback: [Stop] = []
         var skippingCode = false
-        func flush() { if let day = current { days.append(day) }; current = nil }
-        func add(_ value: String, time: String = "") {
+        // Guides write "今日路线：A → B", then a timed table, then a few tips — the same places three times.
+        // Keep one source per day, most reliable first: table > timed lines > route line > other lines.
+        enum Source { case table, route, line }
+        var buckets: [Source: [Stop]] = [:]
+        func flush() {
+            if var day = current {
+                let table = buckets[.table] ?? [], route = buckets[.route] ?? [], other = buckets[.line] ?? []
+                day.stops = !table.isEmpty ? table : other.contains { !$0.time.isEmpty } ? other : !route.isEmpty ? route : other
+                days.append(day)
+            }
+            current = nil; buckets = [:]
+        }
+        func add(_ value: String, time: String = "", source: Source = .line) {
             let name = plain(value)
             guard !name.isEmpty else { return }
             let stop = Stop(name: name, time: plain(time))
             if current != nil {
-                if current!.stops.last != stop { current!.stops.append(stop) }
+                if buckets[source]?.last != stop { buckets[source, default: []].append(stop) }
             } else { fallback.append(stop) }
         }
         for raw in lines {
@@ -63,10 +74,10 @@ struct GuideShareSummary: Equatable {
                 let placeIndex = header.firstIndex { $0.range(of: "地点|景点|安排|活动|行程|项目|去哪里", options: .regularExpression) != nil }
                 let timeIndex = header.firstIndex { $0.contains("时间") || $0.contains("时段") }
                 if let i = placeIndex, i < cells.count {
-                    add(cells[i], time: timeIndex.flatMap { $0 < cells.count ? cells[$0] : nil } ?? "")
+                    add(cells[i], time: timeIndex.flatMap { $0 < cells.count ? cells[$0] : nil } ?? "", source: .table)
                 } else if current != nil {
                     add(cells.enumerated().filter { $0.offset != timeIndex }.map(\.element).joined(separator: " · "),
-                        time: timeIndex.flatMap { $0 < cells.count ? cells[$0] : nil } ?? "")
+                        time: timeIndex.flatMap { $0 < cells.count ? cells[$0] : nil } ?? "", source: .table)
                 }
                 continue
             }
@@ -75,7 +86,9 @@ struct GuideShareSummary: Equatable {
             let stripped = text.replacingOccurrences(of: #"^(?:[-+•]\s*|\d+[.、)]\s*)"#, with: "", options: .regularExpression)
             if current != nil {
                 if stripped.contains("→") {
-                    for part in stripped.components(separatedBy: "→") { add(part) }
+                    // "今日路线：" and similar labels are not places.
+                    let route = stripped.replacingOccurrences(of: #"^[^→：:]{1,8}[：:]\s*"#, with: "", options: .regularExpression)
+                    for part in route.components(separatedBy: "→") { add(part, source: .route) }
                 } else if let range = stripped.range(of: #"^(?:[0-2]?\d[:：][0-5]\d(?:\s*[-–—~～至]\s*[0-2]?\d[:：][0-5]\d)?|上午|中午|下午|傍晚|晚上|早餐|午餐|晚餐)"#, options: .regularExpression) {
                     let name = String(stripped[range.upperBound...]).trimmingCharacters(in: CharacterSet(charactersIn: " ：:·｜|-–—"))
                     add(name.isEmpty ? stripped : name, time: String(stripped[range]))

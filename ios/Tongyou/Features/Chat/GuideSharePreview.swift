@@ -23,7 +23,7 @@ struct GuideSharePreview: View {
                             .shadow(color: .black.opacity(0.06), radius: 14, y: 6)
                             .accessibilityLabel("\(title)，第 \(index + 1) 张，共 \(images.count) 张")
                     }
-                    Text("简版只保留行程安排，详细说明可在分享菜单导出完整 PDF。")
+                    Text("简版只保留行程安排，详细说明留在完整攻略里。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }.padding(20)
             }

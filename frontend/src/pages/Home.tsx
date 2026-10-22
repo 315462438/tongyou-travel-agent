@@ -241,26 +241,6 @@ function groupConvs(convs: Conv[]): { label: string; items: Conv[] }[] {
     .map(([label, items]) => ({ label, items }))
 }
 
-async function copyText(text: string): Promise<boolean> {
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text)
-      return true
-    }
-  } catch {
-    // HTTP/IP 环境下 Clipboard API 可能存在但拒绝，继续走兼容路径。
-  }
-  const field = document.createElement('textarea')
-  field.value = text
-  field.style.position = 'fixed'
-  field.style.opacity = '0'
-  document.body.appendChild(field)
-  field.select()
-  const copied = document.execCommand('copy')
-  document.body.removeChild(field)
-  return copied
-}
-
 function reactText(node: ReactNode): string {
   if (typeof node === 'string' || typeof node === 'number') return String(node)
   if (Array.isArray(node)) return node.map(reactText).join('')
@@ -1178,7 +1158,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
                     onRegenerateDeep={regenerateDeep}
                     turnId={turnIds[i]}
                     traceOpen={traceFor === turnIds[i]}
-                    onToggleTrace={toggleTrace}
+                    onToggleTrace={user.is_admin ? toggleTrace : undefined}
                     onPosterStart={() => {
                       if (cid) {
                         setRunning(true)
@@ -3083,7 +3063,6 @@ function Message({
   traceOpen?: boolean
   onToggleTrace?: (turnId: string) => void
 }) {
-  const { notify } = useToast()
   // 流式丝滑（2026-08-13）：打字机平滑只在 streaming 消息上生效（其余直接全量）。
   // 放在所有 early return 之前，保证 hooks 调用顺序稳定。
   const streaming = !!msg.meta?.streaming
@@ -3192,6 +3171,7 @@ function Message({
   const saved = msg.meta?.memories_saved?.filter((s) => s.op !== 'delete') ?? []
   // 是行程攻略（有来源且含标题）→ 提供生成手账海报入口
   const isGuide = !streaming && !msg.meta?.direct && !!msg.meta?.sources?.length && msg.content.includes('##')
+  const [sharing, setSharing] = useState(false)
   return (
     <div className={`msg-assistant${preliminary ? ' is-preliminary' : ''}`}>
       {preliminary && (
@@ -3228,24 +3208,26 @@ function Message({
       )}
       {msg.meta?.sources && msg.meta.sources.length > 0 && <Sources sources={msg.meta.sources} />}
       {msg.meta?.artifacts && msg.meta.artifacts.length > 0 && <SandboxArtifacts items={msg.meta.artifacts} />}
-      {!streaming && msg.content && (
+      {!streaming && msg.content && (isGuide || (onToggleTrace && turnId && turnId !== 'tmp')) && (
         <div className="message-actions" aria-label="回复操作">
-          <button className="export-btn" onClick={async () => {
-            const copied = await copyText(msg.content)
-            notify(copied ? '回复已复制' : '复制失败，请手动选择文字', copied ? 'success' : 'error')
-          }}>📋 复制</button>
-          {turnId && turnId !== 'tmp' && (
+          {isGuide && (
+            <button className="export-btn guide-export" onClick={() => setSharing(true)}>
+              ↗ 分享计划单
+            </button>
+          )}
+          {isGuide && <BudgetButton cid={cid} messageId={msg.id} disabled={running} onStart={onPosterStart} />}
+          {onToggleTrace && turnId && turnId !== 'tmp' && (
             <button
               className={`export-btn trace-btn${traceOpen ? ' on' : ''}`}
-              onClick={() => onToggleTrace?.(turnId)}
+              onClick={() => onToggleTrace(turnId)}
               title="查看本轮调用链（LLM 请求与工具调用）"
             >
               🔗 调用链
             </button>
           )}
-          {isGuide && <BudgetButton cid={cid} messageId={msg.id} disabled={running} onStart={onPosterStart} />}
         </div>
       )}
+      {sharing && <GuideSharePreview summary={parseShareSummary(msg.content)} onClose={() => setSharing(false)} />}
       {isGuide && (
         <div className="next-steps">
           <div className="next-steps-head">接下来</div>
@@ -4127,9 +4109,6 @@ function PosterView({ poster }: { poster: PosterData }) {
 // memo（2026-08-13 丝滑改造）：props 只有 content，引用相等即跳过 react-markdown
 // 重解析——轮询增量合并（mergeMessages）保证未变化消息的 content 引用不变。
 const GuideBody = memo(function GuideBody({ content }: { content: string }) {
-  const [sharing, setSharing] = useState(false)
-  const summary = useMemo(() => parseShareSummary(content), [content])
-  const isGuide = content.includes('##') || content.length > 200
   const headings = extractGuideHeadings(content)
 
   return (
@@ -4167,12 +4146,6 @@ const GuideBody = memo(function GuideBody({ content }: { content: string }) {
           }}
         >{prepareMarkdown(content)}</ReactMarkdown>
       </div>
-      {isGuide && (
-        <button className="export-btn guide-export" onClick={() => setSharing(true)}>
-          ↧ 导出长图
-        </button>
-      )}
-      {sharing && <GuideSharePreview summary={summary} fullText={content} onClose={() => setSharing(false)} />}
     </div>
   )
 })

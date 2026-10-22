@@ -20,7 +20,7 @@ try{for(const [name,width,dark,motion] of [['light',390,false,'no-preference'],[
   else if(p==='/trips/t0/invite'){invites++;await new Promise(res=>setTimeout(res,450));return r.fulfill({status:inviteStatus,contentType:'application/json',body:JSON.stringify(inviteStatus===200?{ok:true}:{detail:'用户不存在，请确认对方已注册'})})}
   else if(p==='/trips/t0/share'){shareCalls++;data=req.method()==='DELETE'?{ok:true}:{short_code:'abcd1234',token:'fixture-token'}}
   else if(p==='/chat/conversations')data=req.method()==='POST'?{conversation_id:'c1'}:[{id:'c1',title:trip.title}]
-  else if(p.endsWith('/messages'))data=req.method()==='POST'?{ok:true}:{messages:[{id:'m1',role:'assistant',content:markdown}],running:false}
+  else if(p.endsWith('/messages'))data=req.method()==='POST'?{ok:true}:{messages:[{id:'m1',role:'assistant',content:markdown,meta:{sources:[{title:'来源',url:'https://example.com/a'}]}}],running:false}
   else if(p.includes('unread'))data={count:0,unread:0}
   else if(p==='/onboarding')data={trending:[],questions:[]}
   else if(p==='/onboarding/covers')data={covers:{}}
@@ -41,9 +41,7 @@ try{for(const [name,width,dark,motion] of [['light',390,false,'no-preference'],[
  await verify('first');await page.screenshot({path:`${out}/${name}-preview.png`})
  let count=1;while(await page.getByRole('button',{name:'下一张',exact:true}).isEnabled()){await page.getByRole('button',{name:'下一张',exact:true}).click();count++}assert.ok(count>1);await verify('last')
  console.log(name+': saving image');await page.getByRole('button',{name:/保存 \/ 分享第/}).click();console.log((await page.evaluate(()=>window.nativeMessages)).map(m=>({type:m.type,mime:m.mime,text:m.text}))); await page.waitForFunction(()=>window.nativeMessages.some(m=>m.type==='download'&&m.mime==='image/png'),null,{timeout:12000})
- console.log(name+': saving full text');await page.getByRole('button',{name:'下载完整文字'}).click();await page.waitForFunction(()=>window.nativeMessages.some(m=>m.type==='download'&&m.mime.startsWith('text/plain')) ,null,{timeout:12000})
- const text=await page.evaluate(()=>window.nativeMessages.find(m=>m.type==='download'&&m.mime.startsWith('text/plain')).data)
- assert.equal(Buffer.from(text.split(',')[1],'base64').toString(),markdown)
+ assert.equal(await dialog.getByRole('button',{name:'下载完整文字'}).count(),0,'raw full-text download removed')
  console.log(name+': exports passed');await page.getByLabel('关闭计划单').click();assert.ok(await page.locator('.guide-export').evaluate(e=>e===document.activeElement))
  await page.getByLabel('关闭 AI').click();await page.getByLabel('打开行程 七日轻松旅行').click();await page.getByLabel('行程更多操作').click();await page.getByRole('button',{name:'成员与邀请',exact:true}).click();await page.getByTestId('trip-invitation-panel').waitFor()
  assert.equal(shareCalls,0,'opening invitation does not create link access')

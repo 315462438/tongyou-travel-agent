@@ -42,6 +42,27 @@ import Foundation
         check(GuideShareSummary.parse(title: "行程", markdown: "**Day 1**\n- 西湖").days[0].stops[0].name == "西湖", "bold day headings")
         let long = GuideShareSummary(title: "长内容", days: [.init(title: "笔记", stops: [.init(name: String(repeating: "内容", count: 300), time: "")])], isItinerary: false)
         check(long.pages().flatMap { $0 }.flatMap(\.stops).map(\.name).joined() == long.days[0].stops[0].name, "huge rows split without truncation")
+        // The backend prompt's real layout: route line, then a timed table, then tips.
+        let real = GuideShareSummary.parse(title: "杭州", markdown: """
+        # 杭州2日
+        ## Day 1 · 西湖经典
+        **今日路线**：断桥 → 白堤 → 雷峰塔
+        | 时段 | 地点与体验 | 交通与停留 | 参考花费 |
+        | --- | --- | --- | --- |
+        | 09:00-11:00 | 断桥残雪、白堤 | 步行 | 0 |
+        | 17:30 | 雷峰塔 | 地铁 | 40元 |
+        - **小贴士**：西湖周边周末限行，建议地铁出行。
+        ## Day 2 · 只有路线
+        **今日路线**：灵隐寺 → 飞来峰
+        - 提前预约灵隐寺门票，节假日人多。
+        ## 💰 预算参考
+        | 项目 | 人均 |
+        | --- | --- |
+        | 住宿 | 500 |
+        """)
+        check(real.days[0].stops == [.init(name: "断桥残雪、白堤", time: "09:00-11:00"), .init(name: "雷峰塔", time: "17:30")], "table wins over route line and tips")
+        check(real.days[1].stops.map(\.name) == ["灵隐寺", "飞来峰"], "route line alone, label stripped")
+        check(real.days.count == 2, "budget is not a day")
         print("\(checks) share summary checks passed")
     }
 }

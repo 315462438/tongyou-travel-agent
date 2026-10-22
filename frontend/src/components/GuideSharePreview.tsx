@@ -7,7 +7,7 @@ function drawShareCards(summary: ShareSummary): HTMLCanvasElement[] {
   const pages = paginateShare(summary)
   return pages.map((days, index) => {
     const canvas = document.createElement('canvas'), measure = document.createElement('canvas').getContext('2d')!
-    const labels: {text:string;x:number;y:number;size:number;bold:boolean;color:string}[] = [], rules:number[] = []
+    const labels: {text:string;x:number;y:number;size:number;bold:boolean;color:string;align?:CanvasTextAlign}[] = [], rules:number[] = []
     let y = 36
     const text = (value:string, size:number, bold=false, x=36, width=488, color='#1a2433', gap=0) => {
       measure.font = `${bold ? 700 : 400} ${size}px -apple-system, BlinkMacSystemFont, "Noto Sans CJK SC", sans-serif`
@@ -21,7 +21,11 @@ function drawShareCards(summary: ShareSummary): HTMLCanvasElement[] {
       }
       labels.push({text:row,x,y,size,bold,color}); y += size * 1.4 + gap
     }
-    text('17同游                                       TRAVEL NOTES',12,true,36,488,'#265cc7',38)
+    // 两端对齐的一行：右侧真正右对齐，不靠一串空格去凑（空格宽度随字体变，会停在半路）。
+    const edges = (left:string, right:string, size:number, bold:boolean, color:string, gap:number) => {
+      labels.push({text:right,x:524,y,size,bold,color,align:'right'}); text(left,size,bold,36,488,color,gap)
+    }
+    edges('17同游','TRAVEL NOTES',12,true,'#265cc7',38)
     text(summary.title,30,true,36,488,'#1a2433',14)
     text(summary.isItinerary ? `${summary.days.length} 天计划 · ${summary.days.reduce((n,d)=>n+d.stops.length,0)} 项安排` : '旅行笔记 · 随身简版',15,false,36,488,'#626b78',26)
     rules.push(y); y += 28
@@ -38,14 +42,14 @@ function drawShareCards(summary: ShareSummary): HTMLCanvasElement[] {
     })
     text('一起规划，一起出发',15,true,36,488,'#265cc7',8)
     text('简版计划 · 详细说明请查看完整攻略',12,false,36,488,'#626b78',8)
-    text(`17tongyou.com                                      ${index+1} / ${pages.length}`,12,false,36,488,'#626b78',30)
+    edges('17tongyou.com',`${index+1} / ${pages.length}`,12,false,'#626b78',30)
     canvas.width=1120;canvas.height=Math.ceil(Math.max(y,640)*2)
     const ctx=canvas.getContext('2d');if(!ctx)throw new Error('图片画布不可用，请重试')
     ctx.scale(2,2);ctx.fillStyle='white';ctx.fillRect(0,0,560,canvas.height/2)
     const gradient=ctx.createLinearGradient(0,0,280,600);gradient.addColorStop(0,'#e0f2fa');gradient.addColorStop(1,'white');ctx.fillStyle=gradient;ctx.fillRect(0,0,560,canvas.height/2)
     ctx.strokeStyle='#265cc70c';ctx.lineWidth=20;ctx.beginPath();ctx.ellipse(455,178,175,130,0,0,Math.PI*2);ctx.stroke()
     ctx.textBaseline='top'
-    labels.forEach(label=>{ctx.font=`${label.bold?700:400} ${label.size}px -apple-system, BlinkMacSystemFont, "Noto Sans CJK SC", sans-serif`;ctx.fillStyle=label.color;ctx.fillText(label.text,label.x,label.y)})
+    labels.forEach(label=>{ctx.textAlign=label.align||'left';ctx.font=`${label.bold?700:400} ${label.size}px -apple-system, BlinkMacSystemFont, "Noto Sans CJK SC", sans-serif`;ctx.fillStyle=label.color;ctx.fillText(label.text,label.x,label.y)})
     ctx.setLineDash([2,4]);ctx.strokeStyle='#1a243340';ctx.lineWidth=1
     rules.forEach(y=>{ctx.beginPath();ctx.moveTo(36,y);ctx.lineTo(524,y);ctx.stroke()})
     return canvas
@@ -56,7 +60,7 @@ function downloadShareFile(blob: Blob, name: string) {
   const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();URL.revokeObjectURL(url)
 }
 
-export default function GuideSharePreview({summary, fullText, onClose}: {summary:ShareSummary; fullText?:string; onClose:()=>void}) {
+export default function GuideSharePreview({summary, onClose}: {summary:ShareSummary; onClose:()=>void}) {
   const [images,setImages]=useState<string[]>([]),[page,setPage]=useState(0),[error,setError]=useState(''),[busy,setBusy]=useState(false)
   const canvases=useRef<HTMLCanvasElement[]>([]), close=useRef<HTMLButtonElement>(null)
   const signature=JSON.stringify(summary), onDismiss=useRef(onClose);onDismiss.current=onClose
@@ -93,7 +97,6 @@ export default function GuideSharePreview({summary, fullText, onClose}: {summary
       <footer>
         {images.length>1&&<nav aria-label="计划单翻页"><button disabled={!page} onClick={()=>setPage(page-1)}>上一张</button><span>{page+1} / {images.length}</span><button disabled={page===images.length-1} onClick={()=>setPage(page+1)}>下一张</button></nav>}
         <button className="guide-share-save" disabled={!images.length||busy} onClick={()=>void save()}>{busy?'生成中…':images.length>1?`保存 / 分享第 ${page+1} 张`:'保存 / 分享图片'}</button>
-        {fullText&&<button className="guide-share-full" onClick={()=>downloadShareFile(new Blob([fullText],{type:'text/plain;charset=utf-8'}),`${summary.title.slice(0,40)}_完整攻略.txt`)}>下载完整文字</button>}
       </footer>
     </section>
   </div>,document.body)

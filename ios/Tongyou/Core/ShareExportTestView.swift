@@ -1,6 +1,5 @@
 #if DEBUG
 import SwiftUI
-import PDFKit
 
 /// Explicit test-only entry; avoids real account state and never writes to Photos.
 struct ShareExportTestView: View {
@@ -60,10 +59,6 @@ struct ShareExportTestView: View {
                     guard flattened.count == 42, flattened.last == "第7天地点6" else { result = "失败：地点缺失"; return }
                 }
             }
-            let pdfURL = dir.appendingPathComponent("full.pdf")
-            guard GuideCardRenderer.pdf(title: "完整攻略", markdown: long + "\n最后一条完整说明。", url: pdfURL),
-                  let pdf = PDFDocument(url: pdfURL), pdf.pageCount > 1,
-                  pdf.string?.contains("最后一条完整说明") == true else { result = "失败：PDF 不完整"; return }
             try JSONSerialization.data(withJSONObject: metrics, options: .prettyPrinted).write(to: dir.appendingPathComponent("metrics.json"))
             result = "导出校验通过"
         } catch { result = "失败：\(error.localizedDescription)" }

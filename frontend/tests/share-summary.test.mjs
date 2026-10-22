@@ -34,3 +34,17 @@ test('trip export keeps empty days, actual dates, order and missing times',()=>{
   assert.equal(s.days[0].title,'10.24 / 周六');assert.deepEqual(s.days[0].stops,[{name:'森林',time:'09:00'},{name:'古镇',time:''}])
   assert.equal(s.days[1].stops.length,0);assert.equal(s.days[2].stops[0].name,'最后地点')
 })
+
+// 后端 ITINERARY 提示词规定的真实格式：每天先「今日路线：A → B」，再四列表格，表后几条提示。
+const REAL = `# 杭州2日\n\n> **行程速览**：西湖+灵隐。\n\n## Day 1 · 西湖经典\n**今日路线**：断桥 → 白堤 → 雷峰塔\n\n| 时段 | 地点与体验 | 交通与停留 | 参考花费 |\n| --- | --- | --- | --- |\n| 09:00-11:00 | 断桥残雪、白堤 | 步行 | 0 |\n| 17:30 | 雷峰塔 | 地铁 | 40元 |\n\n- **小贴士**：西湖周边周末限行，建议地铁出行。\n\n## Day 2 · 只有路线\n**今日路线**：灵隐寺 → 飞来峰\n\n- 提前预约灵隐寺门票，节假日人多。\n\n## 💰 预算参考\n| 项目 | 人均 |\n| --- | --- |\n| 住宿 | 500 |`
+
+test('real guide format: each place once, table wins over route line and tips',()=>{
+  const s=parseShareSummary(REAL)
+  assert.deepEqual(s.days[0].stops,[{name:'断桥残雪、白堤',time:'09:00-11:00'},{name:'雷峰塔',time:'17:30'}])
+})
+
+test('real guide format: route line alone is used, without its label',()=>{
+  const s=parseShareSummary(REAL)
+  assert.deepEqual(s.days[1].stops.map(x=>x.name),['灵隐寺','飞来峰'])
+  assert.equal(s.days.length,2,'budget section is not a day')
+})

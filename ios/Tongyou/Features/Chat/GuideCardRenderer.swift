@@ -14,7 +14,7 @@ enum GuideCardRenderer {
     }
 
     private static func image(_ summary: GuideShareSummary, days: [GuideShareSummary.Day], page: Int, total: Int) -> UIImage {
-        struct Label { var text: String; var rect: CGRect; var font: UIFont; var color: UIColor }
+        struct Label { var text: String; var rect: CGRect; var font: UIFont; var color: UIColor; var align: NSTextAlignment = .natural }
         var labels: [Label] = [], rules: [CGFloat] = []
         var y: CGFloat = 36
         func text(_ value: String, size: CGFloat, bold: Bool = false, x: CGFloat = 36, w: CGFloat = 488, color: UIColor = ink, gap: CGFloat = 0) {
@@ -23,7 +23,13 @@ enum GuideCardRenderer {
             labels.append(Label(text: value, rect: CGRect(x: x, y: y, width: w, height: height + 3), font: font, color: color))
             y += height + gap
         }
-        text("17同游                                     TRAVEL NOTES", size: 12, bold: true, color: blue, gap: 38)
+        // A row with a truly right-aligned end; padding with spaces drifts with the font.
+        func edges(_ left: String, _ right: String, size: CGFloat, bold: Bool = false, color: UIColor, gap: CGFloat) {
+            let font = bold ? UIFont.boldSystemFont(ofSize: size) : UIFont.systemFont(ofSize: size)
+            labels.append(Label(text: right, rect: CGRect(x: 36, y: y, width: 488, height: ceil(font.lineHeight) + 3), font: font, color: color, align: .right))
+            text(left, size: size, bold: bold, color: color, gap: gap)
+        }
+        edges("17同游", "TRAVEL NOTES", size: 12, bold: true, color: blue, gap: 38)
         text(summary.title, size: 30, bold: true, gap: 14)
         let count = summary.days.reduce(0) { $0 + $1.stops.count }
         text(summary.isItinerary ? "\(summary.days.count) 天计划 · \(count) 项安排" : "旅行笔记 · 随身简版", size: 15, color: .darkGray, gap: 26)
@@ -44,8 +50,8 @@ enum GuideCardRenderer {
             y += 8; rules.append(y); y += 26
         }
         text("一起规划，一起出发", size: 15, bold: true, color: blue, gap: 8)
-        text("简版计划 · 详细说明请查看完整攻略 / PDF", size: 12, color: .darkGray, gap: 8)
-        text("17tongyou.com                                      \(page) / \(total)", size: 12, color: .darkGray, gap: 30)
+        text("简版计划 · 详细说明请查看完整攻略", size: 12, color: .darkGray, gap: 8)
+        edges("17tongyou.com", "\(page) / \(total)", size: 12, color: .darkGray, gap: 30)
         let height = max(y, 640)
         let format = UIGraphicsImageRendererFormat(); format.scale = 2; format.opaque = true
         return UIGraphicsImageRenderer(size: CGSize(width: width, height: height), format: format).image { result in
@@ -59,53 +65,12 @@ enum GuideCardRenderer {
             context.setStrokeColor(blue.withAlphaComponent(0.05).cgColor); context.setLineWidth(20)
             context.addEllipse(in: CGRect(x: 280, y: 48, width: 350, height: 260)); context.strokePath()
             for label in labels {
-                (label.text as NSString).draw(in: label.rect, withAttributes: [.font: label.font, .foregroundColor: label.color])
+                let style = NSMutableParagraphStyle(); style.alignment = label.align
+                (label.text as NSString).draw(in: label.rect, withAttributes: [.font: label.font, .foregroundColor: label.color, .paragraphStyle: style])
             }
             context.setStrokeColor(ink.withAlphaComponent(0.25).cgColor); context.setLineWidth(1)
             context.setLineDash(phase: 0, lengths: [2, 4])
             for rule in rules { context.move(to: CGPoint(x: 36, y: rule)); context.addLine(to: CGPoint(x: 524, y: rule)); context.strokePath() }
         }
-    }
-
-    /// Full text PDF: real A4 pages; table cells become labelled rows rather than narrow columns.
-    static func pdf(title: String, markdown: String, url: URL) -> Bool {
-        let body = NSMutableAttributedString(string: "")
-        func append(_ value: String, size: CGFloat = 12, bold: Bool = false) {
-            let style = NSMutableParagraphStyle(); style.lineSpacing = 4; style.paragraphSpacing = 12
-            body.append(NSAttributedString(string: value + "\n", attributes: [.font: bold ? UIFont.boldSystemFont(ofSize: size) : UIFont.systemFont(ofSize: size), .foregroundColor: ink, .paragraphStyle: style]))
-        }
-        append(title, size: 24, bold: true)
-        for block in MarkdownBlock.parse(markdown) {
-            switch block {
-            case .heading(let level, let value): append(GuideShareSummary.plain(value), size: level <= 2 ? 18 : 15, bold: true)
-            case .paragraph(let value), .quote(let value), .code(let value): append(GuideShareSummary.plain(value))
-            case .bullet(let values): for value in values { append("• " + GuideShareSummary.plain(value)) }
-            case .numbered(let values): for (i, value) in values.enumerated() { append("\(i + 1). " + GuideShareSummary.plain(value)) }
-            case .table(let header, let rows):
-                for row in rows { append(row.enumerated().map { "\($0.offset < header.count ? GuideShareSummary.plain(header[$0.offset]) : "补充")：\(GuideShareSummary.plain($0.element))" }.joined(separator: "\n")) }
-            case .image(_, let alt): if !alt.isEmpty { append("[配图] " + GuideShareSummary.plain(alt), size: 10) }
-            case .rule: append("────────────────────────", size: 10)
-            }
-        }
-        let framesetter = CTFramesetterCreateWithAttributedString(body)
-        let size = CGSize(width: 595, height: 842)
-        var offset = 0, page = 0, completed = false
-        do {
-            try UIGraphicsPDFRenderer(bounds: CGRect(origin: .zero, size: size)).writePDF(to: url) { context in
-                while offset < body.length {
-                    context.beginPage(); page += 1
-                    let cg = context.cgContext
-                    cg.saveGState(); cg.translateBy(x: 0, y: size.height); cg.scaleBy(x: 1, y: -1)
-                    let frame = CTFramesetterCreateFrame(framesetter, CFRange(location: offset, length: 0), CGPath(rect: CGRect(x: 42, y: 58, width: 511, height: 742), transform: nil), nil)
-                    CTFrameDraw(frame, cg); cg.restoreGState()
-                    let range = CTFrameGetVisibleStringRange(frame)
-                    guard range.length > 0 else { return }
-                    offset += range.length
-                    ("17同游 · 完整攻略（文字版）  |  \(page)" as NSString).draw(at: CGPoint(x: 42, y: 814), withAttributes: [.font: UIFont.systemFont(ofSize: 9), .foregroundColor: UIColor.darkGray])
-                }
-                completed = true
-            }
-        } catch { return false }
-        return completed
     }
 }

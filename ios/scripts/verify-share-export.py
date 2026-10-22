@@ -24,8 +24,7 @@ for item in metrics:
         fraction = ink / (sample.width * sample.height)
         assert fraction > .008, f'{path.name}: blank or missing text'
         results.append(dict(file=path.name, width=original.width, height=original.height, ink_fraction=round(fraction, 4)))
-assert (args.directory / 'full.pdf').read_bytes().startswith(b'%PDF-'), 'Full PDF missing'
-report = dict(passed=len(results), images=results, pdf=True)
+report = dict(passed=len(results), images=results)
 text = json.dumps(report, ensure_ascii=False, indent=2) + '\n'
 if args.output:
     args.output.parent.mkdir(parents=True, exist_ok=True)
