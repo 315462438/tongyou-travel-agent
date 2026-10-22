@@ -45,6 +45,25 @@ public class HostInstrumentedTest {
     @After public void finishCurrentActivity() {
         if(activity!=null)InstrumentationRegistry.getInstrumentation().runOnMainSync(()->{if(!activity.isDestroyed())activity.finish();});
     }
+    @Test public void petLongPressPreparationAndNativeBack() throws Exception {
+        js("window.fixtureReady=false;localStorage.removeItem('travel_pet_v1:android_test');location.reload()");
+        until("window.fixtureReady && document.querySelector('.travel-pet-fab')");
+        launchFinished();
+        org.json.JSONObject r=new org.json.JSONObject(js("(()=>{const r=document.querySelector('.travel-pet-fab').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2,w:innerWidth}})()"));
+        int[] origin=new int[2]; InstrumentationRegistry.getInstrumentation().runOnMainSync(()->activity.web.getLocationOnScreen(origin));
+        double scale=activity.web.getWidth()/r.getDouble("w");
+        int x=origin[0]+(int)(r.getDouble("x")*scale), y=origin[1]+(int)(r.getDouble("y")*scale);
+        device.swipe(x,y,x,y,160);
+        until("document.querySelector('[data-pet-dialog]')");
+        assertEquals("true",js("document.querySelector('.ai-workspace').hidden"));
+        tapWeb(".pet-pat");until("document.querySelector('.pet-tools').innerText.includes('咕噜')");
+        js("[...document.querySelectorAll('.pet-tools-actions button')].find(x=>x.innerText==='出发检查').click()");
+        until("document.querySelector('.pet-preparation').innerText.includes('地图位置')");
+        device.pressBack();until("!document.querySelector('[data-pet-dialog]')");
+        assertEquals("false",js("document.querySelector('.journey-shell').inert"));
+        tapWeb(".travel-pet-fab");until("!document.querySelector('.ai-workspace').hidden");
+        device.pressBack();until("document.querySelector('.ai-workspace').hidden");
+    }
     @Test public void packagedAppBridgeBackAndPersistence() throws Exception {
         assertEquals("true",js("document.documentElement.classList.contains('native-android')"));
         js("[...document.querySelectorAll('.mobile-bottom-nav button')].find(x=>x.innerText.includes('记账')).click()");until("document.querySelector('.ledger-book')");

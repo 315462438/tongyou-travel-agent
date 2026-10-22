@@ -18,6 +18,8 @@ struct TongyouApp: App {
 struct RootView: View {
     @Environment(AppSession.self) private var session
     @Environment(AppRouter.self) private var router
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private var petMotion: Bool { !reduceMotion && !router.petPreferences.quiet }
 
     var body: some View {
         #if DEBUG
@@ -53,21 +55,40 @@ struct RootView: View {
                             .zIndex(router.tab == .me ? 1 : 0)
                     }
                     .safeAreaInset(edge: .bottom) {
-                        if router.tab != .home || !router.travelDetailOpen { JourneyDock() }
+                        if !router.keyboardOpen && (router.tab != .home || !router.travelDetailOpen) { JourneyDock() }
                     }
                     .allowsHitTesting(!router.aiOpen)
                     .accessibilityHidden(router.aiOpen)
                     AssistantView()
+                        .mask {
+                            GeometryReader { geo in
+                                let frame = geo.frame(in: .global), dock = router.petDockFrame
+                                PetRevealShape(progress: router.aiOpen ? 1 : 0,
+                                               origin: dock == .zero ? CGPoint(x: frame.width / 2, y: frame.height) : CGPoint(x: dock.midX - frame.minX, y: dock.minY + 40 - frame.minY))
+                            }.ignoresSafeArea()
+                        }
+                        .animation(petMotion ? .spring(duration: 0.5, bounce: 0.08) : nil, value: router.aiOpen)
                         .opacity(router.aiOpen ? 1 : 0)
                         .allowsHitTesting(router.aiOpen)
                         .accessibilityHidden(!router.aiOpen)
                         .zIndex(router.aiOpen ? 2 : -1)
+                    PetFlightOverlay().zIndex(3)
                 }
                 .transition(.opacity)
             }
         }
         .animation(.easeOut(duration: 0.3), value: session.state)
         .task { await session.restore() }
+        .onChange(of: session.account?.username, initial: true) { _, username in router.configurePet(username: username) }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in router.keyboardOpen = true }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in router.keyboardOpen = false }
+        .onChange(of: router.aiOpen) { _, open in
+            if !open {
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                router.keyboardOpen = false
+            }
+        }
+        .sheet(isPresented: $router.petToolsOpen) { PetToolsView() }
         .onOpenURL { url in
             if router.ledgerLinks.receive(url) { router.aiOpen = false; router.tab = .ledger }
         }
@@ -112,7 +133,8 @@ struct JourneyDock: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Namespace private var selection
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(alignment: .bottom, spacing: 12) {
+            if router.petPreferences.side == "left" { PetCompanionButton() }
             HStack(spacing: 2) {
                 item("旅行", icon: "map", tab: .home)
                 item("记账", icon: "creditcard", tab: .ledger)
@@ -120,12 +142,7 @@ struct JourneyDock: View {
             }
             .padding(5)
             .glassEffect(.regular, in: .capsule)
-            Button { withAnimation(reduceMotion ? nil : .easeOut(duration: 0.22)) { router.aiOpen = true } } label: {
-                Label("问 AI", systemImage: "sparkles").font(.subheadline.weight(.semibold))
-                    .padding(.horizontal, 15).frame(height: 56)
-            }
-            .buttonStyle(.glassProminent).tint(Palette.sky)
-            .accessibilityIdentifier("openAI")
+            if router.petPreferences.side != "left" { PetCompanionButton() }
         }
         .padding(.horizontal, 14).padding(.bottom, 4)
         .sensoryFeedback(.selection, trigger: router.tab)

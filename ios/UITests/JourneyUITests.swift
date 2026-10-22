@@ -1,5 +1,71 @@
 import XCTest
 
+final class TravelPetUITests: XCTestCase {
+    private func launch(reset: Bool = true) -> XCUIApplication {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["--journey-ui-test"] + (reset ? ["--pet-reset"] : [])
+        app.launch()
+        XCTAssertTrue(app.buttons["openAI"].waitForExistence(timeout: 15))
+        return app
+    }
+
+    func testLongPressPreparationAndQuietCompanion() {
+        let app = launch()
+        app.buttons["openAI"].press(forDuration: 1)
+        XCTAssertTrue(app.buttons["游游旅行工具"].waitForExistence(timeout: 5))
+        app.buttons["游游旅行工具"].tap()
+        XCTAssertTrue(app.buttons["petPat"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.textFields["assistantDraft"].isHittable)
+        app.buttons["petPat"].tap()
+        XCTAssertTrue(app.staticTexts["咕噜～这趟也一起走。"].exists)
+        app.buttons["petPreparation"].tap()
+        XCTAssertTrue(app.staticTexts["确认并填写出发日期"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["1 个地点还需要补充地图位置"].exists)
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "pet-preparation"; shot.lifetime = .keepAlways; add(shot)
+        app.swipeUp()
+        let quiet = app.switches["petQuiet"]
+        XCTAssertTrue(quiet.waitForExistence(timeout: 5))
+        quiet.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        XCTAssertEqual(quiet.value as? String, "1")
+        app.buttons["closePetTools"].tap()
+        XCTAssertTrue(app.buttons["openAI"].isHittable)
+        app.buttons["journeyTab_我的"].tap()
+        app.buttons["petTools"].tap()
+        XCTAssertEqual(app.switches["petQuiet"].value as? String, "1")
+        app.buttons["closePetTools"].tap()
+    }
+
+    func testDraggingAndHidingPreserveAIEntry() {
+        let app = launch()
+        let pet = app.buttons["openAI"]
+        let start = pet.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.07, dy: 0.89))
+        start.press(forDuration: 0.1, thenDragTo: end)
+        XCTAssertLessThan(pet.frame.midX, app.frame.midX)
+        XCTAssertTrue(pet.isHittable)
+        XCTAssertFalse(app.textFields["assistantDraft"].isHittable)
+        pet.tap()
+        XCTAssertTrue(app.textFields["assistantDraft"].waitForExistence(timeout: 5))
+        app.buttons["closeAI"].tap()
+        app.buttons["journeyTab_我的"].tap()
+        app.buttons["petTools"].tap()
+        let visible = app.switches["petVisible"]
+        XCTAssertTrue(visible.waitForExistence(timeout: 5))
+        visible.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        XCTAssertEqual(visible.value as? String, "0")
+        app.buttons["closePetTools"].tap()
+        app.terminate()
+        app.launchArguments = ["--journey-ui-test"]
+        app.launch()
+        XCTAssertTrue(app.buttons["openAI"].waitForExistence(timeout: 10))
+        app.buttons["journeyTab_我的"].tap()
+        app.buttons["petTools"].tap()
+        XCTAssertEqual(app.switches["petVisible"].value as? String, "0")
+        app.buttons["closePetTools"].tap()
+    }
+}
+
 final class JourneyUITests: XCTestCase {
     func testNavigationAndAssistantDraft() {
         continueAfterFailure = false
@@ -29,6 +95,7 @@ final class JourneyUITests: XCTestCase {
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         let draft = field.value as? String
         XCTAssertTrue(draft?.contains("当地") == true, "Draft: \(String(describing: draft))\n\(app.debugDescription)")
+        if app.buttons["Continue"].waitForExistence(timeout: 1) { app.buttons["Continue"].tap() }
         app.buttons["closeAI"].tap()
         app.buttons["openAI"].tap()
         XCTAssertEqual(field.value as? String, draft)

@@ -9,6 +9,7 @@ import html2canvas from 'html2canvas'
 import './TripWorkspace.css'
 import GuideSharePreview from '../components/GuideSharePreview'
 import TripInvitationPanel from '../components/TripInvitationPanel'
+import { PetMemberWelcome } from '../components/TravelPet'
 import { summaryFromTrip } from '../shareSummary'
 import './TripRouteLayout.css'
 import { AndroidTripToolbar, AndroidTripOverview, AndroidTripTimeline, AndroidTripSheet } from './AndroidTripWorkspace'
@@ -2998,6 +2999,7 @@ function TripBoard({
         chat={<TripChat tripId={tripId} tripTitle={trip.title} members={trip.members} openSignal={openChatSignal} onRead={onChatRead} />} />}
       {compact && workspaceView === 'day' && routeMap}
       <div className="trip-workspace-scroll" data-panel-level={panelLevel} data-workspace={workspaceView}>
+      <PetMemberWelcome tripId={trip.id} members={trip.members} username={username} />
       {compact && workspaceView === 'day' && <div className="trip-panel-handle"
         onPointerDown={e => {if((e.target as HTMLElement).closest("button"))return;panelDrag.current=e.clientY;e.currentTarget.setPointerCapture(e.pointerId)}}
         onPointerUp={e => {if(panelDrag.current!=null){const delta=e.clientY-panelDrag.current;if(Math.abs(delta)>24)setPanelLevel(x=>Math.max(0,Math.min(2,x+(delta<0?1:-1))))}panelDrag.current=null}}

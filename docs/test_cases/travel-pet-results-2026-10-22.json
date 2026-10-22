@@ -1,0 +1,172 @@
+{
+  "date": "2026-10-22",
+  "published": false,
+  "frontend_unit": {
+    "passed": 121,
+    "failed": 0
+  },
+  "backend_cancel_streaming": {
+    "passed": 25,
+    "failed": 0
+  },
+  "swift_logic": {
+    "passed": 21,
+    "failed": 0
+  },
+  "pet_browser": [
+    {
+      "name": "android-small",
+      "passed": true,
+      "directAI": true,
+      "longPress": true,
+      "drag": true,
+      "preparation": true,
+      "preparationRetry": true,
+      "settingsPersist": true,
+      "taskStop": true,
+      "memberWelcome": true
+    },
+    {
+      "name": "android-dark",
+      "passed": true,
+      "directAI": true,
+      "longPress": true,
+      "drag": true,
+      "preparation": true,
+      "preparationRetry": true,
+      "settingsPersist": true,
+      "taskStop": true,
+      "memberWelcome": true
+    },
+    {
+      "name": "web-mobile",
+      "passed": true,
+      "directAI": true,
+      "longPress": true,
+      "drag": true,
+      "preparation": true,
+      "preparationRetry": true,
+      "settingsPersist": true,
+      "taskStop": true,
+      "memberWelcome": true
+    },
+    {
+      "name": "desktop",
+      "passed": true,
+      "directAI": true,
+      "longPress": true,
+      "drag": true,
+      "preparation": true,
+      "preparationRetry": true,
+      "settingsPersist": true,
+      "taskStop": true,
+      "memberWelcome": true
+    },
+    {
+      "name": "landscape",
+      "passed": true,
+      "directAI": true,
+      "longPress": true,
+      "drag": true,
+      "preparation": true,
+      "preparationRetry": true,
+      "settingsPersist": true,
+      "taskStop": true,
+      "memberWelcome": true
+    }
+  ],
+  "journey_browser": [
+    {
+      "name": "android-small",
+      "passed": true,
+      "navigation": true,
+      "draftPreserved": true,
+      "shortcutRequiresSend": true,
+      "history": true,
+      "ledgerViewer": true,
+      "tripOpen": true,
+      "errorRetry": true
+    },
+    {
+      "name": "android-dark",
+      "passed": true,
+      "navigation": true,
+      "draftPreserved": true,
+      "shortcutRequiresSend": true,
+      "history": true,
+      "ledgerViewer": true,
+      "tripOpen": true,
+      "errorRetry": true
+    },
+    {
+      "name": "web-mobile",
+      "passed": true,
+      "navigation": true,
+      "draftPreserved": true,
+      "shortcutRequiresSend": true,
+      "history": true,
+      "ledgerViewer": true,
+      "tripOpen": true,
+      "errorRetry": true
+    },
+    {
+      "name": "desktop",
+      "passed": true,
+      "navigation": true,
+      "draftPreserved": true,
+      "shortcutRequiresSend": true,
+      "history": true,
+      "ledgerViewer": true,
+      "tripOpen": true,
+      "errorRetry": true
+    },
+    {
+      "name": "desktop-dark",
+      "passed": true,
+      "navigation": true,
+      "draftPreserved": true,
+      "shortcutRequiresSend": true,
+      "history": true,
+      "ledgerViewer": true,
+      "tripOpen": true,
+      "errorRetry": true
+    },
+    {
+      "name": "landscape",
+      "passed": true,
+      "navigation": true,
+      "draftPreserved": true,
+      "shortcutRequiresSend": true,
+      "history": true,
+      "ledgerViewer": true,
+      "tripOpen": true,
+      "errorRetry": true
+    }
+  ],
+  "ios_ui": [
+    {
+      "suite": "JourneyUITests",
+      "case": "testNavigationAndAssistantDraft",
+      "passed": true
+    },
+    {
+      "suite": "JourneyUITests",
+      "case": "testTripMapAndTimelineTogether",
+      "passed": true
+    },
+    {
+      "suite": "TravelPetUITests",
+      "case": "testDraggingAndHidingPreserveAIEntry",
+      "passed": true
+    },
+    {
+      "suite": "TravelPetUITests",
+      "case": "testLongPressPreparationAndQuietCompanion",
+      "passed": true
+    }
+  ],
+  "ios_result_bundle": "/tmp/tongyou-pet-ios-ui-3.xcresult",
+  "frontend_build": "passed",
+  "ios_simulator_build": "passed",
+  "production_data_used": false
+}

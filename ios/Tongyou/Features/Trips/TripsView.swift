@@ -148,6 +148,10 @@ struct TripDetailView: View {
     @State private var retryingImport = false
     @State private var confirmingRemoval = false
     @State private var removing = false
+    @State private var petMemberBaseline: [String]?
+    @State private var petBaselineTrip: String?
+    @State private var petWelcome = ""
+    @Environment(AppRouter.self) private var router
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dismiss) private var dismiss
@@ -166,6 +170,9 @@ struct TripDetailView: View {
                     map(trip).safeAreaInset(edge: .bottom) { Color.clear.frame(height: inset) }
                 } content: {
                 VStack(spacing: 10) {
+                if !petWelcome.isEmpty && router.petPreferences.visible {
+                    PetMemberWelcome(text: petWelcome, quiet: router.petPreferences.quiet) { petWelcome = "" }
+                }
                 daySelector(trip)
                 dayOverview(trip)
                 ScrollViewReader { proxy in
@@ -230,6 +237,11 @@ struct TripDetailView: View {
         .screenBackground()
         .navigationTitle(trip?.title ?? "行程")
         .navigationBarTitleDisplayMode(.inline)
+        .task(id: petWelcome) {
+            guard !petWelcome.isEmpty else { return }
+            do { try await Task.sleep(nanoseconds: 4_500_000_000) } catch { return }
+            petWelcome = ""
+        }
         .sheet(item: $viewingStop) { stop in
             PlaceDetailView(tripID: tripID, stop: stop) {
                 Task { @MainActor in
@@ -447,6 +459,10 @@ struct TripDetailView: View {
     private func load() async {
         do {
             let detail = try await API.shared.get("trips/\(tripID)", as: TripDetail.self)
+            let names = detail.members?.map(\.username) ?? []
+            let added = TravelPetLogic.addedMembers(previous: petBaselineTrip == tripID ? petMemberBaseline : nil, current: names, username: session.account?.username ?? "")
+            petMemberBaseline = names; petBaselineTrip = tripID
+            if !added.isEmpty { petWelcome = added.prefix(2).joined(separator: "、") + (added.count > 2 ? "等搭子" : "") + " 加入啦，一起出发！" }
             trip = detail
             if day > detail.dayCount { day = 1 }
             error = nil

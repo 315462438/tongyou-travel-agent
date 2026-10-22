@@ -29,6 +29,7 @@ final class JourneyUITestProtocol: URLProtocol {
         case "ledger/b1": value = ["id":"b1","title":"测试旅行账本","count":1,"target_currency":"CNY","role":"owner","totals":["CNY":100],"by_category":[],"entries":[]] as [String:Any]
         case "ledger/b1/conversion": value = ["target_currency":"CNY","total_minor":100,"stale":false,"fetched_at":"2026-10-20","missing":[],"items":[]] as [String:Any]
         case "trips/t1/share": value = ["short_code":"abcd1234", "token":"fixture-only-token"]
+        case "trips/t1/issues": value = ["issues":[], "ticket_total":0] as [String:Any]
         case "trips/t1/invite":
             let payload = (try? JSONSerialization.jsonObject(with: bodyData())) as? [String: String]
             if payload?["username"] == "missing" {

@@ -7,6 +7,8 @@ import './AndroidHome.css'
 import './AndroidModules.css'
 import './JourneyShell.css'
 import TravelHome from './TravelHome'
+import TravelPet, { flyPetToAI, PetTaskBadge, PetTools, usePetPreferences } from '../components/TravelPet'
+import { petTask } from '../travelPet'
 import GuideSharePreview from '../components/GuideSharePreview'
 import { parseShareSummary } from '../shareSummary'
 import ReactMarkdown from 'react-markdown'
@@ -274,6 +276,18 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
   const [convs, setConvs] = useState<Conv[]>([])
   const [input, setInput] = useState('')
   const [aiOpen, setAiOpen] = useState(false)
+  const [petPreferences, setPetPreferences] = usePetPreferences(user.username)
+  const [showPetTools, setShowPetTools] = useState(false)
+  const [petStopped, setPetStopped] = useState(false)
+  const [petFailed, setPetFailed] = useState(false)
+  useEffect(() => {
+    const move = (event: Event) => {
+      const side = (event as CustomEvent).detail
+      if (side === 'left' || side === 'right') setPetPreferences(previous => ({ ...previous, side }))
+    }
+    window.addEventListener('tongyou:pet-side', move)
+    return () => window.removeEventListener('tongyou:pet-side', move)
+  }, [setPetPreferences])
   const [createTrip, setCreateTrip] = useState(false)
   const [showSocial, setShowSocial] = useState(false)
   const [socialLaunch, setSocialLaunch] = useState<{ tab: SocialTab; destination: string }>({ tab: 'station', destination: '天堂寨' })
@@ -652,12 +666,14 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
 
   const selectConv = useCallback(
     async (id: string) => {
+      setPetStopped(false); setPetFailed(false)
       setAiOpen(true)
       setMobilePanel(null)
       stopPoll()
       if (window.innerWidth <= 720) setCollapsed(true)  // 手机：选完自动收抽屉
       setCid(id)
       setMessages([])
+      setRunning(false)
       stickBottomRef.current = true  // 换会话：先回到最新
       setShowJumpBottom(false)
       const res = await authFetch(`${API}/chat/${id}/messages`)
@@ -671,6 +687,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
   )
 
   const newChat = useCallback(() => {
+    setPetStopped(false); setPetFailed(false)
     setAiOpen(true)
     setInput('')
     setMobilePanel(null)
@@ -772,6 +789,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
   const stop = useCallback(async () => {
     if (!cid) return
     const res = await authFetch(`${API}/chat/${cid}/stop`, { method: 'POST' }).catch(() => null)
+    if (res?.ok) setPetStopped(true)
     notify(res?.ok ? '已请求停止，正在保存当前结果' : '停止请求未送达，请重试', res?.ok ? 'info' : 'error')
     // 后端在检查点终稿本轮，轮询会将 running 置为 false
   }, [cid, notify])
@@ -812,6 +830,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
     // 用 ref 做**同步**门闩：赋值立即可见，覆盖整个 await 窗口。
     // Phase 105：只发图（无文字）也算有效输入——「这是哪，帮我安排」是真实用法。
     if (!canSendComposer(content, pendingImages.length) || running || sendingRef.current) return
+    setPetStopped(false); setPetFailed(false)
     sendingRef.current = true
     const imageIds = pendingImages.map((i) => i.id)
     const requestDeep = options.deepReasoning ?? deep
@@ -849,6 +868,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
       loadConvs()
       poll(conv)
     } catch {
+      setPetFailed(true)
       notify('消息发送失败，内容已为你保留', 'error')
     } finally {
       sendingRef.current = false
@@ -857,6 +877,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
 
   // Phase 46：从协同板发起「携程实价」——建新会话、强制深度推理（走 guide/携程流水线）、关板打开对话
   const askInChat = useCallback(async (text: string) => {
+    setPetStopped(false); setPetFailed(false)
     setAiOpen(true)
     try {
       const res = await authFetch(`${API}/chat/conversations`, { method: 'POST' })
@@ -889,6 +910,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
   const regenerateDeep = useCallback(async (text: string) => {
     const content = normalizePrompt(text)
     if (!content || running || !cid) return
+    setPetStopped(false); setPetFailed(false)
     try {
       enableDeep()
       const res = await authFetch(`${API}/chat/${cid}/messages`, {
@@ -979,9 +1001,10 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
   }
   const mobileActive = showLedger ? 'ledger' : mobilePanel ? 'account' : 'travel'
   const activeConversationTitle = convs.find((conv) => conv.id === cid)?.title || (empty ? '开始新旅程' : '旅行规划')
+  const companionTask = petTask(messages, running, petStopped, petFailed)
 
   return (
-    <div className={`app journey-shell view-${layoutMode}${collapsed ? ' collapsed' : ''}${keyboardOpen ? ' keyboard-open' : ''}`}>
+    <div data-pet-side={petPreferences.side} className={`app journey-shell view-${layoutMode}${collapsed ? ' collapsed' : ''}${keyboardOpen ? ' keyboard-open' : ''}`}>
       {user.must_change_password && <AdminPasswordBanner onDone={onPasswordChanged} />}
       {showLedger && <Suspense fallback={<div className="overlay-loading" role="status">正在打开记账本…</div>}><Ledger initialBookID={ledgerBookID} initialTrip={ledgerTrip} onClose={() => setShowLedger(false)} /></Suspense>}
       {showTrips && (
@@ -1049,7 +1072,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
           onTrip={id => { setCreateTrip(false); setTripsBoard(id); openMobileTrips() }} />
       </div>}
       <main className="main ai-workspace" hidden={!aiOpen} aria-label="同游 AI">
-        <header className="journey-ai-header"><button onClick={() => setAiOpen(false)} aria-label="关闭 AI">收起 ↓</button><strong>同游 AI</strong><div><button onClick={openMobileHistory}>历史</button><button onClick={newChat} disabled={running}>新对话</button></div></header>
+        <header className="journey-ai-header"><button onClick={() => setAiOpen(false)} aria-label="关闭 AI">收起 ↓</button>{petPreferences.visible ? <PetTaskBadge task={companionTask} quiet={petPreferences.quiet} onTools={() => setShowPetTools(true)} /> : <strong>同游 AI</strong>}<div><button onClick={openMobileHistory}>历史</button><button onClick={newChat} disabled={running}>新对话</button></div></header>
         <header className="app-topbar">
           <button className="mobile-menu-button" aria-label="我的" onClick={() => setMobilePanel('account')}>
             <span className="mobile-account-avatar">{user.avatar_url ? <img src={user.avatar_url} alt="" /> : (user.display_name || user.username).slice(0, 1)}</span>
@@ -1223,6 +1246,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
           <div className="mobile-profile-card"><span className="mobile-account-avatar">{user.avatar_url ? <img src={user.avatar_url} alt="" /> : (user.display_name || user.username).slice(0, 1)}</span><span><strong>{user.display_name || user.username}</strong><small>@{user.username}</small></span></div>
           <div className="mobile-account-links">
             <button onClick={openMobileHistory}>历史对话<span aria-hidden>›</span></button>
+            <button onClick={() => setShowPetTools(true)}>游游 · 旅行搭子<span aria-hidden>›</span></button>
             <button onClick={() => setShowAnn(true)}>公告<span aria-hidden>›</span></button>
             <button onClick={() => setShowSupport(true)}>帮助与反馈{supportUnread > 0 ? ` · ${supportUnread}` : ''}<span aria-hidden>›</span></button>
             {!isAndroidApp() && <button onClick={() => changeLayoutMode(layoutMode === 'desktop' ? 'mobile' : 'desktop')}>切换{layoutMode === 'desktop' ? '移动端' : '桌面'}布局<span aria-hidden>›</span></button>}
@@ -1241,7 +1265,12 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
         <button className={mobileActive === 'travel' ? 'active' : ''} aria-current={mobileActive === 'travel' ? 'page' : undefined} onClick={openMobileChat}><NavIcon name="trip" /><small>旅行</small></button>
         <button className={mobileActive === 'ledger' ? 'active' : ''} aria-current={mobileActive === 'ledger' ? 'page' : undefined} onClick={openLedger}><NavIcon name="ledger" /><small>记账</small></button>
         <button className={mobileActive === 'account' ? 'active' : ''} aria-current={mobileActive === 'account' ? 'page' : undefined} onClick={openAccount}><NavIcon name="account" /><small>我的</small></button>
-      </nav><button className="journey-ai-fab" onClick={() => openAI()} aria-label={running ? '问 AI，正在生成' : '问 AI'}><NavIcon name="chat" />{running ? '生成中' : '问 AI'}</button></>}
+      </nav></>}
+      <TravelPet task={companionTask} conversation={cid} preferences={petPreferences} onAsk={from => { flyPetToAI(from, petPreferences.quiet); openAI() }} onTools={() => setShowPetTools(true)}
+        onTipSeen={id => setPetPreferences(current => ({ ...current, tipsSeen: [...(current.tipsSeen || []).filter(seen => seen !== id), id] }))}
+        hidden={aiOpen || keyboardOpen || !!(showTrips && tripsBoard) || showMemories || showConnectors || showSkills || showAdmin || showSocial || showNotifications || showAnn || showAnnModal || showSupport || !!traceFor} />
+      {showPetTools && <PetTools preferences={petPreferences} onChange={setPetPreferences} onClose={() => setShowPetTools(false)} onAsk={() => openAI()}
+        onTrip={id => { setAiOpen(false); setCreateTrip(false); setTripsBoard(id); openMobileTrips() }} />}
 
     </div>
   )

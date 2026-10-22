@@ -5,6 +5,7 @@ import SwiftUI
 struct MeView: View {
     var isRoot = false
     @Environment(AppSession.self) private var session
+    @Environment(AppRouter.self) private var router
     @Environment(\.dismiss) private var dismiss
     @State private var showHistory = false
     @State private var supportUnread = 0
@@ -29,6 +30,7 @@ struct MeView: View {
 
                 Section("我的") {
                     Button { showHistory = true } label: { Label("历史对话", systemImage: "clock.arrow.circlepath") }
+                    Button { router.petToolsOpen = true } label: { Label("游游 · 旅行搭子", systemImage: "pawprint") }.accessibilityIdentifier("petTools")
                     DisclosureGroup("更多工具与设置") {
                     NavigationLink { MemoryView() } label: { Label("记忆", systemImage: "brain.head.profile") }
                     NavigationLink { SkillsView() } label: { Label("技能", systemImage: "puzzlepiece.extension") }

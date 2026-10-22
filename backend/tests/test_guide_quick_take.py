@@ -126,11 +126,13 @@ class _FakeSession:
 
 def _wire_stop(monkeypatch, turn):
     """turn：本轮（最后一条 user 之后）的消息。"""
-    calls = {"added": [], "cleared": 0}
+    calls = {"added": [], "cleared": 0, "meta": []}
     monkeypatch.setattr(orch, "get_session", lambda: _FakeSession())
     monkeypatch.setattr(orch, "_turn_messages", lambda db, cid: turn)
-    monkeypatch.setattr(orch, "_add_message",
-                        lambda cid, role, content: calls["added"].append(content))
+    def add_message(cid, role, content, **kwargs):
+        calls["added"].append(content)
+        calls["meta"].append(kwargs.get("meta"))
+    monkeypatch.setattr(orch, "_add_message", add_message)
     monkeypatch.setattr(orch, "clear_plain_progress", lambda cid: calls.__setitem__("cleared", 1))
     return calls
 
@@ -165,6 +167,15 @@ def test_stop_partial_streaming_finalizes_content(monkeypatch):
     orch._ensure_stopped_message("c")
     assert placeholder.content == "已生成一半的内容" and not _streaming(placeholder)  # 就地保留，不补「已停止」
     assert calls["added"] == []
+    assert json.loads(placeholder.meta_json) == {"cancelled": True}
+
+
+def test_failure_preserves_partial_content_with_terminal_reason(monkeypatch):
+    placeholder = _Msg("assistant", {"streaming": True}, "已经整理的路线")
+    _wire_stop(monkeypatch, [placeholder])
+    orch._ensure_stopped_message("c", "抱歉，处理过程中出错了，请重试。")
+    assert placeholder.content == "已经整理的路线"
+    assert json.loads(placeholder.meta_json) == {"error": True}
 
 
 def test_stop_after_finalize_is_noop(monkeypatch):
@@ -179,6 +190,7 @@ def test_stop_no_answer_adds_message(monkeypatch):
     calls = _wire_stop(monkeypatch, [_Msg("progress", None, "正在搜索")])
     orch._ensure_stopped_message("c")
     assert calls["added"] == ["已停止本轮。"]
+    assert calls["meta"] == [{"cancelled": True}]
 
 
 def test_stop_only_preliminary_still_adds_message(monkeypatch):
@@ -201,6 +213,7 @@ def test_stop_no_answer_with_custom_text(monkeypatch):
     calls = _wire_stop(monkeypatch, [])
     orch._ensure_stopped_message("c", "抱歉，处理过程中出错了，请重试。")
     assert calls["added"] == ["抱歉，处理过程中出错了，请重试。"]
+    assert calls["meta"] == [{"error": True}]
 
 
 # ---------- 思考纪律与预算（2026-08-21） ----------

@@ -4,6 +4,7 @@ import SwiftUI
 struct TripRef: Hashable { var id: String }
 
 struct ChatView: View {
+    @Environment(AppRouter.self) private var router
     @State private var store: ChatStore
     @State private var draft: String
     private let title: String
@@ -64,6 +65,7 @@ struct ChatView: View {
         }
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .principal) { if router.petPreferences.visible { PetStatusBadge(title: title, task: store.petTask) } } }
         .toolbar(.hidden, for: .tabBar)
         .screenBackground()
         .task {
@@ -76,6 +78,7 @@ struct ChatView: View {
             }
         }
         .onDisappear { store.stopPolling() }
+        .onChange(of: store.petTask, initial: true) { _, task in router.updatePet(task, conversation: store.conversationID) }
     }
 }
 

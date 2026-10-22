@@ -64,6 +64,15 @@ final class ChatStore {
     private(set) var running = false
     private(set) var loaded = false
     var error: String?
+    private var stopRequested = false
+    var petTask: PetTask {
+        TravelPetLogic.task(messages.map { message in
+            PetMessage(id: message.id, role: message.role, content: message.content, streaming: message.streaming,
+                       preliminary: message.preliminary, confirmID: message.meta?["confirm"]?["id"]?.string,
+                       handoff: message.meta?["handoff"] != nil, replyID: message.meta?["confirm_reply"]?["confirm_id"]?.string,
+                       cancelled: message.meta?["cancelled"]?.bool == true, failed: message.meta?["error"] != nil)
+        }, running: running, stopped: stopRequested, failed: error != nil)
+    }
     var deepReasoning = false
     /// Search the web before quick answers; remembered across conversations.
     var webSearch = ChatPreferences.webSearch() {
@@ -135,6 +144,7 @@ final class ChatStore {
         let content = String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(4000))
         guard !content.isEmpty || !images.isEmpty else { return }
         error = nil
+        stopRequested = false
         do {
             if conversationID == nil {
                 struct Created: Decodable { var conversationId: String }
@@ -163,7 +173,11 @@ final class ChatStore {
 
     func stop() {
         guard let conversationID else { return }
-        Task { _ = try? await API.shared.request("POST", "chat/\(conversationID)/stop") }
+        stopRequested = true
+        Task {
+            do { _ = try await API.shared.request("POST", "chat/\(conversationID)/stop") }
+            catch { stopRequested = false; self.error = "停止请求未送达，请重试" }
+        }
     }
 
     func confirm(_ id: String, choice: String) {
@@ -181,6 +195,8 @@ final class ChatStore {
         guard let conversationID else { return }
         Task {
             do {
+                stopRequested = false
+                error = nil
                 _ = try await API.shared.request("POST", "chat/\(conversationID)/\(kind)", body: ["message_id": messageID])
                 running = true
                 startPolling()
@@ -213,7 +229,7 @@ final class ChatStore {
                 guard let reply = try? await API.shared.get("chat/\(id)/messages", as: MessagesReply.self) else { continue }
                 self.apply(reply)
                 if !reply.running {
-                    UINotificationFeedbackGenerator().notificationOccurred(.success)
+                    if self.petTask.phase == .ready { UINotificationFeedbackGenerator().notificationOccurred(.success) }
                     self.onTurnFinished?()
                     return
                 }

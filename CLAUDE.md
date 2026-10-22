@@ -448,6 +448,16 @@ iOS `TravelPressStyle`/`Haptics` 移入 `Design/Glass.swift`，所有 `.plain` �
 selection 触感，保存点 `Haptics.success()`。reduced-motion 全部降级。计划
 `docs/task_plans/三端按钮交互反馈-2026-10-22.md`，用例 `docs/test_cases/三端按钮交互反馈-验收用例.md`。
 
+**Phase 115 — 游游动作与问 AI 衔接**：网页 `.yp-art` 常驻呼吸/眨眼/摆尾 + 按任务状态的动作 + 空闲时
+6–12s 随机待机小动作（`usePetAct`，纯函数在 `travelPet.ts`），**全部用独立 `scale/rotate/translate` 属性**，
+不碰原姿势的 `transform`。点问 AI：`flyPetToAI` 克隆游游沿弧线飞进 AI 标题栏 + 面板 `clip-path` 从游游位置展开
+（安卓 UA 改用合成层缩放）。iOS 对应 `PetMotion.at(time, phase)` + `PetLiveArt`（TimelineView 30fps，减少动态效果时暂停）、
+`PetFlightOverlay` + `PetRevealShape`。游游按钮带 `data-no-press`（按钮点击当帧隐藏，通用波纹会残留灰块）。
+**气泡互动**：停靠处气泡按「确认/出错/进度 > 完成提醒 > 指引」选一条（`petBubble` / `TravelPetLogic.bubble`）；
+进度取本轮最新进度消息清洗成 ≤22 字；三句指引每句只说一次（`tipsSeen` 存偏好）、一次会话最多一句。
+iOS `PetPreferences` 逐键容错解码——**加字段不能让老用户设置被重置**。
+计划 `docs/task_plans/游游动作与问AI衔接动画-2026-10-22.md`。
+
 **Phase 113 — 切换 DeepSeek V4.1 + 视觉切片按像素预算重校准**（读 `deepseek-harness` 上游
 09-09~09-10 后的改造）：① 2026-09-10 V4.1 Flash 发布（正式名 `deepseek-flash`，原生多模态），
 **规划/抽取/分类/视觉全部改用 `deepseek-flash`**——开放平台公告 V4.1 Flash 全面超过 V4 Pro，且

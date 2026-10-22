@@ -2757,7 +2757,7 @@ def _ensure_stopped_message(cid: str, text: str = "已停止本轮。") -> None:
     # 现在本轮（最后一条 user 之后）所有流式占位都就地终稿，一条都没有才补一条。
     closed = close_turn_streaming(cid, text)
     if not closed and not _turn_has_final_answer(cid):
-        _add_message(cid, "assistant", text)
+        _add_message(cid, "assistant", text, meta={"cancelled": True} if text == "已停止本轮。" else {"error": True})
     clear_plain_progress(cid)
 
 
@@ -2795,7 +2795,9 @@ def close_turn_streaming(cid: str, text: str = "已停止本轮。") -> int:
         for m in _turn_messages(db, cid):
             if m.role == "assistant" and _meta(m).get("streaming"):
                 m.content = m.content or text
-                m.meta_json = None
+                # A partial answer can contain useful text on both cancellation and failure.
+                # Carry the terminal reason so clients do not mistake it for a successful turn.
+                m.meta_json = json.dumps({"cancelled": True} if text == "已停止本轮。" else {"error": True})
                 n += 1
         if n:
             db.commit()

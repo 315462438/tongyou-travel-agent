@@ -12,6 +12,44 @@ final class AppRouter {
     var openLedgerID: String?
     var ledgerLinks = LedgerLinkInbox()
     var historyVersion = 0
+    var petToolsOpen = false
+    var keyboardOpen = false
+    var petTask = PetTask()
+    var petCelebration = 0
+    /// 问 AI 衔接动画：停靠处与 AI 标题栏小游游的全局位置，及起跳/落地触发器。
+    var petDockFrame = CGRect.zero
+    var petBadgeFrame = CGRect.zero
+    var petFlight = 0
+    var petFlying = false
+    var petLanded = 0
+    /// 指引一次 App 会话只说一句。
+    var petTipShown = false
+    var petPreferences = PetPreferences() {
+        didSet {
+            if let petUsername, let data = try? JSONEncoder().encode(petPreferences) { UserDefaults.standard.set(data, forKey: "travelPet.v1.\(petUsername)") }
+        }
+    }
+    private var petUsername: String?
+    private var petLiveTurn: (conversation: String?, turn: String)?
+
+    func configurePet(username: String?) {
+        guard username != petUsername else { return }
+        petUsername = username
+        #if DEBUG
+        if JourneyUITestProtocol.enabled && ProcessInfo.processInfo.arguments.contains("--pet-reset"), let username { UserDefaults.standard.removeObject(forKey: "travelPet.v1.\(username)") }
+        #endif
+        petPreferences = PetPreferences.read(username.flatMap { UserDefaults.standard.data(forKey: "travelPet.v1.\($0)") })
+        petTask = PetTask(); petLiveTurn = nil; petCelebration = 0; petToolsOpen = false
+    }
+
+    func updatePet(_ task: PetTask, conversation: String?) {
+        if task.phase == .working || task.phase == .waiting { petLiveTurn = (conversation, task.turn) }
+        else {
+            if task.phase == .ready, let live = petLiveTurn, live.conversation == conversation, live.turn == task.turn { petCelebration += 1 }
+            petLiveTurn = nil
+        }
+        petTask = task
+    }
 }
 
 struct ChatLaunch: Hashable {
@@ -46,6 +84,7 @@ struct AssistantView: View {
             .navigationTitle("同游 AI")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .principal) { if router.petPreferences.visible { PetStatusBadge() } }
                 ToolbarItem(placement: .topBarLeading) {
                     Button { focused = false; router.aiOpen = false } label: { Label("收起", systemImage: "chevron.down") }
                         .accessibilityIdentifier("closeAI")
