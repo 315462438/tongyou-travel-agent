@@ -64,7 +64,7 @@ html.native-android .app.view-mobile .destination-card-copy { position:absolute;
 html.native-android .app.view-mobile .destination-card-copy strong { color:white;font-size:16px;font-weight:600; }
 html.native-android .app.view-mobile .destination-card-copy > span { color:#ffffffe0;font-size:11px; }
 html.native-android .app.view-mobile .destination-card-copy small { display:none; }
-html.native-android .app.view-mobile .mobile-bottom-nav { left:12px;right:12px;bottom:8px;min-height:62px;padding:4px;border:1px solid #9aabc236;border-radius:32px;background:#f5f7fbe6;box-shadow:0 4px 18px #20345112;backdrop-filter:blur(16px); }
+html.native-android .app.view-mobile .mobile-bottom-nav { left:12px;right:12px;bottom:8px;min-height:62px;padding:4px;border:1px solid #9aabc236;border-radius:32px;background:#f5f7fbe6;box-shadow:0 4px 18px #20345112;backdrop-filter:blur(calc(16px * var(--glass-k, 1))); }
 html.native-android .app.view-mobile .mobile-bottom-nav::before { display:none; }
 html.native-android .app.view-mobile .mobile-bottom-nav button { min-height:52px;border:0;border-radius:26px;gap:3px; }
 html.native-android .app.view-mobile .mobile-bottom-nav button.active { background:#2563eb12;box-shadow:none; }

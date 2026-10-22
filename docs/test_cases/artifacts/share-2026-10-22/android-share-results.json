@@ -1,0 +1,32 @@
+[
+  {
+    "name": "light",
+    "passed": true,
+    "pages": 5,
+    "renderNonblank": true,
+    "completeText": true,
+    "inviteErrorPreservesInput": true,
+    "inviteSuccess": true,
+    "motion": "no-preference"
+  },
+  {
+    "name": "dark",
+    "passed": true,
+    "pages": 5,
+    "renderNonblank": true,
+    "completeText": true,
+    "inviteErrorPreservesInput": true,
+    "inviteSuccess": true,
+    "motion": "no-preference"
+  },
+  {
+    "name": "small-reduced",
+    "passed": true,
+    "pages": 5,
+    "renderNonblank": true,
+    "completeText": true,
+    "inviteErrorPreservesInput": true,
+    "inviteSuccess": true,
+    "motion": "reduce"
+  }
+]

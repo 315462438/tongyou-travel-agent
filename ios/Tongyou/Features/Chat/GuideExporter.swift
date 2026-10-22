@@ -12,31 +12,13 @@ extension EnvironmentValues {
 enum GuideExporter {
     static let width: CGFloat = 390
 
-    static func longImage(title: String, markdown: String) -> UIImage? {
-        let renderer = ImageRenderer(content: ExportPage(title: title, markdown: markdown))
-        renderer.proposedSize = ProposedViewSize(width: width, height: nil)
-        renderer.scale = 1
-        guard let probe = renderer.uiImage else { return nil }
-        // Keep the bitmap under ~24k px tall so WeChat and Photos can still decode it.
-        renderer.scale = max(1, min(2.5, 24_000 / max(probe.size.height, 1)))
-        return renderer.uiImage
+    static func longImages(title: String, markdown: String) -> [UIImage] {
+        GuideCardRenderer.images(.parse(title: title, markdown: markdown))
     }
 
     static func pdf(title: String, markdown: String) -> URL? {
-        let renderer = ImageRenderer(content: ExportPage(title: title, markdown: markdown))
-        renderer.proposedSize = ProposedViewSize(width: width, height: nil)
         let url = DownloadFile.freshURL(name: fileName(title) + ".pdf")
-        var ok = false
-        renderer.render { size, draw in
-            var box = CGRect(origin: .zero, size: size)
-            guard let context = CGContext(url as CFURL, mediaBox: &box, nil) else { return }
-            context.beginPDFPage(nil)
-            draw(context)
-            context.endPDFPage()
-            context.closePDF()
-            ok = true
-        }
-        return ok ? url : nil
+        return GuideCardRenderer.pdf(title: title, markdown: markdown, url: url) ? url : nil
     }
 
     /// A readable file name from the guide's first heading or the conversation title.
@@ -63,59 +45,36 @@ enum GuideExporter {
     }
 }
 
-private struct ExportPage: View {
-    let title: String
-    let markdown: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(spacing: 10) {
-                Image("LaunchMark").resizable().frame(width: 30, height: 30).clipShape(.rect(cornerRadius: 7, style: .continuous))
-                Text("17同游 · 旅行攻略").font(.subheadline.weight(.semibold)).foregroundStyle(Palette.sky)
-                Spacer()
-            }
-            MarkdownView(markdown)
-            Divider()
-            Text("由 17同游 生成 · 17tongyou.com").font(.caption).foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .center)
-        }
-        .padding(24)
-        .frame(width: GuideExporter.width)
-        .background(Color.white)
-        .environment(\.markdownExporting, true)
-        .environment(\.colorScheme, .light)
-    }
-}
-
 /// Share menu for a finished answer.
 struct GuideShareMenu: View {
     let markdown: String
     let fallbackTitle: String
     @State private var working = false
+    @State private var preview = false
+    @State private var error: String?
 
     var body: some View {
         Menu {
-            Button("分享长图（微信好友、朋友圈）", systemImage: "photo") { export(image: true) }
-            Button("导出 PDF 文件", systemImage: "doc.richtext") { export(image: false) }
+            Button("分享简版行程", systemImage: "photo") { preview = true }
+            Button("导出完整 PDF（文字版）", systemImage: "doc.richtext") { exportPDF() }
             Button("复制文字", systemImage: "doc.on.doc") { UIPasteboard.general.string = markdown }
         } label: {
             if working { ProgressView() } else { Label("分享", systemImage: "square.and.arrow.up") }
         }
         .disabled(working)
+        .sheet(isPresented: $preview) { GuideSharePreview(title: GuideExporter.title(for: markdown, fallback: fallbackTitle), markdown: markdown) }
+        .alert("导出未完成", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) { Button("好") { error = nil } } message: { Text(error ?? "") }
     }
 
-    private func export(image: Bool) {
+    private func exportPDF() {
         working = true
         let title = GuideExporter.title(for: markdown, fallback: fallbackTitle)
         // Let the menu close before the (synchronous) render so the spinner shows.
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 150_000_000)
-            if image, let rendered = GuideExporter.longImage(title: title, markdown: markdown) {
-                // WeChat accepts a UIImage directly.
-                GuideExporter.share([rendered])
-            } else if !image, let url = GuideExporter.pdf(title: title, markdown: markdown) {
+            if let url = GuideExporter.pdf(title: title, markdown: markdown) {
                 GuideExporter.share([url])
-            }
+            } else { error = "PDF 生成失败，请重试。" }
             working = false
         }
     }

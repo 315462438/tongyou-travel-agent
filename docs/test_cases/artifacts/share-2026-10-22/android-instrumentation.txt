@@ -1,0 +1,9 @@
+
+com.tongyou.travel.HostInstrumentedTest:.............
+com.tongyou.travel.UpdateInstrumentedTest:......
+
+Time: 137.563
+
+OK (19 tests)
+
+

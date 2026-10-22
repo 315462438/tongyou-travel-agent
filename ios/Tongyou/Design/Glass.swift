@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Visual language: content sits on a soft sky-to-paper backdrop; every control floats on Liquid Glass.
 enum Palette {
@@ -67,4 +68,24 @@ struct EmptyState: View {
         .padding(40)
         .frame(maxWidth: .infinity)
     }
+}
+
+/// Press feedback for tappable rows and cards that are not glass buttons: a quick dip, a spring back and a faint tap.
+struct TravelPressStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isEnabled) private var isEnabled
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.contentShape(Rectangle()).scaleEffect(configuration.isPressed && !reduceMotion ? 0.97 : 1)
+            .opacity(configuration.isPressed ? 0.85 : 1)
+            .animation(reduceMotion ? nil : configuration.isPressed ? .easeOut(duration: 0.1) : .spring(response: 0.32, dampingFraction: 0.6), value: configuration.isPressed)
+            .sensoryFeedback(trigger: configuration.isPressed) { _, pressed in
+                pressed && isEnabled ? .impact(flexibility: .soft, intensity: 0.5) : nil
+            }
+    }
+}
+
+/// Result haptics for saves that close their sheet right away, where a `.sensoryFeedback` on the sheet would never fire.
+@MainActor enum Haptics {
+    static func success() { UINotificationFeedbackGenerator().notificationOccurred(.success) }
+    static func error() { UINotificationFeedbackGenerator().notificationOccurred(.error) }
 }

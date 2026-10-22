@@ -1,4 +1,4 @@
-import { isAndroidApp, shareAndroidLink, useAndroidBack } from '../nativeAndroid'
+import { isAndroidApp, useAndroidBack } from '../nativeAndroid'
 /** 协同行程规划板（Phase 35-63）：三栏 = Timeline | 每日地图 | AI Copilot。
  * 协同 = 2.5s 轮询（顺带上报 presence）+ 行程群聊；AI 一律提案制（Preview→采纳/拒绝/恢复）。 */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
@@ -7,6 +7,9 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import html2canvas from 'html2canvas'
 import './TripWorkspace.css'
+import GuideSharePreview from '../components/GuideSharePreview'
+import TripInvitationPanel from '../components/TripInvitationPanel'
+import { summaryFromTrip } from '../shareSummary'
 import './TripRouteLayout.css'
 import { AndroidTripToolbar, AndroidTripOverview, AndroidTripTimeline, AndroidTripSheet } from './AndroidTripWorkspace'
 import { ChatBody, ChatInput } from '../components/ChatInput'
@@ -15,7 +18,7 @@ import TripMap from '../components/TripMap'
 import PlaceDetails from './PlaceDetails'
 import { useToast } from '../components/toast-context'
 import { API, authFetch } from '../api'
-import { formatTripTimeRange, pickNavUrl, prepareMarkdown } from '../interaction'
+import { formatTripTimeRange, mergeTripPresence, pickNavUrl, prepareMarkdown, sameChatMessages } from '../interaction'
 import { composeShareGuide } from '../lib/guideComposer'
 import { renderShareGuideHtml } from '../lib/htmlRenderer'
 import { DEFAULT_EXPORT_OPTIONS, type ExportOptions } from '../lib/travelGuideExport/schema'
@@ -1518,6 +1521,8 @@ function TripChat({
         if (fresh > 0) setUnread((count) => Math.min(99, count + fresh))
       }
       hydratedRef.current = true
+      // 没有新消息时不换数组引用，群聊抽屉不跟着轮询重渲染。
+      if (sameChatMessages(previous, next)) return
       messagesRef.current = next
       setMessages(next)
     } catch {
@@ -1868,6 +1873,7 @@ function TripBoard({
   onChatRead?: () => void
 }) {
   const compact = isAndroidApp() || mobile
+  const [sharePreview, setSharePreview] = useState(false)
   const [androidMenu, setAndroidMenu] = useState<'more' | 'members' | 'export' | null>(null)
   const [trip, setTrip] = useState<TripDetail | null>(null)
   const [issues, setIssues] = useState<TripIssue[]>([])
@@ -1957,7 +1963,7 @@ function TripBoard({
       authFetch(`${API}/trips/${tripId}/comments`).then(async (r) => r.ok && setComments(await r.json())).catch(() => {})
       authFetch(`${API}/trips/${tripId}/expenses`).then(async (r) => r.ok && setExpenses(await r.json())).catch(() => {})
     } else {
-      setTrip((cur) => (cur ? { ...cur, ai_status: data.ai_status, members: data.members } : data))
+      setTrip((cur) => (cur ? mergeTripPresence(cur, data) : data))
       if (data.ai_status === null && wasCopilot) {
         authFetch(`${API}/trips/${tripId}/suggestions`).then(async (r) => r.ok && setSuggestions(await r.json())).catch(() => {})
       }
@@ -2039,6 +2045,7 @@ function TripBoard({
 
   const exportToImage = async () => {
     if (!trip) return
+    if (compact) { setAndroidMenu(null); setSharePreview(true); return }
     notify('正在生成长图，请稍候...')
 
     try {
@@ -2926,7 +2933,7 @@ function TripBoard({
                   <span>📄</span><b>查看原攻略</b><small>所有已加入成员都可只读查看</small>
                 </button>
               )}
-              {isOwner && <ShareButton tripId={tripId} tripTitle={trip.title} destination={trip.destination} username={username} />}
+              {isOwner && <ShareButton tripId={tripId} tripTitle={trip.title} destination={trip.destination} username={username} days={trip.days} stopCount={trip.stops.length} members={trip.members} />}
               {isOwner && (
                 <div className="trip-invite">
                   <label>邀请同行者</label>
@@ -3631,8 +3638,9 @@ function TripBoard({
           {trip.source_conversation_id && <button onClick={() => { setAndroidMenu(null); setSourceGuideOpen(true) }}>查看原攻略</button>}
           <h3>旅行工具</h3><div className="android-trip-tool-grid">{TRIP_TOOL_TABS.map(t => <button key={t.id} onClick={() => {setAiTab(t.id);setWorkspaceView('tool');setMobilePane('assistant');setAndroidMenu(null)}}>{t.label}</button>)}</div>
           <h3>行程天数</h3><div className="android-trip-stepper"><button disabled={trip.days<=1} onClick={() => void changeDays(trip.days-1)} aria-label="减少一天">−</button><span>{trip.days} 天</span><button disabled={trip.days>=30} onClick={() => void changeDays(trip.days+1)} aria-label="增加一天">＋</button></div>
-        </div> : androidMenu === 'export' ? exportControls : <><div className="android-trip-member-list">{trip.members.map(m => <p key={m.username}><strong>{m.username}</strong><span>{m.role==='owner'?'创建者':'协作成员'} · {m.online?'在线':'离线'}</span></p>)}</div>{invitationControls}</>}
+        </div> : androidMenu === 'export' ? exportControls : <TripInvitationPanel tripId={tripId} title={trip.title} destination={trip.destination} days={trip.days} stopCount={trip.stops.length} members={trip.members} isOwner={isOwner} username={username} onChanged={() => { void load() }} />}
       </AndroidTripSheet>}
+      {sharePreview && <GuideSharePreview summary={summaryFromTrip(trip)} onClose={() => setSharePreview(false)} />}
       {compact && editingDayTitle != null && <AndroidTripSheet title="修改当天标题" onClose={() => setEditingDayTitle(null)}><form className="android-trip-title-form" onSubmit={e => {e.preventDefault();void saveDayTitle(selectedDay,dayTitleInput)}}><label>当天标题<input autoFocus value={dayTitleInput} onChange={e => setDayTitleInput(e.target.value)} /></label><button disabled={!dayTitleInput.trim()} className="primary">保存</button></form></AndroidTripSheet>}
       {/* PRD 4.5 情境化悬浮按钮：不重复实现新增逻辑，只把当前面板的输入框聚焦过去，
           这样各面板的校验/提示仍然只有一处。找不到输入框（如动态、助手）就不显示。 */}
@@ -3706,83 +3714,15 @@ function TripBoard({
   )
 }
 
-function ShareButton({
-  tripId, tripTitle, destination, username,
-}: { tripId: string; tripTitle: string; destination: string; username: string }) {
-  const [open, setOpen] = useState(false)
-  const [shortCode, setShortCode] = useState<string | null>(null)
-  const [copied, setCopied] = useState(false)
-  const { notify } = useToast()
-
-  const ensure = async (reset = false) => {
-    const res = await authFetch(`${API}/trips/${tripId}/share`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reset }),
-    })
-    if (res.ok) {
-      setShortCode((await res.json()).short_code)
-    } else {
-      notify('分享链接生成失败', 'error')
-    }
-  }
-
-  // 短链：/t/{8位码}，经 nginx 302 到完整 join 链接（Phase 42.1）
-  const link = shortCode ? `${window.location.origin}/t/${shortCode}` : ''
-  // 一句话 + 短链（用户拍板的形态），目的地优先、标题兜底
-  const what = destination ? `${destination}之行` : `《${tripTitle}》`
-  const shareText = `${username} 邀请你一起规划${what}，点开加入 👉 ${link}`
-
-  return (
-    <>
-      <button className="trip-btn" onClick={() => { setOpen(true); ensure() }}>🔗 分享</button>
-      {open && createPortal(
-        <div className="modal-mask share-mask" onClick={() => setOpen(false)}>
-          <div className="modal trip-share-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-head">
-              <strong>🔗 分享协同行程</strong>
-              <button className="modal-close" onClick={() => setOpen(false)}>✕</button>
-            </div>
-            <div className="trip-share-tip">
-              把链接发到微信，对方点开注册后<b>自动加入</b>这个规划板一起编辑。
-              拿到链接的人都能加入，介意的话随时可以重置或关闭。
-            </div>
-            {shortCode && <div className="trip-share-link">{link}</div>}
-            <div className="trip-edit-ops">
-              <button className="trip-btn" onClick={() => {
-                if (window.confirm('重置后旧链接会立即失效，继续吗？')) ensure(true)
-              }}>♻️ 重置链接</button>
-              <button className="trip-btn danger" onClick={async () => {
-                if (!window.confirm('关闭后，当前分享链接将无法再加入行程。继续吗？')) return
-                const res = await authFetch(`${API}/trips/${tripId}/share`, { method: 'DELETE' })
-                if (res.ok) {
-                  setShortCode(null)
-                  setOpen(false)
-                  notify('分享已关闭', 'success')
-                } else {
-                  notify('关闭分享失败', 'error')
-                }
-              }}>关闭分享</button>
-              {isAndroidApp() && <button className="trip-btn" disabled={!shortCode} onClick={() => shareAndroidLink('邀请加入协同行程', shareText)}>分享给朋友</button>}
-              <button className="trip-btn primary" disabled={!shortCode} onClick={async () => {
-                if (await copyText(shareText)) {
-                  setCopied(true)
-                  notify('微信邀请文案已复制', 'success')
-                  window.setTimeout(() => setCopied(false), 2000)
-                } else {
-                  notify('复制失败，请手动选择链接', 'error')
-                }
-              }}>
-                {copied ? '已复制 ✓' : '📋 复制微信文案'}
-              </button>
-            </div>
-            {shortCode && <div className="trip-share-preview">{shareText}</div>}
-          </div>
-        </div>,
-        document.body,
-      )}
-    </>
-  )
+function ShareButton({ tripId, tripTitle, destination, username, days, stopCount, members }: {tripId:string;tripTitle:string;destination:string;username:string;days:number;stopCount:number;members:TripMember[]}) {
+  const [open,setOpen]=useState(false)
+  return <><button className="trip-btn" onClick={()=>setOpen(true)}>邀请同行</button>{open&&createPortal(
+    <div className="modal-mask share-mask" onClick={()=>setOpen(false)}>
+      <div className="modal trip-share-modal" role="dialog" aria-modal="true" aria-label="邀请同行" onClick={e=>e.stopPropagation()}>
+        <div className="modal-head"><strong>邀请同行</strong><button className="modal-close" aria-label="关闭邀请" onClick={()=>setOpen(false)}>✕</button></div>
+        <TripInvitationPanel tripId={tripId} title={tripTitle} destination={destination} days={days} stopCount={stopCount} members={members} username={username} isOwner />
+      </div>
+    </div>,document.body)}</>
 }
 
 const EXPENSE_CATS = ['餐饮', '交通', '门票', '住宿', '购物', '其他']

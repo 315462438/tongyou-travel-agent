@@ -207,3 +207,22 @@ html.native-android[data-android-appearance=dark] .auth-screen .auth-reveal { co
 html.native-android[data-android-appearance=dark] .auth-screen .brand-cn { color:#f0f2f7; }
 html.native-android[data-android-appearance=dark] .auth-screen .brand-number { color:#7ba9ff; }
 html.native-android[data-android-appearance=dark] .auth-screen .auth-tagline { color:#a0a9ba; }
+
+/* Direct manipulation and brief feedback, respecting the OS motion preference. */
+@media(prefers-reduced-motion:no-preference){
+ html.native-android button{transition:scale .16s cubic-bezier(.2,.8,.3,1),background-color .18s,color .18s}
+ html.native-android button:active:not(:disabled){scale:.96}
+ html.native-android .android-trip-sheet-mask{animation:android-mask-in .2s ease-out}
+ html.native-android .android-trip-sheet{animation:android-sheet-in .38s cubic-bezier(.18,.9,.25,1.05);transform-origin:50% 100%}
+ html.native-android .android-trip-sheet-mask.is-closing{animation:android-mask-out .18s ease-in both}
+ html.native-android .android-trip-sheet-mask.is-closing .android-trip-sheet{animation:android-sheet-out .18s ease-in both;pointer-events:none}
+ html.native-android .android-trip-timeline{animation:android-day-in .24s ease-out}
+ html.native-android .android-trip-days button{transition:background-color .2s,color .2s,scale .2s}
+ html.native-android .android-trip-days button[aria-selected=true]{animation:android-tab-settle .3s cubic-bezier(.2,1.4,.5,1)}
+}
+@keyframes android-mask-in{from{opacity:0}to{opacity:1}}
+@keyframes android-mask-out{to{opacity:0}}
+@keyframes android-sheet-in{from{opacity:0;transform:translateY(36px) scale(.98)}to{opacity:1;transform:none}}
+@keyframes android-sheet-out{to{opacity:0;transform:translateY(24px)}}
+@keyframes android-day-in{from{opacity:.35;transform:translateY(7px)}to{opacity:1;transform:none}}
+@keyframes android-tab-settle{from{scale:.94}to{scale:1}}

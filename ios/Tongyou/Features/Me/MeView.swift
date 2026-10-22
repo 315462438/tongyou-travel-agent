@@ -208,7 +208,7 @@ struct SkillsView: View {
                         Button("保存") {
                             busy = true
                             Task {
-                                do { onSaved(try await API.shared.post("skills", body: ["content": text], as: Skill.self)); dismiss() }
+                                do { onSaved(try await API.shared.post("skills", body: ["content": text], as: Skill.self)); Haptics.success(); dismiss() }
                                 catch { self.error = error.localizedDescription }
                                 busy = false
                             }

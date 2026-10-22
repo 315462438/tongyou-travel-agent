@@ -1,0 +1,41 @@
+{
+  "ios_version": "1.0.12 (13)",
+  "ios_ui_tests": {
+    "journey": 2,
+    "share": 3,
+    "failures": 0,
+    "dark_contrast_share_rerun": 3
+  },
+  "swift_summary_checks": 14,
+  "frontend_unit_tests": 104,
+  "android_unit_tests": 8,
+  "android_browser_cases": 3,
+  "trip_route_browser_cases": 7,
+  "ios_pixel_images": 6,
+  "ios_full_pdf_last_text_verified": true,
+  "ios_release_build": true,
+  "ios_signature_verified": true,
+  "ios_device_install": true,
+  "ios_device_launch": true,
+  "android_release_build": true,
+  "android_release_lint": true,
+  "android_device_tests": {
+    "passed": 19,
+    "failed": 0,
+    "environment": "dedicated emulator; software rendering after system restart"
+  },
+  "android_release_publish": "published and publicly verified after explicit user approval",
+  "android_release_version": "0.9.0 (14)",
+  "android_cover_install": "0.8.2 (13) to 0.9.0 (14), passed",
+  "android_cold_start": true,
+  "android_apk_sha256": "8cc107a63ea1ae4d866aadcc3c4b19dbb5aaff16d75df2f0b4194b5f1d75b4fc",
+  "android_public_download": {
+    "url": "https://17tongyou.com/downloads/android/0.9.0-14/17tongyou-android-0.9.0-14.apk",
+    "bytes": 2852150,
+    "sha256": "8cc107a63ea1ae4d866aadcc3c4b19dbb5aaff16d75df2f0b4194b5f1d75b4fc",
+    "https_download": "passed",
+    "range": "passed",
+    "web_entry": "passed",
+    "latest_feed": "passed"
+  }
+}

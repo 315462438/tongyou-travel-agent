@@ -1,6 +1,6 @@
 # 17同游 iOS（原生 SwiftUI）
 
-当前版本：1.0.11 (12)。行程卡片改为缩略图、地点、单一时间段与简短说明，默认面板 58%；记账卡片整块可点击；行程大地图 + 可拖动底部面板，景点可打开图文详情。主导航为旅行 / 记账 / 我的，右下角独立问 AI；支持草稿与会话收起恢复。默认联网开启、深度推理关闭，保留用户明确关闭联网的偏好。
+当前版本：1.0.12 (13)。攻略分享改为简版逐日计划单，可预览、保存相册和系统分享；长行程分多张，完整攻略可导出分页文字 PDF。同行邀请新增可轻拖回弹的行程卡、链接复制/系统分享/关闭、用户名邀请反馈，并适配深浅色与减少动态。行程大地图 + 可拖动底部面板、景点详情、紧凑时间摘要继续保留。主导航为旅行 / 记账 / 我的，右下角独立问 AI；支持草稿与会话收起恢复。默认联网开启、深度推理关闭，保留用户明确关闭联网的偏好。
 
 原生 iOS 26 App，直接调用线上接口 `https://17tongyou.com/travel/api`，界面全部用 SwiftUI + Liquid Glass（`glassEffect`、`.glass` 按钮、自定义三项玻璃底栏）。
 
@@ -43,4 +43,6 @@ swiftc Tongyou/Features/Trips/TripModels.swift tests/TripSummaryTests.swift -o /
 /tmp/tongyou-trip-summary-tests
 ```
 
-本轮 JourneyUITests 深浅主题各 2 项、时间摘要 7 项通过；1.0.11 (12) 实机 Release 编译、安装与启动成功。UI fixture 仅在 DEBUG 且显式测试参数下启用，不连接真实账号。景点图片与事实来自后端已鉴权详情接口；无图保留中性占位。最新 Web/Android 账户遮挡修复未改变 iOS 版本。
+2026-10-22：分享/邀请三项与 JourneyUITests 两项通过；最后的深色小字对比度修正后复跑分享三项通过。摘要解析 14 项、6 张实际 PNG 像素、完整 PDF 多页及末尾内容检查通过；1.0.12 (13) 实机 Release 编译、签名、覆盖安装与启动成功。UI fixture 仅在 DEBUG 且显式测试参数下启用，不连接真实账号。景点图片与事实来自后端已鉴权详情接口；无图保留中性占位。
+
+分享专项：`-only-testing:TongyouUITests/ShareUITests`；测试 App 的 Documents/share-qa 产物可用 `python3 scripts/verify-share-export.py <目录>` 检查。测试与发布详情见 `../docs/test_cases/双端简版分享与邀请动效-2026-10-22.md`。

@@ -121,7 +121,8 @@ public class HostInstrumentedTest {
             device.executeShellCommand("cmd uimode night yes");
             until("document.documentElement.dataset.androidAppearance==='dark'");
             assertEquals("\"厦门三天\"",js("document.querySelector('.unified-idea textarea').value"));
-            assertEquals("\"rgb(240, 242, 247)\"",js("getComputedStyle(document.querySelector('.unified-idea textarea')).color"));
+            // Theme palettes can use either paper-white token; assert readable light text, not one RGB triplet.
+            assertEquals("true",js("(()=>{const c=getComputedStyle(document.querySelector('.unified-idea textarea')).color.match(/\\d+/g).map(Number);return c.slice(0,3).every(v=>v>=200)})()"));
             device.waitForIdle();SystemClock.sleep(400);
             device.takeScreenshot(new File(activity.getExternalFilesDir(null),"android-home-dark.png"));
         } finally { device.executeShellCommand("cmd uimode night no"); }
@@ -229,6 +230,20 @@ public class HostInstrumentedTest {
         long deadline=SystemClock.elapsedRealtime()+5000;String saved="";
         while(SystemClock.elapsedRealtime()<deadline) {saved=device.executeShellCommand("cat /sdcard/Download/android-export.txt").trim();if(saved.equals("android export test"))break;SystemClock.sleep(100);}
         assertEquals("android export test",saved);
+    }
+    @Test public void pngPlanExportKeepsPixels() throws Exception {
+        js("(()=>{const c=document.createElement('canvas');c.width=1120;c.height=1600;const x=c.getContext('2d');x.fillStyle='white';x.fillRect(0,0,c.width,c.height);x.fillStyle='#172a42';x.font='48px sans-serif';x.fillText('17同游 · 旅行计划',70,120);x.fillText('09:00 森林公园',70,240);c.toBlob(b=>{const a=document.createElement('a');a.download='android-plan-pixels.png';a.href=URL.createObjectURL(b);a.click()},'image/png')})()");
+        assertTrue(device.wait(Until.hasObject(By.text("保存到手机")),10000));
+        File[] dirs=new File(activity.getCacheDir(),"exports").listFiles();assertNotNull(dirs);
+        File image=null;
+        for(File dir:dirs){File f=new File(dir,"android-plan-pixels.png");if(f.exists()){image=f;break;}}
+        assertNotNull(image);
+        android.graphics.Bitmap bitmap=android.graphics.BitmapFactory.decodeFile(image.getAbsolutePath());
+        assertNotNull(bitmap);assertEquals(1120,bitmap.getWidth());assertEquals(1600,bitmap.getHeight());
+        int ink=0;
+        for(int y=80;y<300;y+=2)for(int x=60;x<950;x+=2)if(android.graphics.Color.red(bitmap.getPixel(x,y))<160)ink++;
+        assertTrue("Export must contain actual text pixels",ink>100);bitmap.recycle();
+        device.findObject(By.text("取消")).click();
     }
     @Test public void filePickerAndExternalIframeIsolation() throws Exception {
         js("(()=>{const i=document.createElement('input');i.id='file-test';i.type='file';i.accept='image/*';i.onchange=async()=>window.uploadResult=await i.files[0].text();document.body.prepend(i);const b=document.createElement('button');b.innerText='上传测试';b.style='position:fixed;top:0;left:0;z-index:99999;height:60px';b.onclick=()=>i.click();document.body.append(b)})()");

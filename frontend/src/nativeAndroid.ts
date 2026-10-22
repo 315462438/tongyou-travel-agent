@@ -32,6 +32,8 @@ export function shareAndroidLink(title: string, url: string) {
   post({type: 'share', title, text: url})
   return true
 }
+// 安卓浏览器与 App 都降低毛玻璃半径（见 index.css --glass-k）；这是渲染开销问题，不只是 App 壳的问题。
+if (/Android/i.test(navigator.userAgent)) document.documentElement.classList.add('ua-android')
 function visible(element: Element) { return element.getClientRects().length > 0 && getComputedStyle(element).visibility !== 'hidden' }
 
 if (isAndroidApp()) {

@@ -5,6 +5,7 @@ import '@fontsource/space-grotesk/600.css'
 import '@fontsource/space-grotesk/700.css'
 import './index.css'
 import './nativeAndroid'
+import { installPressFeedback } from './pressFeedback'
 import App from './App.tsx'
 import { ToastProvider } from './components/Toast.tsx'
 
@@ -16,6 +17,8 @@ window.addEventListener('vite:preloadError', () => {
     window.location.reload()
   }
 })
+
+installPressFeedback()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

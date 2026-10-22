@@ -23,7 +23,7 @@
 .app.view-mobile .layout-switch button.active { display: none; }
 .app.view-mobile .topbar-context { min-width: 0; }
 .app.view-mobile .topbar-context strong { max-width: 100%; }
-.app.view-mobile .mobile-bottom-nav { left: 12px; right: 12px; bottom: max(10px, env(safe-area-inset-bottom)); min-height: 64px; padding: 5px; gap: 2px; border-radius: 34px; background: var(--x-glass); border: 1px solid rgba(255,255,255,.9); box-shadow: 0 10px 35px #23365220, inset 0 1px 0 #fff; -webkit-backdrop-filter: blur(24px) saturate(180%); backdrop-filter: blur(24px) saturate(180%); }
+.app.view-mobile .mobile-bottom-nav { left: 12px; right: 12px; bottom: max(10px, env(safe-area-inset-bottom)); min-height: 64px; padding: 5px; gap: 2px; border-radius: 34px; background: var(--x-glass); border: 1px solid rgba(255,255,255,.9); box-shadow: 0 10px 35px #23365220, inset 0 1px 0 #fff; -webkit-backdrop-filter: blur(calc(24px * var(--glass-k, 1))) saturate(180%); backdrop-filter: blur(calc(24px * var(--glass-k, 1))) saturate(180%); }
 .app.view-mobile .mobile-bottom-nav button { min-height: 52px; gap: 3px; border-radius: 28px; color: #475569; }
 .app.view-mobile .mobile-bottom-nav button small { font-size: 11px; line-height: 1.2; }
 .app.view-mobile .mobile-bottom-nav button.active { background: rgba(37,99,235,.10); color: #2563eb; }

@@ -288,9 +288,22 @@ public class MainActivity extends Activity {
                 case "message": toast(m.optString("text","请重试")); break;
                 case "print": ((PrintManager)getSystemService(PRINT_SERVICE)).print("17同游旅行攻略",source.createPrintDocumentAdapter("17同游旅行攻略"),null); break;
                 case "download": receiveFile(m); break;
+                case "haptic": haptic(source,m.optString("kind")); break;
                 default: break;
             }
         } catch(Exception e) { toast("操作未完成，请重试"); }
+    }
+    // performHapticFeedback 自带遵循系统「触感反馈」开关；CONFIRM/REJECT 是 API 30 才有的语义常量。
+    private void haptic(WebView view,String kind) {
+        boolean modern=Build.VERSION.SDK_INT>=Build.VERSION_CODES.R;
+        int type;
+        switch(kind) {
+            case "confirm": type=modern?HapticFeedbackConstants.CONFIRM:HapticFeedbackConstants.VIRTUAL_KEY; break;
+            case "reject": type=modern?HapticFeedbackConstants.REJECT:HapticFeedbackConstants.LONG_PRESS; break;
+            case "tick": type=HapticFeedbackConstants.CLOCK_TICK; break;
+            default: return;
+        }
+        view.performHapticFeedback(type);
     }
     private void receiveFile(JSONObject message) {
         if(exporting) { toast("请先完成上一个文件的保存或分享"); return; }

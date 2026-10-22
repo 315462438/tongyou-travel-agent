@@ -7,6 +7,8 @@ import './AndroidHome.css'
 import './AndroidModules.css'
 import './JourneyShell.css'
 import TravelHome from './TravelHome'
+import GuideSharePreview from '../components/GuideSharePreview'
+import { parseShareSummary } from '../shareSummary'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { BrandIcon } from '../components/Brand'
@@ -4125,20 +4127,10 @@ function PosterView({ poster }: { poster: PosterData }) {
 // memo（2026-08-13 丝滑改造）：props 只有 content，引用相等即跳过 react-markdown
 // 重解析——轮询增量合并（mergeMessages）保证未变化消息的 content 引用不变。
 const GuideBody = memo(function GuideBody({ content }: { content: string }) {
-  const ref = useRef<HTMLDivElement>(null)
+  const [sharing, setSharing] = useState(false)
+  const summary = useMemo(() => parseShareSummary(content), [content])
   const isGuide = content.includes('##') || content.length > 200
   const headings = extractGuideHeadings(content)
-
-  const exportImage = async () => {
-    if (!ref.current) return
-    // 图片经同源代理加载，useCORS 让 html2canvas 能画进 canvas（否则跨域污染导致导出失败）
-    const { default: html2canvas } = await import('html2canvas')
-    const canvas = await html2canvas(ref.current, { backgroundColor: '#ffffff', scale: 2, useCORS: true })
-    const link = document.createElement('a')
-    link.download = '旅行攻略.png'
-    link.href = canvas.toDataURL('image/png')
-    link.click()
-  }
 
   return (
     <div className="guide-body">
@@ -4156,7 +4148,7 @@ const GuideBody = memo(function GuideBody({ content }: { content: string }) {
           </nav>
         </details>
       )}
-      <div ref={ref} className="md guide-markdown">
+      <div className="md guide-markdown">
         <ReactMarkdown
           // singleTilde:false —— `¥400~600` 里两个 `~` 会互相配成删除线吞掉中间文字（走查 P0-3）
           remarkPlugins={[[remarkGfm, { singleTilde: false }]]}
@@ -4176,10 +4168,11 @@ const GuideBody = memo(function GuideBody({ content }: { content: string }) {
         >{prepareMarkdown(content)}</ReactMarkdown>
       </div>
       {isGuide && (
-        <button className="export-btn guide-export" onClick={exportImage}>
+        <button className="export-btn guide-export" onClick={() => setSharing(true)}>
           ↧ 导出长图
         </button>
       )}
+      {sharing && <GuideSharePreview summary={summary} fullText={content} onClose={() => setSharing(false)} />}
     </div>
   )
 })

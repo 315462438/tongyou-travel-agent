@@ -1,0 +1,30 @@
+[
+  {
+    "name": "android-small",
+    "passed": true
+  },
+  {
+    "name": "android-dark",
+    "passed": true
+  },
+  {
+    "name": "web-mobile",
+    "passed": true
+  },
+  {
+    "name": "desktop",
+    "passed": true
+  },
+  {
+    "name": "desktop-dark",
+    "passed": true
+  },
+  {
+    "name": "map-failure",
+    "passed": true
+  },
+  {
+    "name": "landscape",
+    "passed": true
+  }
+]

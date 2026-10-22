@@ -100,6 +100,7 @@ struct StopEditor: View {
                 } else {
                     _ = try await API.shared.request("POST", "trips/\(tripID)/stops", body: body_)
                 }
+                Haptics.success()
                 onDone()
                 dismiss()
             } catch { self.error = error.localizedDescription }
@@ -112,6 +113,7 @@ struct StopEditor: View {
         Task {
             do {
                 _ = try await API.shared.request("DELETE", "trips/\(tripID)/stops/\(stop.id)")
+                Haptics.success()
                 onDone()
                 dismiss()
             } catch { self.error = error.localizedDescription }
@@ -175,6 +177,7 @@ struct TripSettingsSheet: View {
         Task {
             do {
                 _ = try await API.shared.request("PATCH", "trips/\(trip.id)", body: body)
+                Haptics.success()
                 onDone()
                 dismiss()
             } catch { self.error = error.localizedDescription }
@@ -211,6 +214,7 @@ struct ReorderSheet: View {
                         Task {
                             do {
                                 _ = try await API.shared.request("POST", "trips/\(tripID)/stops/reorder", body: ["day": day, "ordered_ids": stops.map(\.id)])
+                                Haptics.success()
                                 onDone()
                                 dismiss()
                             } catch { self.error = error.localizedDescription }
@@ -218,56 +222,6 @@ struct ReorderSheet: View {
                     }
                 }
             }
-        }
-    }
-}
-
-struct MembersSheet: View {
-    let trip: TripDetail
-    let isOwner: Bool
-    let onDone: () -> Void
-    @Environment(\.dismiss) private var dismiss
-    @State private var username = ""
-    @State private var message: String?
-
-    var body: some View {
-        NavigationStack {
-            List {
-                Section("同行的人") {
-                    ForEach(trip.members ?? [], id: \.self) { member in
-                        HStack {
-                            Avatar(user: UserCard(username: member.username), size: 32)
-                            Text(member.username)
-                            Spacer()
-                            Text(member.role == "owner" ? "创建者" : member.role == "pending" ? "待接受" : "可编辑").font(.caption).foregroundStyle(.secondary)
-                            if member.online == true { Circle().fill(.green).frame(width: 8, height: 8) }
-                        }
-                    }
-                }
-                if isOwner {
-                    Section {
-                        TextField("对方的用户名", text: $username).textInputAutocapitalization(.never).autocorrectionDisabled()
-                        Button("发送邀请") { invite() }.disabled(username.trimmingCharacters(in: .whitespaces).isEmpty)
-                    } header: { Text("邀请同行") } footer: { Text("对方接受后就能一起编辑这个行程。") }
-                }
-                if let message { Text(message).font(.footnote).foregroundStyle(.secondary) }
-            }
-            .scrollContentBackground(.hidden)
-            .screenBackground()
-            .navigationTitle("成员")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
-        }
-    }
-
-    private func invite() {
-        Task {
-            do {
-                _ = try await API.shared.request("POST", "trips/\(trip.id)/invite", body: ["username": username.trimmingCharacters(in: .whitespaces)])
-                message = "已邀请 \(username)"
-                username = ""
-                onDone()
-            } catch { message = error.localizedDescription }
         }
     }
 }
@@ -524,6 +478,7 @@ struct ExpenseEditor: View {
                     "amount": value, "title": title.isEmpty ? category : title, "category": category,
                     "payer": payer, "participant_usernames": Array(participants), "spent_at": "",
                 ])
+                Haptics.success()
                 onDone()
                 dismiss()
             } catch { self.error = error.localizedDescription }

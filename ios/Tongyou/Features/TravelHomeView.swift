@@ -1,14 +1,5 @@
 import SwiftUI
 
-struct TravelPressStyle: ButtonStyle {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label.contentShape(Rectangle()).scaleEffect(configuration.isPressed && !reduceMotion ? 0.97 : 1)
-            .opacity(configuration.isPressed ? 0.85 : 1)
-            .animation(reduceMotion ? nil : .spring(response: 0.25, dampingFraction: 0.7), value: configuration.isPressed)
-    }
-}
-
 struct HomeView: View {
     @Environment(AppSession.self) private var session
     @Environment(AppRouter.self) private var router
@@ -121,8 +112,9 @@ struct HomeView: View {
         do {
             struct Created: Decodable { var id: String }
             let result = try await API.shared.post("trips", body: ["title": title, "days": 2], as: Created.self)
+            Haptics.success()
             creating = false; title = ""; await load(); path.append(TripRef(id: result.id))
-        } catch { self.error = error.localizedDescription }
+        } catch { Haptics.error(); self.error = error.localizedDescription }
     }
     private func load() async {
         do { trips = try await API.shared.get("trips", as: [TripSummary].self); error = nil }

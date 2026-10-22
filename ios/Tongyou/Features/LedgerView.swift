@@ -84,7 +84,7 @@ struct LedgerView: View {
                                 Text(book.trip.map { "关联行程：\($0.title)" } ?? "独立账本").font(.caption).foregroundStyle(.secondary)
                                 Text("\(book.count) 笔支出 · \(ledgerRoleName(book.role))").font(.caption).foregroundStyle(.secondary)
                             }.padding(18).frame(maxWidth: .infinity, alignment: .leading).glassCard(cornerRadius: 22).contentShape(Rectangle())
-                        }.buttonStyle(.plain)
+                        }.buttonStyle(TravelPressStyle())
                     }
                 }.padding(16)
             }
@@ -234,7 +234,7 @@ private struct LedgerDetailView: View {
                                         Text(entry.category).font(.caption).foregroundStyle(.secondary)
                                         if !entry.note.isEmpty { Text(entry.note).font(.subheadline).foregroundStyle(.secondary) }
                                     }.frame(maxWidth: .infinity, alignment: .leading)
-                                }.buttonStyle(.plain).disabled(!canEdit).accessibilityLabel(canEdit ? "编辑账单 \(entry.title)" : entry.title)
+                                }.buttonStyle(TravelPressStyle()).disabled(!canEdit).accessibilityLabel(canEdit ? "编辑账单 \(entry.title)" : entry.title)
                                 if canEdit { Button { deleting = entry } label: { Image(systemName: "trash").frame(width: 44, height: 44) }
                                     .tint(.red).accessibilityLabel("删除账单 \(entry.title)") }
                             }.padding(16).glassCard(cornerRadius: 18)
@@ -355,7 +355,7 @@ private struct LedgerBookEditor: View {
             defer { busy = false }
             do {
                 _ = try await API.shared.request(book == nil ? "POST" : "PATCH", "ledger" + (book.map { "/\($0.id)" } ?? ""), body: ["title": title, "trip_id": tripID.isEmpty ? NSNull() : tripID] as [String: Any])
-                onSaved(); dismiss()
+                Haptics.success(); onSaved(); dismiss()
             } catch { self.error = error.localizedDescription }
         }
     }
@@ -413,7 +413,7 @@ private struct LedgerEntryEditor: View {
             defer { busy = false }
             do {
                 _ = try await API.shared.request(entry == nil ? "POST" : "PATCH", "ledger/\(bookID)/entries" + (entry.map { "/\($0.id)" } ?? ""), body: ["id": requestID, "title": title, "amount": clean, "currency": currency, "category": category, "spent_at": formatter.string(from: date), "note": note, "version": entry?.version as Any? ?? NSNull()] as [String: Any])
-                onSaved(); dismiss()
+                Haptics.success(); onSaved(); dismiss()
             } catch { self.error = error.localizedDescription }
         }
     }

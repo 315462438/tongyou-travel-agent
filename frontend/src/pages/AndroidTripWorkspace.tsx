@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { formatTripTimeRange, pickNavUrl } from '../interaction'
 import type { TripDetail, TripStop } from './Trips'
@@ -47,7 +47,7 @@ export function AndroidTripTimeline({tripId,stops, selectedId, locating, onOpen,
   stops: TripStop[]; selectedId: string | null; locating: boolean; onEdit: (stop: TripStop) => void; onMove: (stop: TripStop, direction: -1 | 1) => void;
   onDelete: (stop: TripStop) => void; onMap: (stop: TripStop) => void; onAdd: () => void; stopRef: (id: string, el: HTMLDivElement | null) => void;
 }) {
-  return <section className="android-trip-timeline" aria-label="当天地点安排">
+  return <section key={stops[0]?.day ?? 0} className="android-trip-timeline" aria-label="当天地点安排">
     {!stops.length && <div className="android-trip-empty"><strong>这一天还没有安排</strong><p>添加一个地点，或者让 AI 帮你规划。</p></div>}
     {stops.map((stop,i)=><div className={`android-trip-stop${selectedId === stop.id ? ' selected' : ''}`} data-stop-id={stop.id} key={stop.id} ref={el=>stopRef(stop.id,el)}>
       <article>
@@ -82,14 +82,22 @@ export function AndroidTripTimeline({tripId,stops, selectedId, locating, onOpen,
 
 export function AndroidTripSheet({title,onClose,children}:{title:string;onClose:()=>void;children:ReactNode}) {
   const panel=useRef<HTMLElement>(null)
+  const [closing,setClosing]=useState(false)
+  const timer=useRef<ReturnType<typeof setTimeout>|null>(null)
   const close=useRef(onClose);close.current=onClose
+  const dismiss=()=>{
+    if(timer.current)return
+    if(matchMedia('(prefers-reduced-motion: reduce)').matches){close.current();return}
+    setClosing(true);timer.current=setTimeout(()=>close.current(),180)
+  }
+  useEffect(()=>()=>{if(timer.current)clearTimeout(timer.current)},[])
   useEffect(()=>{
     const previous=document.activeElement as HTMLElement|null
     panel.current?.querySelector<HTMLButtonElement>('button')?.focus()
     const key=(e:KeyboardEvent)=>{
       const top=[...document.querySelectorAll('[role=dialog],.modal-mask')].filter(el=>el.getClientRects().length).at(-1)
       if(top && top!==panel.current && !panel.current?.contains(top)) return
-      if(e.key==='Escape'){e.stopPropagation();close.current()}if(e.key==='Tab'){
+      if(e.key==='Escape'){e.stopPropagation();dismiss()}if(e.key==='Tab'){
       const all=[...panel.current!.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),summary,a[href]')].filter(x=>x.getClientRects().length)
       if(!all.length)return
       if(e.shiftKey&&document.activeElement===all[0]){e.preventDefault();all.at(-1)?.focus()}
@@ -97,6 +105,6 @@ export function AndroidTripSheet({title,onClose,children}:{title:string;onClose:
     }}
     document.addEventListener('keydown',key,true)
     return()=>{document.removeEventListener('keydown',key,true);previous?.focus({preventScroll:true})}
-  },[])
-  return createPortal(<div className="android-trip-sheet-mask" onClick={onClose}><section ref={panel} className="android-trip-sheet" role="dialog" aria-modal="true" aria-label={title} onClick={e=>e.stopPropagation()}><header><h2>{title}</h2><button onClick={onClose} aria-label="关闭行程操作">完成</button></header>{children}</section></div>,document.body)
+  },[title])
+  return createPortal(<div className={`android-trip-sheet-mask${closing?' is-closing':''}`} onClick={dismiss}><section key={title} ref={panel} className="android-trip-sheet" role="dialog" aria-modal="true" aria-label={title} onClick={e=>e.stopPropagation()}><header><h2>{title}</h2><button disabled={closing} onClick={dismiss} aria-label="关闭行程操作">完成</button></header>{children}</section></div>,document.body)
 }

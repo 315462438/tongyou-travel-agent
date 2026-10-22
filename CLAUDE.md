@@ -440,6 +440,14 @@ React Bits `Aurora`（低透明、pointer-events none、低动态偏好不挂载
 好友页，接力通知直达对应目的地；未读数每 30 秒及窗口聚焦时刷新。坑见
 `docs/pitfalls/事件通知必须与业务同事务且按事件去重.md`。
 
+**Phase 114 — 三端按钮交互反馈**：网页+安卓（WebView）由 `frontend/src/pressFeedback.ts` 文档级委托统一
+提供按下形变（`data-pressed` + 独立 `scale` 属性，**不覆盖已有 transform**，`:where` 零特异性）+ 波纹
+（画在 body 上与按钮重合的 fixed 容器里，**不往按钮内插节点、不改 position/overflow**）；安卓 App 经
+`TongyouNative` 发 `{type:'haptic'}`，只给切换类控件 tick + Toast success/error 的确认/拒绝（普通按钮不震）。
+iOS `TravelPressStyle`/`Haptics` 移入 `Design/Glass.swift`，所有 `.plain` 行/卡片改用它，底栏选中实心图标+bounce+
+selection 触感，保存点 `Haptics.success()`。reduced-motion 全部降级。计划
+`docs/task_plans/三端按钮交互反馈-2026-10-22.md`，用例 `docs/test_cases/三端按钮交互反馈-验收用例.md`。
+
 **Phase 113 — 切换 DeepSeek V4.1 + 视觉切片按像素预算重校准**（读 `deepseek-harness` 上游
 09-09~09-10 后的改造）：① 2026-09-10 V4.1 Flash 发布（正式名 `deepseek-flash`，原生多模态），
 **规划/抽取/分类/视觉全部改用 `deepseek-flash`**——开放平台公告 V4.1 Flash 全面超过 V4 Pro，且

@@ -19,15 +19,15 @@
 .ledger-header {
   background: rgba(255, 255, 255, .6);
   border-bottom-color: var(--x-glass-line);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(calc(20px * var(--glass-k, 1))) saturate(180%);
+  backdrop-filter: blur(calc(20px * var(--glass-k, 1))) saturate(180%);
 }
 .ledger-total, .ledger-rate, .ledger-categories, .ledger-entry, .ledger-modal, .ledger-more-menu {
   background: var(--x-glass);
   border-color: var(--x-glass-line);
   box-shadow: var(--x-glass-inner), var(--x-glass-shadow);
-  -webkit-backdrop-filter: blur(22px) saturate(180%);
-  backdrop-filter: blur(22px) saturate(180%);
+  -webkit-backdrop-filter: blur(calc(22px * var(--glass-k, 1))) saturate(180%);
+  backdrop-filter: blur(calc(22px * var(--glass-k, 1))) saturate(180%);
 }
 .ledger-book { background: var(--x-glass); }
 .ledger-open-app { display: grid; gap: 8px; margin: 16px 0; }

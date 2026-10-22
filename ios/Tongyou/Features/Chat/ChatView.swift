@@ -249,7 +249,7 @@ private struct AssistantRow: View {
                     }
                     .padding(14).glassCard(cornerRadius: 18, interactive: true)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(TravelPressStyle())
                 .disabled(store.running)
             }
             Text("都不合适？直接说个地名，或者让我来定。").font(.footnote).foregroundStyle(.secondary)

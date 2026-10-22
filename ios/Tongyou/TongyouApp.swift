@@ -20,6 +20,18 @@ struct RootView: View {
     @Environment(AppRouter.self) private var router
 
     var body: some View {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--share-export-test") {
+            ShareExportTestView()
+                .preferredColorScheme(ProcessInfo.processInfo.arguments.contains("--share-dark") ? .dark : .light)
+        }
+        else { normalBody }
+        #else
+        normalBody
+        #endif
+    }
+
+    @ViewBuilder private var normalBody: some View {
         @Bindable var router = router
         Group {
             switch session.state {
@@ -116,12 +128,19 @@ struct JourneyDock: View {
             .accessibilityIdentifier("openAI")
         }
         .padding(.horizontal, 14).padding(.bottom, 4)
+        .sensoryFeedback(.selection, trigger: router.tab)
+        .sensoryFeedback(.impact(weight: .light), trigger: router.aiOpen) { _, open in open }
     }
     private func item(_ title: String, icon: String, tab: AppRouter.TabID) -> some View {
         Button {
             withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85)) { router.tab = tab }
         } label: {
-            VStack(spacing: 3) { Image(systemName: icon).font(.system(size: 21)); Text(title).font(.caption2) }
+            VStack(spacing: 3) {
+                Image(systemName: router.tab == tab ? icon + ".fill" : icon).font(.system(size: 21))
+                    .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
+                    .symbolEffect(.bounce, options: .speed(1.4), value: reduceMotion ? false : router.tab == tab)
+                Text(title).font(.caption2)
+            }
                 .frame(maxWidth: .infinity).frame(height: 50).contentShape(Capsule())
                 .foregroundStyle(router.tab == tab ? Palette.sky : .secondary)
                 .background {

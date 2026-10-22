@@ -153,7 +153,7 @@ struct LedgerJoinEditor: View {
         busy = true
         Task {
             defer { busy = false }
-            do { let result = try await API.shared.post("ledger/join", body: ["token": token], as: Joined.self); onJoined(result.id); dismiss() }
+            do { let result = try await API.shared.post("ledger/join", body: ["token": token], as: Joined.self); Haptics.success(); onJoined(result.id); dismiss() }
             catch { self.error = error.localizedDescription }
         }
     }

@@ -23,7 +23,7 @@ struct TripsView: View {
                     ForEach(trips) { trip in
                         HStack(spacing: 6) {
                             NavigationLink(value: TripRef(id: trip.id)) { TripRow(trip: trip) }
-                                .buttonStyle(.plain)
+                                .buttonStyle(TravelPressStyle())
                             Button { removal = trip } label: {
                                 Image(systemName: trip.role == "owner" ? "trash" : "rectangle.portrait.and.arrow.right")
                                     .frame(width: 44, height: 44)
@@ -393,7 +393,7 @@ struct TripDetailView: View {
                                 Text(stop.name).font(.system(size: 16, weight: .semibold)).foregroundStyle(.primary).multilineTextAlignment(.leading).lineLimit(2)
                                 Spacer(minLength: 0)
                             }.contentShape(.rect)
-                        }.buttonStyle(.plain).accessibilityIdentifier("tripStop_\(stop.id)")
+                        }.buttonStyle(TravelPressStyle()).accessibilityIdentifier("tripStop_\(stop.id)")
                         Menu {
                             Button("在地图上看", systemImage: "map") { selectedStop = stop.id }
                             if let url = stop.navigationURL { Button("导航", systemImage: "location.north") { openURL(url) } }
@@ -405,7 +405,7 @@ struct TripDetailView: View {
                             Text(stop.compactTimeRange).font(.system(size: 12, weight: .semibold)).monospacedDigit()
                             Spacer()
                             Button { editing = stop } label: { Image(systemName: "pencil").font(.system(size: 15)).foregroundStyle(.secondary).frame(width: 38, height: 34) }
-                                .buttonStyle(.plain).accessibilityLabel("编辑\(stop.name)")
+                                .buttonStyle(TravelPressStyle()).accessibilityLabel("编辑\(stop.name)")
                         }
                         if let note = stop.note, !note.isEmpty { Text(note).font(.system(size: 13)).foregroundStyle(.secondary).lineLimit(2) }
                         if let price = stop.ticketPrice { Text("参考 ¥\(Int(price))").font(.caption2).foregroundStyle(.secondary) }

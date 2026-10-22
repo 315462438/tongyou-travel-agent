@@ -1,0 +1,42 @@
+{
+  "passed": 6,
+  "images": [
+    {
+      "file": "short-0.png",
+      "width": 1120,
+      "height": 1598,
+      "ink_fraction": 0.0333
+    },
+    {
+      "file": "long-0.png",
+      "width": 1120,
+      "height": 1766,
+      "ink_fraction": 0.025
+    },
+    {
+      "file": "long-1.png",
+      "width": 1120,
+      "height": 1840,
+      "ink_fraction": 0.0252
+    },
+    {
+      "file": "long-2.png",
+      "width": 1120,
+      "height": 1766,
+      "ink_fraction": 0.0259
+    },
+    {
+      "file": "long-3.png",
+      "width": 1120,
+      "height": 1840,
+      "ink_fraction": 0.0251
+    },
+    {
+      "file": "long-4.png",
+      "width": 1120,
+      "height": 1280,
+      "ink_fraction": 0.0199
+    }
+  ],
+  "pdf": true
+}

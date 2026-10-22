@@ -26,7 +26,7 @@ struct PosterCard: View {
             .clipShape(.rect(cornerRadius: 24))
             .glassCard(cornerRadius: 24, interactive: true)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(TravelPressStyle())
     }
 }
 

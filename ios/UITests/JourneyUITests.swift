@@ -85,3 +85,49 @@ final class JourneyUITests: XCTestCase {
     }
 
 }
+
+final class ShareUITests: XCTestCase {
+    private func launch(extra: [String] = []) -> XCUIApplication {
+        continueAfterFailure = false
+        let app = XCUIApplication(); app.launchArguments = ["--journey-ui-test", "--share-export-test"] + extra; app.launch()
+        XCTAssertTrue(app.staticTexts["导出校验通过"].waitForExistence(timeout: 30), app.debugDescription)
+        return app
+    }
+    func testRenderAndPreview() {
+        let app = launch()
+        app.buttons["预览简版"].tap()
+        XCTAssertTrue(app.navigationBars["分享计划单"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["分享图片"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.images.containing(NSPredicate(format: "label CONTAINS %@", "合肥情侣自然风光2日游")).firstMatch.waitForExistence(timeout: 5))
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "share-plan-preview"; shot.lifetime = .keepAlways; add(shot)
+        app.buttons["closeGuidePreview"].tap()
+        XCTAssertTrue(app.buttons["预览简版"].exists)
+    }
+    func testInviteSuccessAndFailure() {
+        let app = launch(); app.buttons["邀请页"].tap()
+        XCTAssertTrue(app.staticTexts["好风景，想和你一起。"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["copyTripInvite"].exists)
+        let field = app.textFields["tripInviteUsername"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5)); field.tap(); field.typeText("missing")
+        app.buttons["发送邀请"].tap()
+        XCTAssertTrue(app.staticTexts["tripInviteError"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(field.value as? String, "missing")
+        field.tap(); field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 7) + "friend")
+        app.buttons["发送邀请"].tap()
+        XCTAssertTrue(app.staticTexts["tripInviteSuccess"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse((field.value as? String) == "friend")
+        app.swipeDown()
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "invitation-panel"; shot.lifetime = .keepAlways; add(shot)
+        app.buttons["closeTripMembers"].tap()
+        XCTAssertTrue(app.buttons["邀请页"].exists)
+    }
+    func testDarkReducedMotion() {
+        let app = launch(extra: ["--share-dark", "--share-reduce-motion"])
+        app.buttons["邀请页"].tap()
+        XCTAssertTrue(app.buttons["copyTripInvite"].waitForExistence(timeout: 5))
+        let invite = XCTAttachment(screenshot: app.screenshot()); invite.name = "invitation-dark-reduced"; invite.lifetime = .keepAlways; add(invite)
+        app.buttons["closeTripMembers"].tap(); app.buttons["预览简版"].tap()
+        XCTAssertTrue(app.buttons["分享图片"].waitForExistence(timeout: 5))
+        let preview = XCTAttachment(screenshot: app.screenshot()); preview.name = "share-preview-dark"; preview.lifetime = .keepAlways; add(preview)
+    }
+}

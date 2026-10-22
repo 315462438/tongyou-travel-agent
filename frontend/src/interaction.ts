@@ -584,3 +584,22 @@ export function extractClipboardImages(
   }
   return out.slice(0, Math.max(0, remaining))
 }
+
+type LiveMember = { username: string; role: string; online: boolean; editing_day: number | null }
+/**
+ * 行程轮询没有内容变更时只同步 AI 状态与成员在线情况。两者都没变就**原样返回 cur**，
+ * React 据此跳过整块行程板的重渲染——否则每 2.5 秒一次全量重算，滑动中会周期性掉帧。
+ */
+export function mergeTripPresence<T extends { ai_status: unknown; members: LiveMember[] }>(cur: T, next: Pick<T, 'ai_status' | 'members'>): T {
+  const same = cur.ai_status === next.ai_status && cur.members.length === next.members.length
+    && cur.members.every((m, i) => {
+      const n = next.members[i]
+      return m.username === n.username && m.role === n.role && m.online === n.online && m.editing_day === n.editing_day
+    })
+  return same ? cur : { ...cur, ai_status: next.ai_status, members: next.members }
+}
+
+/** 群聊轮询结果与当前列表逐条相同（id + 内容）时返回 true，调用方据此保留原数组引用。 */
+export function sameChatMessages(a: { id: string; content: string }[], b: { id: string; content: string }[]) {
+  return a.length === b.length && a.every((m, i) => m.id === b[i].id && m.content === b[i].content)
+}

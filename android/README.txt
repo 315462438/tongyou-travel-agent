@@ -1,8 +1,12 @@
 17同游 Android 好友测试版
 
-当前发布：0.8.2 (13)，修复“我的”页面工具弹层遮挡；旅行 / 记账 / 我的三入口、独立问 AI；协同行程大地图 + 58% 可拖动行程面板、缩略图与紧凑时间摘要、景点图文详情，保留首页字号、开场动画、系统深浅外观及启动检查更新。
-下载：https://17tongyou.com/downloads/android/0.8.2-13/17tongyou-android-0.8.2-13.apk
+当前发布：0.9.0 (14)，新增简版逐日分享计划单、同行邀请卡与轻量交互动效；旅行 / 记账 / 我的三入口、独立问 AI；协同行程大地图 + 58% 可拖动行程面板、缩略图与紧凑时间摘要、景点图文详情，保留首页字号、开场动画、系统深浅外观及启动检查更新。
+下载：https://17tongyou.com/downloads/android/0.9.0-14/17tongyou-android-0.9.0-14.apk
 直接覆盖安装，无需卸载旧版。0.1.0 (1) 历史产物与旧链接保留。
+
+2026-10-22 已发布版本：0.9.0 (14)。简版逐日计划单、分张预览与完整文字、同行邀请卡及按压/回弹/弹层/日期切换动效；尊重减少动态偏好。
+正式签名 APK：releases/0.9.0-14/17tongyou-android-0.9.0-14.apk。19 项原生测试、8 单测、lint/Release、104 前端单测、分享三组与行程七组通过，0.8.2→0.9.0 覆盖安装和冷启动通过。
+用户明确授权后，已上传官方公开下载目录并原子更新 latest 清单；HTTPS 下载、SHA256、Range 及更新清单核验全部通过。
 
 三端边界
 - Android：本目录；com.tongyou.travel；独立 versionName/versionCode 与签名。
@@ -65,15 +69,20 @@ App内更新（0.6.0起）
 - 更新清单无账号信息，不发送用户token；仅接受官方HTTPS精确版本化APK地址。
 - 0.5.0及以前没有此能力，必须先手动覆盖安装0.6.0一次；不能通过发布清单给旧包远程添加检查功能。
 - 发布新版：先递增versionCode并构建/测试/package-release，再执行（仓库根目录）：
-  backend/.venv/bin/python android/scripts/publish-release.py --release 0.8.2-13 --notes-file android/release-notes/0.8.2.txt
-  backend/.venv/bin/python android/scripts/verify-download.py --release 0.8.2-13 --latest
+  backend/.venv/bin/python android/scripts/publish-release.py --release 0.9.0-14 --notes-file android/release-notes/0.9.0.txt
+  backend/.venv/bin/python android/scripts/verify-download.py --release 0.9.0-14 --latest
 - 以后替换上述版本参数和更新说明。脚本先上传校验APK、再原子切换latest清单，旧下载URL继续保留；禁止降级和同versionCode替换不同包。
 - 紧急暂停提示可将服务端latest.json的enabled设为false（保留schema/platform/application_id）；已下载APK不受影响。不要将清单指向尚未上传或未经测试的版本。
 
-当前回归（2026-10-20 / 0.8.2）
+历史回归（2026-10-20 / 0.8.2）
 - 专用 API35 模拟器 18 项、Android 单元 8 项、lintRelease/assembleRelease、更新清单 5 项通过。
 - 共享前端 99 单测、主流程 6 组、账户工具 6 组通过；正式网页再验证六组账户工具。
 - 公告/用户管理等一次点击立即显示，关闭或系统返回仍停在我的；工具打开时账户背景 inert。
 - 新版 APK 的签名、包内快照、HTTPS 下载、Range、下载页与 latest 更新清单已校验。
 - 详情见 ../docs/test_cases/我的工具弹层被账户页遮挡-2026-10-20.md。
 - 当前主流程浏览器回归使用 frontend 端口 4185：npm run test:journey / test:trip-route / test:account。
+
+当前回归（2026-10-22 / 0.9.0）
+- 19 项原生设备测试、8 单元测试、lintRelease/assembleRelease 通过；104 前端单测、分享三组、行程七组通过。
+- 正式签名从 0.8.2 覆盖升级与冷启动通过。公开 APK/Range/SHA256/latest 通过；Web 与业务后端未部署。
+- 详细记录：../docs/test_cases/双端简版分享与邀请动效-2026-10-22.md。
