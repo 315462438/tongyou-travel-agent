@@ -8,3 +8,8 @@
 @media(max-width:600px){.guide-share-mask{padding:0;align-items:flex-end}.guide-share-dialog{max-height:calc(100dvh - 20px);border-radius:28px 28px 0 0}.guide-share-scroll{padding-inline:22px}}
 @media(prefers-color-scheme:dark){.guide-share-dialog{background:#171e2b;color:#edf2fa}.guide-share-dialog button{background:#283247;color:#eef3ff}.guide-share-dialog header>span,.guide-share-scroll>p{color:#aebbd0}.guide-share-dialog .guide-share-save{background:#dae6ff;color:#192638}}
 @media(prefers-reduced-motion:reduce){.guide-share-dialog{animation:none}.guide-share-dialog button{transition:none}.guide-share-dialog button:active:not(:disabled){transform:none}}
+.guide-share-dialog footer nav .guide-share-one{background:transparent;font-size:13px;text-decoration:underline;text-underline-offset:3px;padding-inline:8px}
+.guide-share-mode{display:flex;gap:6px;padding:4px;margin:0 0 12px;border-radius:999px;background:#1923340a}
+.guide-share-dialog .guide-share-mode button{flex:1;min-height:36px;border-radius:999px;font-size:13px;background:transparent;box-shadow:none}
+.guide-share-dialog .guide-share-mode button[aria-checked=true]{background:white;font-weight:600;box-shadow:0 2px 8px #1923341a}
+@media(prefers-color-scheme:dark){.guide-share-mode{background:#ffffff10}.guide-share-dialog .guide-share-mode button{background:transparent}.guide-share-dialog .guide-share-mode button[aria-checked=true]{background:#33405a}}

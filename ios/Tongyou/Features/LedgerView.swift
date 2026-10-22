@@ -213,6 +213,7 @@ private struct LedgerDetailView: View {
                             }.frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
                         }.font(.subheadline)
                     }.padding(16).frame(maxWidth: .infinity, alignment: .leading).glassCard(cornerRadius: 20)
+                    if canEdit { LedgerQuickEntry(bookID: bookID) { Task { await load() } } }
                     HStack {
                         Text("支出明细").font(.headline)
                         Spacer()
@@ -356,6 +357,131 @@ private struct LedgerBookEditor: View {
             do {
                 _ = try await API.shared.request(book == nil ? "POST" : "PATCH", "ledger" + (book.map { "/\($0.id)" } ?? ""), body: ["title": title, "trip_id": tripID.isEmpty ? NSNull() : tripID] as [String: Any])
                 Haptics.success(); onSaved(); dismiss()
+            } catch { self.error = error.localizedDescription }
+        }
+    }
+}
+
+private struct LedgerDraft: Decodable, Identifiable, Equatable {
+    var id: String
+    var title: String
+    var amount: String
+    var currency: String
+    var currencyGuessed: Bool
+    var category: String
+    var spentAt: String
+    var note: String
+}
+
+/// 一句话记账：AI 拆成草稿 → 预览里可改可删 → 点「确定」才一次入账（同一事务，按 id 幂等）。
+private struct LedgerQuickEntry: View {
+    let bookID: String
+    var onSaved: () -> Void
+    private struct Reply: Decodable { var drafts: [LedgerDraft]; var dropped: Int }
+    @State private var text = ""
+    @State private var drafts: [LedgerDraft]?
+    @State private var reading = false
+    @State private var saving = false
+    @State private var error: String?
+    @State private var notice: String?
+    @FocusState private var focused: Bool
+    private static let day: DateFormatter = { let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.calendar = Calendar(identifier: .gregorian); f.dateFormat = "yyyy-MM-dd"; return f }()
+    private func valid(_ amount: String) -> Bool {
+        amount.range(of: #"^\d{1,7}(\.\d{1,2})?$"#, options: .regularExpression) != nil && (Double(amount) ?? 0) > 0
+    }
+    private var invalid: LedgerDraft? { drafts?.first { !valid($0.amount) } }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 6) {
+                Image(systemName: "sparkles").foregroundStyle(Palette.sky)
+                Text("一句话记账").font(.headline)
+            }
+            Text("说今天花了什么，我来拆成账单，确认后才记上").font(.caption).foregroundStyle(.secondary)
+            if let drafts {
+                Text("「\(text.trimmingCharacters(in: .whitespacesAndNewlines))」→ \(drafts.count) 笔").font(.footnote).foregroundStyle(.secondary)
+                ForEach(Binding(get: { self.drafts ?? [] }, set: { self.drafts = $0 })) { $draft in
+                    draftRow($draft)
+                }
+                if drafts.isEmpty { Text("都移除了，可以返回重新说一句。").font(.footnote).foregroundStyle(.secondary) }
+                if let invalid { Text("「\(invalid.title)」的金额需要大于 0、最多两位小数。").font(.footnote).foregroundStyle(.red) }
+                HStack {
+                    Button("返回修改") { self.drafts = nil; notice = nil }.disabled(saving)
+                    Spacer()
+                    Button(saving ? "记账中…" : "确定，记上 \(drafts.count) 笔") { commit() }
+                        .buttonStyle(.glassProminent).disabled(drafts.isEmpty || invalid != nil || saving)
+                }
+            } else {
+                TextField("比如：午饭拉面 1200 日元，打车 2800，买药妆一万二", text: $text, axis: .vertical)
+                    .lineLimit(2...5).focused($focused).disabled(reading)
+                    .padding(10).background(Color(.tertiarySystemFill), in: .rect(cornerRadius: 12))
+                    .accessibilityLabel("一句话记账内容")
+                Button { read() } label: {
+                    HStack(spacing: 6) { if reading { ProgressView().controlSize(.small) }; Text(reading ? "识别中…" : "识别") }.frame(maxWidth: .infinity)
+                }.buttonStyle(.glassProminent).disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || reading)
+            }
+            if let error { Text(error).font(.footnote).foregroundStyle(.red) }
+            if let notice { Text(notice).font(.footnote).foregroundStyle(.secondary) }
+        }
+        .padding(16).frame(maxWidth: .infinity, alignment: .leading).glassCard(cornerRadius: 20)
+    }
+
+    private func draftRow(_ draft: Binding<LedgerDraft>) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                TextField("名称", text: draft.title).font(.headline)
+                Button { drafts?.removeAll { $0.id == draft.wrappedValue.id } } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
+                    .buttonStyle(.plain).accessibilityLabel("移除 \(draft.wrappedValue.title)").disabled(saving)
+            }
+            HStack(spacing: 8) {
+                TextField("金额", text: draft.amount).keyboardType(.decimalPad).monospacedDigit()
+                    .padding(.horizontal, 10).padding(.vertical, 7).background(Color(.tertiarySystemFill), in: .rect(cornerRadius: 10))
+                Picker("币种", selection: Binding(get: { draft.wrappedValue.currency }, set: { draft.wrappedValue.currency = $0; draft.wrappedValue.currencyGuessed = false })) {
+                    ForEach(ledgerCurrencies, id: \.self) { Text("\($0) · \(ledgerCurrencyNames[$0] ?? $0)").tag($0) }
+                }.pickerStyle(.menu).labelsHidden()
+                    .overlay { if draft.wrappedValue.currencyGuessed { RoundedRectangle(cornerRadius: 10).stroke(.orange, lineWidth: 1.5) } }
+            }
+            HStack(spacing: 8) {
+                Picker("分类", selection: draft.category) { ForEach(ledgerCategories, id: \.self) { Text($0).tag($0) } }.pickerStyle(.menu).labelsHidden()
+                DatePicker("日期", selection: Binding(get: { Self.day.date(from: draft.wrappedValue.spentAt) ?? Date() },
+                                                     set: { draft.wrappedValue.spentAt = Self.day.string(from: $0) }),
+                           in: ...Date(), displayedComponents: .date).labelsHidden()
+                Spacer(minLength: 0)
+            }
+            if draft.wrappedValue.currencyGuessed {
+                Text("币种是推测的，确认一下是不是\(ledgerCurrencyNames[draft.wrappedValue.currency] ?? draft.wrappedValue.currency)").font(.caption).foregroundStyle(.orange)
+            }
+        }
+        .padding(12).background(Color(.secondarySystemFill).opacity(0.5), in: .rect(cornerRadius: 14))
+    }
+
+    private func read() {
+        let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty, !reading else { return }
+        reading = true; error = nil; notice = nil; focused = false
+        Task {
+            defer { reading = false }
+            do {
+                let reply = try await API.shared.post("ledger/\(bookID)/ai-draft", body: ["text": value, "today": Self.day.string(from: Date())], as: Reply.self)
+                withAnimation(.snappy) { drafts = reply.drafts }
+                if reply.dropped > 0 { notice = "有 \(reply.dropped) 处没认出金额，没有列进来。" }
+            } catch { self.error = error.localizedDescription }
+        }
+    }
+
+    private func commit() {
+        guard let drafts, !drafts.isEmpty, invalid == nil, !saving else { return }
+        saving = true; error = nil
+        Task {
+            defer { saving = false }
+            do {
+                let entries: [[String: Any]] = drafts.map { ["id": $0.id, "title": $0.title, "amount": $0.amount, "currency": $0.currency,
+                                                             "category": $0.category, "spent_at": $0.spentAt, "note": $0.note] }
+                _ = try await API.shared.request("POST", "ledger/\(bookID)/entries/batch", body: ["entries": entries])
+                Haptics.success()
+                withAnimation(.snappy) { self.drafts = nil }
+                notice = "已记上 \(drafts.count) 笔。"; text = ""
+                onSaved()
             } catch { self.error = error.localizedDescription }
         }
     }

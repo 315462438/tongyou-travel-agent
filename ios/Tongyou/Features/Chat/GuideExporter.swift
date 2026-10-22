@@ -12,8 +12,8 @@ extension EnvironmentValues {
 enum GuideExporter {
     static let width: CGFloat = 390
 
-    static func longImages(title: String, markdown: String) -> [UIImage] {
-        GuideCardRenderer.images(.parse(title: title, markdown: markdown))
+    static func longImages(title: String, markdown: String, book: Bool = false) -> [UIImage] {
+        GuideCardRenderer.images(.parse(title: title, markdown: markdown), book: book)
     }
 
     /// A readable file name from the guide's first heading or the conversation title.

@@ -131,6 +131,7 @@ export default function Ledger({onClose, initialTrip, initialBookID}: {onClose: 
             </div></details>
           </div>
         </div>
+        {canEdit && <QuickEntry key={book.id} bookID={book.id} onSaved={() => void load()} />}
         <div className="ledger-actions ledger-toolbar"><h3>支出明细</h3><button onClick={() => setShowMembers(true)}>成员与分享</button><details className="ledger-more"><summary>更多</summary><div className="ledger-more-menu">{isOwner ? <><button onClick={e => { e.currentTarget.closest('details')?.removeAttribute('open'); setBookForm({id: book.id, title: book.title, trip: book.trip}) }}>编辑账本</button><button className="ledger-danger" onClick={e => { e.currentTarget.closest('details')?.removeAttribute('open'); setConfirm({title: '删除账本及全部账单？所有成员将失去访问权，此操作不可恢复。', path: `/${book.id}`, wholeBook: true}) }}>删除账本</button></> : <button onClick={e => { e.currentTarget.closest('details')?.removeAttribute('open'); setConfirm({title: '退出此账本？已有账单将保留，你将失去访问权限。', path: `/${book.id}/leave`, method: 'POST', wholeBook: true}) }}>退出账本</button>}</div></details></div>
         <div className="ledger-detail-grid"><section>
           {!book.entries?.length && <div className="ledger-empty">还没有账单，先记下今天的第一笔花费吧。</div>}
@@ -164,6 +165,68 @@ function BookEditor({initial, onClose, onSaved}: {initial: {id?: string; title: 
     {tripError && <p role="alert">{tripError}<button type="button" onClick={() => void loadTrips()}>重试加载行程</button></p>}{error && <p role="alert">{error}</p>}<div className="ledger-actions"><button type="button" disabled={busy} onClick={onClose}>取消</button><button className="ledger-primary" disabled={busy || !title.trim()}>{busy ? '保存中…' : '保存'}</button></div>
   </form></div>
 }
+type Draft = { id: string; title: string; amount: string; currency: string; currency_guessed: boolean; category: string; spent_at: string; note: string }
+
+/** 一句话记账：AI 拆成草稿 → 预览里可改可删 → 点「确定」才一次入账（同一事务，按 id 幂等）。 */
+function QuickEntry({bookID, onSaved}: {bookID: string; onSaved: () => void}) {
+  const [text, setText] = useState('')
+  const [drafts, setDrafts] = useState<Draft[] | null>(null)
+  const [phase, setPhase] = useState<'idle' | 'reading' | 'saving'>('idle')
+  const [error, setError] = useState(''), [notice, setNotice] = useState('')
+  const preview = useRef<HTMLDivElement>(null)
+  // 手机上草稿常落在首屏以下：出现时滚到能看见的位置。
+  useEffect(() => { if (drafts) preview.current?.scrollIntoView({block: 'nearest', behavior: 'smooth'}) }, [drafts === null])
+  const read = async () => {
+    if (!text.trim() || phase !== 'idle') return
+    setPhase('reading'); setError(''); setNotice('')
+    try {
+      const data = await request<{drafts: Draft[]; dropped: number}>(`/${bookID}/ai-draft`, 'POST', {text: text.trim(), today: today()})
+      setDrafts(data.drafts)
+      if (data.dropped) setNotice(`有 ${data.dropped} 处没认出金额，没有列进来。`)
+    } catch (e) { setError(e instanceof Error ? e.message : '没能识别，稍后再试') }
+    finally { setPhase('idle') }
+  }
+  const update = (id: string, patch: Partial<Draft>) => setDrafts(list => list && list.map(d => d.id === id ? {...d, ...patch} : d))
+  const invalid = drafts?.find(d => !/^\d{1,7}(\.\d{1,2})?$/.test(d.amount) || Number(d.amount) <= 0)
+  const commit = async () => {
+    if (!drafts?.length || invalid || phase !== 'idle') return
+    setPhase('saving'); setError('')
+    try {
+      await request(`/${bookID}/entries/batch`, 'POST', {entries: drafts.map(({currency_guessed: _, ...d}) => d)})
+      setNotice(`已记上 ${drafts.length} 笔。`); setDrafts(null); setText(''); onSaved()
+    } catch (e) { setError(e instanceof Error ? e.message : '保存失败，请重试') }
+    finally { setPhase('idle') }
+  }
+  return <section className="ledger-quick" aria-label="一句话记账">
+    <div className="ledger-quick-head"><b>✨ 一句话记账</b><small>说今天花了什么，我来拆成账单，确认后才记上</small></div>
+    {!drafts && <div className="ledger-quick-input">
+      <textarea rows={2} maxLength={500} value={text} disabled={phase !== 'idle'} aria-label="一句话记账内容"
+        placeholder="比如：午饭拉面 1200 日元，打车 2800，买药妆一万二"
+        onChange={e => setText(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void read() } }} />
+      <button className="ledger-primary" disabled={!text.trim() || phase !== 'idle'} onClick={() => void read()}>{phase === 'reading' ? '识别中…' : '识别'}</button>
+    </div>}
+    {drafts && <div className="ledger-drafts" ref={preview}>
+      <p className="ledger-quick-said">「{text.trim()}」→ {drafts.length} 笔，确认无误后点确定</p>
+      {drafts.map(d => <article key={d.id} className="ledger-draft" data-guessed={d.currency_guessed || undefined}>
+        <input aria-label="名称" maxLength={80} value={d.title} onChange={e => update(d.id, {title: e.target.value})} />
+        <input aria-label="金额" inputMode="decimal" value={d.amount} onChange={e => update(d.id, {amount: e.target.value})} />
+        <select aria-label="币种" value={d.currency} onChange={e => update(d.id, {currency: e.target.value, currency_guessed: false})}>{currencies.map(c => <option key={c} value={c}>{c} · {currencyNames[c]}</option>)}</select>
+        <select aria-label="分类" value={d.category} onChange={e => update(d.id, {category: e.target.value})}>{categories.map(c => <option key={c}>{c}</option>)}</select>
+        <input aria-label="日期" type="date" value={d.spent_at} onChange={e => update(d.id, {spent_at: e.target.value})} />
+        <button aria-label={`移除 ${d.title}`} className="ledger-draft-x" disabled={phase !== 'idle'} onClick={() => setDrafts(list => list && list.filter(x => x.id !== d.id))}>✕</button>
+        {d.currency_guessed && <small>币种是推测的，确认一下是不是 {currencyNames[d.currency] || d.currency}</small>}
+      </article>)}
+      {!drafts.length && <p className="ledger-empty">都移除了，可以返回重新说一句。</p>}
+      {invalid && <p role="alert">「{invalid.title}」的金额需要大于 0、最多两位小数。</p>}
+      <div className="ledger-actions"><button disabled={phase !== 'idle'} onClick={() => { setDrafts(null); setNotice('') }}>返回修改</button>
+        <button className="ledger-primary" disabled={!drafts.length || !!invalid || phase !== 'idle'} onClick={() => void commit()}>{phase === 'saving' ? '记账中…' : `确定，记上 ${drafts.length} 笔`}</button></div>
+    </div>}
+    {error && <p role="alert" className="ledger-quick-error">{error}</p>}
+    {notice && <p role="status" className="ledger-quick-notice">{notice}</p>}
+  </section>
+}
+
 function EntryEditor({bookID, defaultCurrency, entry, onClose, onSaved}: {bookID: string; defaultCurrency: string; entry?: Entry; onClose: () => void; onSaved: () => void}) {
   const [id] = useState(() => crypto.randomUUID())
   const [title, setTitle] = useState(entry?.title || ''), [amount, setAmount] = useState(entry ? (entry.amount_minor/100).toFixed(2) : '')

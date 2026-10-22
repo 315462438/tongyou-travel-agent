@@ -328,7 +328,7 @@ test('mobile reading and composer layouts remain single-column and thumb friendl
   assert.match(css, /\.view-mobile \.guide-outline nav\s*\{\s*grid-template-columns:\s*1fr/)
   assert.match(css, /\.view-mobile \.guide-table-wrap\s*\{[\s\S]*max-width:\s*calc\(100% \+ 6px\)/)
   assert.match(css, /\.view-mobile \.message-actions\s*\{[\s\S]*overflow-x:\s*auto/)
-  assert.match(css, /\.view-mobile \.composer\s*\{[\s\S]*grid-template-columns:\s*34px minmax\(0,\s*1fr\) 36px/)
+  assert.match(css, /\.view-mobile \.composer\s*\{[\s\S]*grid-template-columns:\s*auto auto minmax\(0,\s*1fr\) 36px/)
   assert.match(css, /\.mobile-bottom-nav button\s*\{[\s\S]*min-height:\s*48px/)
   assert.match(css, /\.trips-overlay\.mobile-layout \.trip-mobile-tabs\s*\{[\s\S]*display:\s*grid/)
 })

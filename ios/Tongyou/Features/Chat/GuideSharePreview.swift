@@ -10,18 +10,24 @@ struct GuideSharePreview: View {
     @State private var saved = false
     @State private var sharing = false
     @State private var error: String?
+    /// 默认整合成一张旅行手册；分页卡片留作备选（发朋友圈多图）。
+    @State private var book = true
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
-                    Text(images.count > 1 ? "共 \(images.count) 张，全部日期都在。可一次分享或保存。" : "一张轻便的计划单，带上就出发。")
+                    Picker("分享样式", selection: $book) {
+                        Text("旅行手册 · 1 张长图").tag(true)
+                        Text("分页卡片").tag(false)
+                    }.pickerStyle(.segmented)
+                    Text(book ? "全部日期整合在一张图里，发给朋友只有一张。" : images.count > 1 ? "共 \(images.count) 张，全部日期都在。可一次分享或保存。" : "一张轻便的计划单，带上就出发。")
                         .font(.subheadline).foregroundStyle(.secondary)
                     ForEach(images.indices, id: \.self) { index in
                         Image(uiImage: images[index]).resizable().scaledToFit()
                             .clipShape(.rect(cornerRadius: 24))
                             .shadow(color: .black.opacity(0.06), radius: 14, y: 6)
-                            .accessibilityLabel("\(title)，第 \(index + 1) 张，共 \(images.count) 张")
+                            .accessibilityLabel(book ? "\(title)，旅行手册" : "\(title)，第 \(index + 1) 张，共 \(images.count) 张")
                     }
                     Text("简版只保留行程安排，详细说明留在完整攻略里。")
                         .font(.footnote).foregroundStyle(.secondary)
@@ -38,11 +44,11 @@ struct GuideSharePreview: View {
                             .frame(maxWidth: .infinity).padding(.vertical, 9)
                     }.buttonStyle(.glass).disabled(images.isEmpty || saving)
                     Button { sharing = true } label: {
-                        Label("分享图片", systemImage: "square.and.arrow.up").frame(maxWidth: .infinity).padding(.vertical, 9)
+                        Label(book ? "分享手册" : "分享图片", systemImage: "square.and.arrow.up").frame(maxWidth: .infinity).padding(.vertical, 9)
                     }.buttonStyle(.glassProminent).disabled(images.isEmpty)
                 }.padding(.horizontal, 20).padding(.vertical, 12).background(.regularMaterial)
             }
-            .task { images = GuideExporter.longImages(title: title, markdown: markdown) }
+            .task(id: book) { saved = false; images = GuideExporter.longImages(title: title, markdown: markdown, book: book) }
             .sheet(isPresented: $sharing) { GuideActivitySheet(items: images) }
             .alert("暂时无法保存", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
                 Button("好") { error = nil }

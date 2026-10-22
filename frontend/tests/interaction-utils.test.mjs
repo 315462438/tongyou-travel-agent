@@ -550,3 +550,21 @@ test('prepareMarkdown drops parentheses wrapped around an image', async () => {
   assert.doesNotMatch(out, /^\s*[()（）]\s*$/m)
   assert.equal(prepareMarkdown('费用（约 30 元）'), '费用（约 30 元）')
 })
+
+test('desktop composer stays a single flex row (phone grid lives only in mobile scopes)', async () => {
+  const fs = await import('node:fs/promises')
+  const css = await fs.readFile(new URL('../src/index.css', import.meta.url), 'utf8')
+  const top = css.match(/\n\.composer \{([^}]*)\}/)
+  assert.ok(top, 'top-level .composer rule exists')
+  assert.match(top[1], /display: flex/)
+  assert.doesNotMatch(top[1], /grid-template-columns/)
+})
+
+test('phone composer grid gives every child its own cell (an unplaced one pushes the input into the 36px column)', async () => {
+  const fs = await import('node:fs/promises')
+  const css = await fs.readFile(new URL('../src/index.css', import.meta.url), 'utf8')
+  for (const child of ['composer-plus', 'composer-image', 'send-btn']) assert.match(css, new RegExp(`\\.view-mobile \\.${child} \\{ grid-column`), child)
+  assert.match(css, /\.view-mobile \.composer textarea \{\n  grid-column: 3/)
+  const mobile = css.slice(css.indexOf('Phase 43'))
+  assert.match(mobile, /\.composer-image \{ grid-column: 2; grid-row: 1; \}/)
+})

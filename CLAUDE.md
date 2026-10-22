@@ -466,6 +466,13 @@ iOS 配图 `scaledToFill` 会撑宽整列，必须 `Color.clear` 定框 + overla
 坑见 `docs/pitfalls/深色主题只换了字色没换底色-2026-10-22.md`。
 计划 `docs/task_plans/游游动作与问AI衔接动画-2026-10-22.md`。
 
+**Phase 116 — 记账页一句话记账**：账本详情页说一句「拉面 1200 日元，打车 2800」→ `POST /api/ledger/{id}/ai-draft`
+（`app/agent/ledger_draft.py`，**只出草稿不写库**）→ 预览里逐项可改可删 → 确认后 `POST /{id}/entries/batch` 一个事务入账、
+按客户端 id 幂等。模型只照抄金额（唯一转换：中文数字）+ 标「是否明说币种」+ 相对日期标记；**币种默认链（行程目的地 >
+账本最近常用 > CNY）、日期换算、分类兜底、金额校验全在服务端**。「¥/元」落在外币上时 `currency_guessed` 提醒用户看一眼。
+做成后端内部函数而非 MCP（同进程、权限一行 `_book` 校验），将来主对话「记一笔」或外部 MCP 复用同一对函数。
+计划 `docs/task_plans/记账页AI一句话记账-2026-10-22.md`，用例 `docs/test_cases/记账页AI一句话记账-验收用例.md`。
+
 **Phase 113 — 切换 DeepSeek V4.1 + 视觉切片按像素预算重校准**（读 `deepseek-harness` 上游
 09-09~09-10 后的改造）：① 2026-09-10 V4.1 Flash 发布（正式名 `deepseek-flash`，原生多模态），
 **规划/抽取/分类/视觉全部改用 `deepseek-flash`**——开放平台公告 V4.1 Flash 全面超过 V4 Pro，且

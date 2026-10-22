@@ -55,6 +55,7 @@ html.native-android[data-android-appearance=dark] .pet-tools{--pet-bg:#151b26;--
 .yp-landed .yp-otter{animation:yp-land .5s cubic-bezier(.3,1.5,.5,1);}
 html .app.journey-shell .main.ai-workspace.ai-from-pet{animation:ai-from-pet .5s cubic-bezier(.25,.8,.25,1) both;}
 html.ua-android .app.journey-shell .main.ai-workspace.ai-from-pet{animation:ai-from-pet-scale .36s cubic-bezier(.2,.8,.2,1) both;transform-origin:var(--pet-ox) var(--pet-oy);}
+html .app.journey-shell .main.ai-workspace.ai-pet-opened{animation:none;}
 @keyframes ai-from-pet{from{clip-path:circle(30px at var(--pet-ox) var(--pet-oy));}to{clip-path:circle(150vmax at var(--pet-ox) var(--pet-oy));}}
 @keyframes ai-from-pet-scale{from{opacity:0;scale:.15;}60%{opacity:1;}to{opacity:1;scale:1;}}
 @keyframes yp-breathe{0%,100%{scale:1 1;}50%{scale:1.015 1.03;}}

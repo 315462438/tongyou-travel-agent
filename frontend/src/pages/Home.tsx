@@ -1073,7 +1073,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
       )}
       {showMemories && <MemoryPanel onClose={() => setShowMemories(false)} />}
       {showConnectors && <ConnectorPanel onClose={() => setShowConnectors(false)} />}
-      {showSkills && <SkillPanel onClose={() => setShowSkills(false)} />}
+      {showSkills && <SkillPanel sandbox={sandbox} onToggleSandbox={toggleSandbox} onClose={() => setShowSkills(false)} />}
       {traceFor && cid && <TraceDrawer cid={cid} turnId={traceFor} onClose={() => setTraceFor(null)} />}
       {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
       <SupportChat open={showSupport} onClose={() => setShowSupport(false)} />
@@ -1243,7 +1243,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
             </div>
             )}
             <div className="composer-wrap">
-              <Composer value={input} onChange={setInput} onSend={send} onStop={stop} running={running} deep={deep} onToggleDeep={toggleDeep} sandbox={sandbox} onToggleSandbox={toggleSandbox} webSearch={webSearch} onToggleWebSearch={toggleWebSearch} chips={starterChips} images={pendingImages} onAddImages={addImages} onRemoveImage={(id) => setPendingImages((cur) => removePendingImage(cur, id))} uploading={uploadingImage} />
+              <Composer value={input} onChange={setInput} onSend={send} onStop={stop} running={running} deep={deep} onToggleDeep={toggleDeep} webSearch={webSearch} onToggleWebSearch={toggleWebSearch} chips={starterChips} images={pendingImages} onAddImages={addImages} onRemoveImage={(id) => setPendingImages((cur) => removePendingImage(cur, id))} uploading={uploadingImage} />
             </div>
             <div className="composer-hint">内容由 AI 生成，价格与营业信息请以平台实时数据为准</div>
           </>
@@ -2027,7 +2027,8 @@ interface SkillItem {
   updated_at: string | null
 }
 
-function SkillPanel({ onClose }: { onClose: () => void }) {
+// 沙箱执行只对「我的技能」里的脚本有意义，开关放在这里，不再占输入栏。
+function SkillPanel({ onClose, sandbox, onToggleSandbox }: { onClose: () => void; sandbox: boolean; onToggleSandbox: () => void }) {
   const [items, setItems] = useState<SkillItem[] | null>(null)
   const [draft, setDraft] = useState('')
   const [error, setError] = useState('')
@@ -2109,9 +2110,13 @@ function SkillPanel({ onClose }: { onClose: () => void }) {
         <div className="modal-sub">
           只在你自己的「深度推理」问题里生效，别人看不到。粘贴完整 SKILL.md（含 ---
           frontmatter---），或者打包上传 zip（SKILL.md + 参考文件/脚本）。同名会覆盖更新。
-          脚本默认只能被读取当参考、不会被执行——发消息时额外打开「🐳 沙箱执行」开关，
-          本条消息才会真的在隔离沙箱里运行脚本（服务器未配置沙箱时开关不生效）。
+          脚本默认只能被读取当参考、不会被执行；打开下面的「沙箱执行」后，深度推理才会真的在隔离沙箱里运行脚本
+          （服务器未配置沙箱时不生效）。
         </div>
+        <label className="skill-sandbox">
+          <input type="checkbox" checked={sandbox} onChange={onToggleSandbox} />
+          <span>🐳 沙箱执行：允许技能脚本在隔离环境里运行（生成 PPT、图表等文件）</span>
+        </label>
         <div className="skill-form">
           <textarea
             className="skill-textarea"
@@ -2687,8 +2692,6 @@ function Composer({
   autoFocus,
   deep,
   onToggleDeep,
-  sandbox,
-  onToggleSandbox,
   webSearch,
   onToggleWebSearch,
   chips = CHIPS,
@@ -2705,8 +2708,6 @@ function Composer({
   autoFocus?: boolean
   deep?: boolean
   onToggleDeep?: () => void
-  sandbox?: boolean
-  onToggleSandbox?: () => void
   webSearch?: boolean
   onToggleWebSearch?: () => void
   chips?: StarterChip[]
@@ -2850,15 +2851,6 @@ function Composer({
             title="联网搜索：快速回答前先上网查最新信息（新开的店、近期活动等），回答附来源"
           >
             🌐 联网搜索
-          </button>
-          <button
-            className={`sandbox-toggle${sandbox ? ' on' : ''}`}
-            onClick={() => onToggleSandbox?.()}
-            disabled={running}
-            aria-pressed={sandbox}
-            title="沙箱执行：给深度推理里的技能脚本真实的代码执行能力（生成 PPT/图表等文件），仅本条消息生效"
-          >
-            🐳 沙箱执行
           </button>
         </div>
         {running ? (

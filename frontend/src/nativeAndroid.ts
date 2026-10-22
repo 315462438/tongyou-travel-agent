@@ -27,6 +27,8 @@ export function notifyAndroidReady() {
   const frame = requestAnimationFrame(() => post({type: 'ready'}))
   return () => cancelAnimationFrame(frame)
 }
+/** 一次交给 App 多张图片：原生弹「全部保存到相册 / 一起分享」。 */
+export function shareAndroidImages(files: {name: string; data: string}[]) { post({type: 'images', files}) }
 export function shareAndroidLink(title: string, url: string) {
   if (!isAndroidApp()) return false
   post({type: 'share', title, text: url})

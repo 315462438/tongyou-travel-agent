@@ -7,6 +7,7 @@ import android.graphics.Color;
 import android.net.*;
 import android.os.*;
 import android.print.PrintManager;
+import android.provider.MediaStore;
 import android.view.*;
 import android.webkit.*;
 import android.widget.*;
@@ -288,6 +289,7 @@ public class MainActivity extends Activity {
                 case "message": toast(m.optString("text","请重试")); break;
                 case "print": ((PrintManager)getSystemService(PRINT_SERVICE)).print("17同游旅行攻略",source.createPrintDocumentAdapter("17同游旅行攻略"),null); break;
                 case "download": receiveFile(m); break;
+                case "images": receiveImages(m); break;
                 case "haptic": haptic(source,m.optString("kind")); break;
                 default: break;
             }
@@ -331,6 +333,69 @@ public class MainActivity extends Activity {
                 });
             } catch(Exception e) { runOnUiThread(()-> { exporting=false; toast("文件导出失败，请重试"); }); }
         });
+    }
+    /** 计划单等多张图片一次交过来：全部存相册（Android 10+ 无需权限）或一起分享（ACTION_SEND_MULTIPLE）。 */
+    private void receiveImages(JSONObject message) {
+        if(exporting) { toast("请先完成上一个文件的保存或分享"); return; }
+        exporting=true;
+        io.execute(()-> {
+            try {
+                JSONArray items=message.getJSONArray("files");
+                if(items.length()==0 || items.length()>20) throw new IOException();
+                File folder=new File(getCacheDir(),"exports/"+UUID.randomUUID()); if(!folder.mkdirs()) throw new IOException();
+                ArrayList<File> files=new ArrayList<>(); long total=0;
+                for(int i=0;i<items.length();i++) {
+                    JSONObject item=items.getJSONObject(i);
+                    String data=item.getString("data"); int comma=data.indexOf(',');
+                    if(comma<0 || !data.startsWith("data:image/png;base64")) throw new IOException();
+                    byte[] bytes=android.util.Base64.decode(data.substring(comma+1),android.util.Base64.DEFAULT);
+                    total+=bytes.length; if(total>UrlPolicy.MAX_EXPORT_BYTES*2L) throw new IOException();
+                    File file=new File(folder,UrlPolicy.safeName(item.optString("name","17同游_"+(i+1)+".png")));
+                    try(FileOutputStream out=new FileOutputStream(file)) { out.write(bytes); }
+                    files.add(file);
+                }
+                runOnUiThread(()-> {
+                    if(isFinishing() || isDestroyed()) { exporting=false; return; }
+                    boolean gallery=Build.VERSION.SDK_INT>=Build.VERSION_CODES.Q;
+                    String[] options=gallery?new String[]{"全部保存到相册","一起分享"}:new String[]{"一起分享"};
+                    new AlertDialog.Builder(this).setTitle("共 "+files.size()+" 张图片").setItems(options,(d,which)-> {
+                        if(gallery && which==0) saveImagesToGallery(files);
+                        else { shareImages(files); exporting=false; }
+                    }).setNegativeButton("取消",(d,w)->exporting=false).setOnCancelListener(d->exporting=false).show();
+                });
+            } catch(Exception e) { runOnUiThread(()-> { exporting=false; toast("图片导出失败，请重试"); }); }
+        });
+    }
+    private void saveImagesToGallery(List<File> files) {
+        io.execute(()-> {
+            int saved=0;
+            for(File file:files) {
+                ContentValues values=new ContentValues();
+                values.put(MediaStore.Images.Media.DISPLAY_NAME,file.getName());
+                values.put(MediaStore.Images.Media.MIME_TYPE,"image/png");
+                values.put(MediaStore.Images.Media.RELATIVE_PATH,Environment.DIRECTORY_PICTURES+"/17同游");
+                values.put(MediaStore.Images.Media.IS_PENDING,1);
+                Uri uri=getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI,values);
+                if(uri==null) continue;
+                try(OutputStream out=getContentResolver().openOutputStream(uri); InputStream in=new FileInputStream(file)) {
+                    if(out==null) throw new IOException();
+                    byte[] buffer=new byte[8192]; int n; while((n=in.read(buffer))>0) out.write(buffer,0,n);
+                    values.clear(); values.put(MediaStore.Images.Media.IS_PENDING,0);
+                    getContentResolver().update(uri,values,null,null); saved++;
+                } catch(Exception e) { getContentResolver().delete(uri,null,null); }
+            }
+            final int count=saved;
+            runOnUiThread(()-> { exporting=false; toast(count==files.size()?"已保存 "+count+" 张到相册":"保存了 "+count+" / "+files.size()+" 张，请重试"); });
+        });
+    }
+    private void shareImages(List<File> files) {
+        ArrayList<Uri> uris=new ArrayList<>();
+        for(File file:files) uris.add(FileProvider.getUriForFile(this,BuildConfig.APPLICATION_ID+".files",file));
+        Intent send=new Intent(Intent.ACTION_SEND_MULTIPLE).setType("image/png").putParcelableArrayListExtra(Intent.EXTRA_STREAM,uris).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        ClipData clip=ClipData.newRawUri("17同游计划单",uris.get(0));
+        for(int i=1;i<uris.size();i++) clip.addItem(new ClipData.Item(uris.get(i)));
+        send.setClipData(clip);
+        try { startActivity(Intent.createChooser(send,"分享图片")); } catch(ActivityNotFoundException e) { toast("没有可用的分享应用"); }
     }
     private void shareFile(File file,String type) {
         Uri uri=FileProvider.getUriForFile(this,BuildConfig.APPLICATION_ID+".files",file);

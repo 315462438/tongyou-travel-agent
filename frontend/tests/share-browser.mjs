@@ -33,14 +33,24 @@ try{for(const [name,width,dark,motion] of [['light',390,false,'no-preference'],[
  await page.goto(url);await page.getByLabel('问 AI',{exact:true}).click();await page.getByRole('button',{name:'找美食'}).click();await page.getByRole('button',{name:'发送',exact:true}).click()
  await page.locator('.guide-export').click();const dialog=page.getByRole('dialog',{name:'分享计划单'});await dialog.waitFor()
  const image=page.getByTestId('guide-share-image');await image.waitFor()
- const verify=async label=>{
+ const verify=async (label,book=false)=>{
   const pixels=await image.evaluate(async img=>{await img.decode();const c=document.createElement('canvas');c.width=img.naturalWidth;c.height=img.naturalHeight;const ctx=c.getContext('2d');ctx.drawImage(img,0,0);const p=ctx.getImageData(0,0,c.width,c.height).data;let ink=0;for(let i=0;i<p.length;i+=16)if(p[i]<160&&p[i+1]<170&&p[i+2]<185)ink++;return {width:c.width,height:c.height,ink:ink/(p.length/16),src:img.src}})
-  assert.equal(pixels.width,1120);assert.ok(pixels.height>1000&&pixels.height<4200,JSON.stringify(pixels).slice(0,160));assert.ok(pixels.ink>.008,'image contains actual dark text')
+  if(book){assert.ok(pixels.width<=1120&&pixels.width>=560&&pixels.width*pixels.height<=16000000&&pixels.height>pixels.width*3,JSON.stringify(pixels).slice(0,160))}else{assert.equal(pixels.width,1120);assert.ok(pixels.height>1000&&pixels.height<4200,JSON.stringify(pixels).slice(0,160))};assert.ok(pixels.ink>.008,'image contains actual dark text')
   await fs.writeFile(`${out}/${name}-${label}.png`,Buffer.from(pixels.src.split(',')[1],'base64'))
  }
+ // 默认是一张旅行手册长图：七天都在一张里，保存走单文件下载。
+ assert.equal(await page.getByRole('radio',{name:/旅行手册/}).getAttribute('aria-checked'),'true')
+ assert.equal(await page.getByRole('button',{name:'下一张',exact:true}).count(),0)
+ await verify('book',true);await page.screenshot({path:`${out}/${name}-book.png`})
+ const before=await page.evaluate(()=>window.nativeMessages.length)
+ await page.getByRole('button',{name:'保存 / 分享旅行手册'}).click()
+ await page.waitForFunction(n=>window.nativeMessages.slice(n).some(m=>m.type==='download'&&m.mime==='image/png'&&/旅行手册\.png$/.test(m.name)),before,{timeout:12000})
+ await page.getByRole('radio',{name:'分页卡片'}).click();await image.waitFor()
  await verify('first');await page.screenshot({path:`${out}/${name}-preview.png`})
  let count=1;while(await page.getByRole('button',{name:'下一张',exact:true}).isEnabled()){await page.getByRole('button',{name:'下一张',exact:true}).click();count++}assert.ok(count>1);await verify('last')
- console.log(name+': saving image');await page.getByRole('button',{name:/保存 \/ 分享第/}).click();console.log((await page.evaluate(()=>window.nativeMessages)).map(m=>({type:m.type,mime:m.mime,text:m.text}))); await page.waitForFunction(()=>window.nativeMessages.some(m=>m.type==='download'&&m.mime==='image/png'),null,{timeout:12000})
+ console.log(name+': saving all');await page.getByRole('button',{name:new RegExp(`全部保存 / 分享（${count} 张）`)}).click()
+ await page.waitForFunction(n=>window.nativeMessages.some(m=>m.type==='images'&&m.files.length===n&&m.files.every(f=>f.data.startsWith('data:image/png;base64,')&&/_计划单_\d+\.png$/.test(f.name))),count,{timeout:12000})
+ await page.getByRole('button',{name:`只存第 ${count} 张`}).click();await page.waitForFunction(()=>window.nativeMessages.some(m=>m.type==='download'&&m.mime==='image/png'),null,{timeout:12000})
  assert.equal(await dialog.getByRole('button',{name:'下载完整文字'}).count(),0,'raw full-text download removed')
  console.log(name+': exports passed');await page.getByLabel('关闭计划单').click();assert.ok(await page.locator('.guide-export').evaluate(e=>e===document.activeElement))
  await page.getByLabel('关闭 AI').click();await page.getByLabel('打开行程 七日轻松旅行').click();await page.getByLabel('行程更多操作').click();await page.getByRole('button',{name:'成员与邀请',exact:true}).click();await page.getByTestId('trip-invitation-panel').waitFor()
@@ -55,6 +65,6 @@ try{for(const [name,width,dark,motion] of [['light',390,false,'no-preference'],[
  page.once('dialog',d=>d.accept());await page.getByRole('button',{name:'关闭链接邀请',exact:true}).click();await page.getByRole('status').filter({hasText:'邀请链接已关闭'}).waitFor()
  await page.locator('.android-trip-sheet').evaluate(e=>e.scrollTop=0);await page.screenshot({path:`${out}/${name}-invitation.png`})
  await page.getByLabel('关闭行程操作').click();await page.getByTestId('trip-invitation-panel').waitFor({state:'hidden'})
- await page.getByLabel('行程更多操作').click();await page.getByRole('button',{name:'导出攻略',exact:true}).click();await page.getByRole('button',{name:'📸 长图',exact:true}).click();await page.getByRole('dialog',{name:'分享计划单'}).waitFor();await image.waitFor();await verify('trip-plan')
+ await page.getByLabel('行程更多操作').click();await page.getByRole('button',{name:'导出攻略',exact:true}).click();await page.getByRole('button',{name:'📸 长图',exact:true}).click();await page.getByRole('dialog',{name:'分享计划单'}).waitFor();await image.waitFor();await verify('trip-plan',true)
  assert.deepEqual(errors,[]);results.push({name,passed:true,pages:count,renderNonblank:true,completeText:true,inviteErrorPreservesInput:true,inviteSuccess:true,motion});console.log(name+': passed');await ctx.close()
 }await fs.writeFile(out+'/results.json',JSON.stringify(results,null,2))}finally{await browser.close()}

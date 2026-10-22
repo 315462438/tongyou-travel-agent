@@ -785,10 +785,12 @@ html.ua-android { --glass-k: .45; --x-glass-blur: 11px; }
 .composer-wrap .composer-shell { max-width: 768px; margin: 0 auto; }
 .hero .composer-shell { width: 100%; max-width: 720px; }
 .composer-shell { position: relative; }
-  .composer {
-    display: grid; grid-template-columns: 34px minmax(0, 1fr) 36px; align-items: end;
-    border-radius: var(--x-r-lg); padding-bottom: 7px;
-  }
+/* 桌面是一行 flex；手机的三列网格只在 720px 媒体查询和 .view-mobile 里（它们给子元素逐个指定了格子）。
+   2026-10-20 曾把手机网格误贴到这里：桌面子元素没有格子，输入框被挤进最后 36px 一列竖排。 */
+.composer {
+  display: flex; align-items: flex-end; gap: 6px;
+  border-radius: var(--x-r-lg); padding-bottom: 7px;
+}
 .composer:focus-within {
   border-color: rgba(37, 99, 235, .55);
   box-shadow: var(--x-glass-inner), 0 14px 40px -14px rgba(37, 99, 235, .32);
@@ -2196,13 +2198,15 @@ html.ua-android { --glass-k: .45; --x-glass-blur: 11px; }
   .msg-user > div { max-width: 86%; font-size: 14px; }
   .msg-assistant { font-size: 14px; }
   .composer-wrap { padding: 0 10px; }
+  /* 每个子元素都要有格子：漏一个（上传图片按钮）就会把输入框挤进最后 36px 一列。 */
   .composer {
-    display: grid; grid-template-columns: 34px minmax(0, 1fr) 36px; align-items: end;
+    display: grid; grid-template-columns: auto auto minmax(0, 1fr) 36px; align-items: end;
     border-radius: var(--x-r-lg); padding-bottom: 7px;
   }
   .composer-plus { grid-column: 1; grid-row: 1; }
-  .composer textarea { grid-column: 2; grid-row: 1; min-width: 0; }
-  .send-btn { grid-column: 3; grid-row: 1; }
+  .composer-image { grid-column: 2; grid-row: 1; }
+  .composer textarea { grid-column: 3; grid-row: 1; min-width: 0; }
+  .send-btn { grid-column: 4; grid-row: 1; }
   .composer-modes { grid-column: 1 / -1; grid-row: 2; padding: 2px 2px 0; overflow-x: auto; }
   .composer-meta { padding-inline: 8px; }
   .composer-meta span:first-child { display: none; }
@@ -4135,13 +4139,17 @@ body { color: var(--tx-ink); background: var(--x-n96); }
 .view-mobile .composer-wrap .composer-shell { width: 100%; }
 .view-mobile .composer {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) 36px;
+  grid-template-columns: auto auto minmax(0, 1fr) 36px;
   align-items: end;
   gap: 5px;
   padding: 7px 8px;
   border-radius: var(--x-r-lg);
 }
+.view-mobile .composer-plus { grid-column: 1; grid-row: 1; }
+.view-mobile .composer-image { grid-column: 2; grid-row: 1; }
+.view-mobile .send-btn { grid-column: 4; grid-row: 1; }
 .view-mobile .composer textarea {
+  grid-column: 3; grid-row: 1; min-width: 0;
   width: 100%;
   min-height: 34px;
   padding: 5px 1px;
@@ -9412,3 +9420,5 @@ body { color: var(--tx-ink); background: var(--x-n96); }
   background: var(--x-n100); border: 1px solid var(--x-n88);
   border-radius: var(--x-r-sm); padding: 5px 14px; cursor: pointer;
 }
+.skill-sandbox { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 12px; font-size: 13px; line-height: 1.5; cursor: pointer; }
+.skill-sandbox input { margin-top: 3px; }

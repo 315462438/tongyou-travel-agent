@@ -41,10 +41,19 @@ export function flyPetToAI(source: HTMLElement | null | undefined, quiet: boolea
     if (panel && !panel.hidden) {
       panel.style.setProperty('--pet-ox', `${Math.round(ox)}px`)
       panel.style.setProperty('--pet-oy', `${Math.round(oy)}px`)
+      // 揭开动画顶替了面板自带的淡入；结束时不能只摘掉类名——那会让淡入从透明重播一遍，整屏闪一下。
+      // 换成 ai-pet-opened（animation:none）停住，面板收起时再摘掉，下次别的入口打开照常淡入。
+      panel.classList.remove('ai-pet-opened')
       panel.classList.add('ai-from-pet')
-      const done = (event: AnimationEvent) => { if (event.target === panel) { panel.classList.remove('ai-from-pet'); panel.removeEventListener('animationend', done) } }
+      const settle = () => {
+        if (!panel.classList.contains('ai-from-pet')) return
+        panel.classList.add('ai-pet-opened'); panel.classList.remove('ai-from-pet')
+        const closed = new MutationObserver(() => { if (panel.hidden) { panel.classList.remove('ai-pet-opened'); closed.disconnect() } })
+        closed.observe(panel, { attributes: true, attributeFilter: ['hidden'] })
+      }
+      const done = (event: AnimationEvent) => { if (event.target === panel) { panel.removeEventListener('animationend', done); settle() } }
       panel.addEventListener('animationend', done)
-      window.setTimeout(() => panel.classList.remove('ai-from-pet'), 900)
+      window.setTimeout(settle, 900)
     }
     const target = document.querySelector<HTMLElement>('.ai-workspace:not([hidden]) .journey-ai-header .pet-task-badge .yp-art')
     const to = target?.getBoundingClientRect()

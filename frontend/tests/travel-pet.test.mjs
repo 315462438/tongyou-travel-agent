@@ -120,3 +120,23 @@ test('done bubble names the conversation it opens', async () => {
   assert.ok(petDoneText('哈尔滨延吉五日冰雪美食路线').includes('…」'))
   assert.equal(petBubble({ phase: 'ready', label: '', turn: '' }, true, null, '广州').text, '「广州」写好啦，点我看看')
 })
+
+test('pet reveal settles without replaying the panel fade-in', async () => {
+  const fs = await import('node:fs/promises')
+  const css = await fs.readFile(new URL('../src/components/TravelPet.css', import.meta.url), 'utf8')
+  const tsx = await fs.readFile(new URL('../src/components/TravelPet.tsx', import.meta.url), 'utf8')
+  assert.match(css, /\.ai-workspace\.ai-pet-opened\{animation:none;\}/)
+  // Removing ai-from-pet alone restarts journey-sheet-in from opacity 0 (a full-screen flash).
+  assert.match(tsx, /classList\.add\('ai-pet-opened'\); panel\.classList\.remove\('ai-from-pet'\)/)
+})
+
+test('AI chat dark theme flips the guide palette, not just the page background', async () => {
+  const fs = await import('node:fs/promises')
+  const css = await fs.readFile(new URL('../src/pages/JourneyShell.css', import.meta.url), 'utf8')
+  const dark = css.slice(css.indexOf('AI 对话深色'))
+  for (const scope of ['@media (prefers-color-scheme: dark) {\n.app.journey-shell .ai-workspace {', 'html.native-android[data-android-appearance=dark] .app.journey-shell .ai-workspace {'])
+    assert.ok(dark.includes(scope), scope)
+  // index.css 的攻略正文、表格、续作卡、手机玻璃卡都读这些令牌；漏一个就是深底深字或深底白卡。
+  for (const token of ['--x-n100:', '--x-n20:', '--x-pine-96:', '--tx-ink:', '--mobile-glass-card:']) assert.equal(dark.split(token).length - 1, 2, token)
+  assert.match(dark, /\.ai-workspace \.next-steps \{ background:/)
+})

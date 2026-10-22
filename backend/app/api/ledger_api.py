@@ -1,4 +1,5 @@
 """独立个人旅行记账：整数分、逐币种汇总、UUID 幂等新增。"""
+import logging
 from collections import defaultdict
 from datetime import date, timedelta, timezone
 import secrets
@@ -17,6 +18,7 @@ from app.db.models import TravelLedger, TravelLedgerEntry, TravelLedgerMember, T
 from app.db.session import get_db
 
 router = APIRouter(prefix="/api/ledger", tags=["ledger"])
+logger = logging.getLogger(__name__)
 CURRENCIES = {"CNY", "MYR", "SGD", "USD", "EUR", "JPY", "HKD", "THB", "KRW", "GBP", "AUD", "TWD", "VND", "IDR"}
 CATEGORIES = {"餐饮", "交通", "住宿", "门票", "购物", "其他"}
 
@@ -403,6 +405,65 @@ def create_entry(book_id: str, body: NewEntry, db: Session = Depends(get_db), us
             return _replay(existing, book_id, values)
         raise HTTPException(409, "账本已变化，请刷新后重试")
     return _entry_dict(entry)
+
+
+class DraftBody(BaseModel):
+    text: str = Field(min_length=1, max_length=500)
+    today: date | None = None
+
+
+@router.post("/{book_id}/ai-draft")
+def ai_draft(book_id: str, body: DraftBody, db: Session = Depends(get_db), user: TravelUser = Depends(get_current_user)):
+    """一句话 → 账单草稿，不写库；用户在预览里确认后走 entries/batch。"""
+    from app.agent.ledger_draft import draft_entries
+    from app.llm.client import get_llm
+    book = _book(db, book_id, user)
+    if _role(db, book, user) not in ("owner", "editor"):
+        raise HTTPException(403, "当前为只读权限，不能修改账单")
+    trip = db.get(TravelTrip, book.trip_id) if book.trip_id else None
+    recent = list(db.scalars(select(TravelLedgerEntry.currency).where(TravelLedgerEntry.ledger_id == book_id)
+                             .order_by(TravelLedgerEntry.created_at.desc()).limit(20)))
+    db.rollback()  # 别在等模型的几秒里攥着连接上的事务
+    # 客户端给的「今天」是用户本地日期；偏离服务器日期一天以上就不信（时区最多差一天）。
+    server_today = date.today()
+    today = body.today if body.today and abs((body.today - server_today).days) <= 1 else server_today
+    try:
+        drafts = draft_entries(get_llm(), body.text.strip(), today=today,
+                               destination=(trip.destination if trip else None) or (trip.title if trip else None), recent=recent)
+    except Exception:  # noqa: BLE001
+        logger.warning("一句话记账抽取失败 book=%s", book_id, exc_info=True)
+        raise HTTPException(502, "暂时没能识别，稍后再试，或手动记一笔")
+    if not drafts.items:
+        raise HTTPException(422, "没认出金额，换个说法试试，比如「午饭 拉面 1200 日元」")
+    return {"drafts": drafts.items, "default_currency": drafts.default_currency,
+            "currency_source": drafts.currency_source, "dropped": drafts.dropped}
+
+
+class BatchBody(BaseModel):
+    entries: list[NewEntry] = Field(min_length=1, max_length=30)
+
+
+@router.post("/{book_id}/entries/batch")
+def create_entries(book_id: str, body: BatchBody, db: Session = Depends(get_db), user: TravelUser = Depends(get_current_user)):
+    """确认后一次入账：同一事务，要么全记上要么都不记；按客户端 id 幂等，重复提交返回已有账单。"""
+    book = _book(db, book_id, user, "edit")
+    saved = []
+    for item in body.entries:
+        values = _values(item)
+        existing = db.get(TravelLedgerEntry, item.id.hex)
+        if existing:
+            saved.append(_replay(existing, book_id, values))
+            continue
+        entry = TravelLedgerEntry(id=item.id.hex, ledger_id=book_id, created_by=user.id, updated_by=user.id, **values)
+        db.add(entry)
+        saved.append(entry)
+    book.updated_at = _now()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "账本已变化，请刷新后重试")
+    return {"entries": [item if isinstance(item, dict) else _entry_dict(item) for item in saved]}
 
 
 @router.patch("/{book_id}/entries/{entry_id}")
