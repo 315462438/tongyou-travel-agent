@@ -77,3 +77,6 @@ docs/security/
 
 # Local QA screenshots and design/release artifacts.
 /output/
+
+# Marketing frames/videos are produced locally; already-tracked files stay tracked.
+/marketing/
