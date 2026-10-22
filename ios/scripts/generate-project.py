@@ -49,7 +49,7 @@ for scope in ['project', 'target']:
                 'SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD':'NO',
                 'ASSETCATALOG_COMPILER_APPICON_NAME':'AppIcon',
                 'ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME':'AccentColor',
-                'MARKETING_VERSION':'1.0.21', 'CURRENT_PROJECT_VERSION':'22',
+                'MARKETING_VERSION':'1.0.22', 'CURRENT_PROJECT_VERSION':'23',
                 'LD_RUNPATH_SEARCH_PATHS':'$(inherited) @executable_path/Frameworks',
                 'SWIFT_STRICT_CONCURRENCY':'minimal', 'ENABLE_PREVIEWS':'YES',
             })

@@ -5,6 +5,16 @@ final class AppRouter {
     enum TabID: Hashable { case home, ledger, me }
     var tab: TabID = .home
     var travelDetailOpen = false
+    /// 「我的」「记账」推进详情页时同样收起底栏：底栏浮在页面上，会盖住详情页底部（如系统放在底部的搜索框）。
+    var meDetailOpen = false
+    var ledgerDetailOpen = false
+    var dockHidden: Bool {
+        switch tab {
+        case .home: travelDetailOpen
+        case .me: meDetailOpen
+        case .ledger: ledgerDetailOpen
+        }
+    }
     var aiOpen = false
     var aiPrompt = ""
     var socialDestination: String?

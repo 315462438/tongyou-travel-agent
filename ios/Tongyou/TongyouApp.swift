@@ -55,7 +55,7 @@ struct RootView: View {
                             .zIndex(router.tab == .me ? 1 : 0)
                     }
                     .safeAreaInset(edge: .bottom) {
-                        if !router.keyboardOpen && (router.tab != .home || !router.travelDetailOpen) { JourneyDock() }
+                        if !router.keyboardOpen && !router.dockHidden { JourneyDock() }
                     }
                     .allowsHitTesting(!router.aiOpen)
                     .accessibilityHidden(router.aiOpen)

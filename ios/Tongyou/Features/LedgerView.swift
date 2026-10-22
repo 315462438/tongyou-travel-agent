@@ -97,6 +97,7 @@ struct LedgerView: View {
                 if initialTrip != nil { ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } } }
             }
             .navigationDestination(item: $selectedBook) { ref in LedgerDetailView(bookID: ref.id).onDisappear { Task { await load() } } }
+            .onChange(of: selectedBook?.id) { _, id in if initialTrip == nil { router.ledgerDetailOpen = id != nil } }
             .sheet(isPresented: $joining) { LedgerJoinEditor { id in selectedBook = LedgerRef(id: id); Task { await load() } } }
             .sheet(isPresented: $creating) { LedgerBookEditor(defaultTrip: allBooks ? nil : initialTrip) { Task { await load() } } }
             .onChange(of: router.openLedgerID, initial: true) { _, id in

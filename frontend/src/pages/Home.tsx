@@ -18,7 +18,7 @@ import { AdminAnnouncements, AnnouncementModal, AnnouncementPanel, useAnnounceme
 import { NotificationPanel, type ProductNotification } from '../components/Notifications'
 import type { SocialTab } from '../components/SocialHub'
 import { AdminInvites } from '../components/AdminInvites'
-import { AdminSupport, SupportChat, useSupportUnread } from '../components/Support'
+import { AdminSupport, SupportChat, useSupportUnread, type SupportThread } from '../components/Support'
 import { useToast } from '../components/toast-context'
 import { API, authFetch, setToken } from '../api'
 import { useAttentionBadge } from '../hooks/useAttentionBadge'
@@ -1547,6 +1547,8 @@ function AdminPanel({ onClose }: { onClose: () => void }) {
   const [data, setData] = useState<{ total: number; users: AdminUser[] } | null>(null)
   const [tab, setTab] = useState<'users' | 'support' | 'invites' | 'announce'>('users')
   const [roleBusy, setRoleBusy] = useState('')
+  // 从用户列表直接发消息（iOS 用户管理一直可以，网页/安卓此前只能回复已有会话）。
+  const [supportTarget, setSupportTarget] = useState<SupportThread | null>(null)
   const { notify } = useToast()
   const [unreadTotal, setUnreadTotal] = useState(0)
   const [now, setNow] = useState(() => Date.now())
@@ -1621,7 +1623,7 @@ function AdminPanel({ onClose }: { onClose: () => void }) {
           <button className={tab === 'users' ? 'active' : ''} onClick={() => setTab('users')}>
             用户
           </button>
-          <button className={tab === 'support' ? 'active' : ''} onClick={() => setTab('support')}>
+          <button className={tab === 'support' ? 'active' : ''} onClick={() => { setSupportTarget(null); setTab('support') }}>
             客服会话
             {unreadTotal > 0 && <b className="support-badge">{unreadTotal}</b>}
           </button>
@@ -1649,6 +1651,10 @@ function AdminPanel({ onClose }: { onClose: () => void }) {
                       {u.online ? '在线' : formatLastSeen(u.last_seen_at, now)}
                     </b>
                     {u.conversations} 会话 · {u.memories} 记忆
+                    <button className="role-btn" onClick={() => {
+                      setSupportTarget({ user_id: u.id, username: u.username, online: u.online, last_seen_at: u.last_seen_at, total: 0, unread: 0, last_at: null, last_sender: null, last_excerpt: '' })
+                      setTab('support')
+                    }}>发消息</button>
                     <button
                       className={u.is_admin ? 'role-btn demote' : 'role-btn'}
                       disabled={roleBusy === u.id}
@@ -1662,7 +1668,7 @@ function AdminPanel({ onClose }: { onClose: () => void }) {
             </div>
           </>
         ) : tab === 'support' ? (
-          <AdminSupport />
+          <AdminSupport key={supportTarget?.user_id || 'list'} start={supportTarget} />
         ) : tab === 'invites' ? (
           <AdminInvites />
         ) : (

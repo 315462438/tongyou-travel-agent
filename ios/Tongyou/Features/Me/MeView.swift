@@ -65,6 +65,9 @@ struct MeView: View {
             .screenBackground()
             .toolbar(.hidden, for: .tabBar)
             .navigationTitle("我的")
+            // 推进任意详情页时根列表消失；切换底部标签是透明度切换，不会触发。
+            .onAppear { if isRoot { router.meDetailOpen = false } }
+            .onDisappear { if isRoot { router.meDetailOpen = true } }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { if !isRoot { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } } }
             .sheet(isPresented: $showHistory) { HistoryView() }

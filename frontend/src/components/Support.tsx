@@ -155,10 +155,11 @@ export function SupportChat({ open, onClose }: {
   )
 }
 
-/** 管理员端：客服会话列表 + 回复。嵌在用户管理面板的标签页里。 */
-export function AdminSupport() {
+/** 管理员端：客服会话列表 + 回复。嵌在用户管理面板的标签页里。
+ *  start：从用户列表点「发消息」进来时直接打开与该用户的会话（对方没留过言也能先发）。 */
+export function AdminSupport({ start }: { start?: SupportThread | null } = {}) {
   const [threads, setThreads] = useState<SupportThread[]>([])
-  const [active, setActive] = useState<SupportThread | null>(null)
+  const [active, setActive] = useState<SupportThread | null>(start || null)
   const [messages, setMessages] = useState<SupportMessage[]>([])
   const [now, setNow] = useState(() => Date.now())
 
@@ -221,9 +222,9 @@ export function AdminSupport() {
         <MessageList
           messages={messages}
           mineIs="admin"
-          empty={<p>这位用户还没有留言。</p>}
+          empty={<p>还没有消息，可以先给 {active.username} 发一条。</p>}
         />
-        <ChatInput onSend={reply} placeholder="回复用户…（可粘贴截图，Enter 发送）" />
+        <ChatInput onSend={reply} placeholder={`给 ${active.username} 发消息…（可粘贴截图，Enter 发送）`} />
       </div>
     )
   }

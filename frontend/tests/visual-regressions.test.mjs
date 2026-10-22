@@ -379,7 +379,9 @@ test('admin 面板展示在线状态，且不在前端重算在线阈值', () =>
 test('客服会话：用户入口带红点，admin 面板有标签页与未读徽标', () => {
   assert.match(home, /<SupportChat open=\{showSupport\}/)
   assert.match(home, /unreadTotal > 0 && <b className="support-badge">/)
-  assert.match(home, /<AdminSupport \/>/)
+  assert.match(home, /<AdminSupport key=\{supportTarget\?\.user_id \|\| 'list'\} start=\{supportTarget\} \/>/)
+  // 管理员可以从用户列表主动发起会话（与 iOS 用户管理一致），不只是回复已有会话。
+  assert.match(home, />发消息<\/button>/)
   assert.match(css, /\.support-badge \{[\s\S]*background: var\(--x-cinnabar\)/)
 })
 
