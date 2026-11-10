@@ -99,3 +99,24 @@ def test_create_trip_with_start_date_shows_on_today(client):
     assert c.get("/api/trips/today", params={"date": "2026-11-10"}).json()["trip"]["id"] == tid
     bad = c.post("/api/trips", json={"title": "乱填", "start_date": "明天"})      # 格式不对：照常建，只是没日期
     assert bad.status_code == 200 and c.get(f"/api/trips/{bad.json()['id']}").json()["start_date"] == ""
+
+
+
+def test_poll_belongs_to_a_day_or_the_whole_trip(client, trip):
+    c, _ = client
+    assert _poll(c, trip, day=2).json()["day"] == 2
+    assert _poll(c, trip).json()["day"] is None                 # 不填 = 整趟行程
+    assert _poll(c, trip, day=9).json()["day"] is None          # 行程只有 2 天：越界不报错，归到整趟
+    assert sorted(p["day"] or 0 for p in c.get(f"/api/trips/{trip}/polls").json()) == [0, 0, 2]
+
+
+def test_day_poll_notification_names_the_day(client, trip):
+    from sqlalchemy import select
+    from app.db.models import TravelNotification
+    from app.db.session import get_db
+
+    c, _ = client
+    _poll(c, trip, day=2)
+    db = next(c.app.dependency_overrides[get_db]())
+    row = db.execute(select(TravelNotification).where(TravelNotification.type == "trip_poll")).scalars().one()
+    assert row.body.startswith("第 2 天：")

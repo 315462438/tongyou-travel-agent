@@ -45,8 +45,7 @@ test('success and error toasts double as native result haptics', () => {
   assert.match(toast, /if \(kind !== 'info'\) nativeHaptic\(kind === 'success' \? 'confirm' : 'reject'\)/)
   const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8')
   assert.match(main, /installPressFeedback\(\)\s*\n\s*createRoot\(/, 'installed once before the app renders')
-  const java = readFileSync(new URL('../../android/app/src/main/java/com/tongyou/travel/MainActivity.java', import.meta.url), 'utf8')
-  assert.match(java, /case "haptic": haptic\(source,m\.optString\("kind"\)\)/)
+  // 安卓已改为原生界面（2026-11-10），不再由网页壳接收这条震动消息；网页侧只保证调用点还在。
 })
 
 test('answer action row keeps only what users act on', () => {

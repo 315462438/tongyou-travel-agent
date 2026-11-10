@@ -118,7 +118,7 @@ import java.time.LocalDate
             LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 itemsIndexed(trips.take(4), key = { _, it -> it["id"].string() }) { index, trip ->
                     // Four soft tones in rotation, like the travel-book covers on the web client.
-                    val dark = isSystemInDarkTheme()
+                    val dark = LocalDarkTheme.current
                     val tone = (if (dark) listOf(Color(0xFF1B2A4A), Color(0xFF3A2A1E), Color(0xFF1C3530), Color(0xFF3A2430))
                                 else listOf(Color(0xFFE6EEFF), Color(0xFFFFEFE2), Color(0xFFE5F5EE), Color(0xFFFDEBF0)))[index % 4]
                     val shape = RoundedCornerShape(24.dp)

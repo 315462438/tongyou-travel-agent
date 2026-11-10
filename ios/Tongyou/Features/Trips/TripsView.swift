@@ -145,7 +145,8 @@ struct TripDetailView: View {
     @State private var adding = false
     @State private var sheet: Sheet?
     @State private var showingLedger = false
-    @State private var showingPolls = false
+    @State private var newPoll = false
+    @State private var polls: [TripPoll] = []
     @State private var askingDate = false
     @State private var retryingImport = false
     @State private var confirmingRemoval = false
@@ -193,7 +194,10 @@ struct TripDetailView: View {
                         }
                         .padding(16).frame(maxWidth: .infinity, alignment: .leading).glassCard(cornerRadius: 18)
                     }
+                            pollSection(trip)
                             timeline(trip)
+                            Button { newPoll = true } label: { Label("第 \(day) 天有拿不准的？发起投票", systemImage: "checklist") }
+                                .font(.footnote).foregroundStyle(Palette.sky)
                     if let expenses, expenses.count > 0 { expenseCard(expenses) }
                     if let review = trip.aiReview, !review.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
@@ -252,7 +256,7 @@ struct TripDetailView: View {
                 }
             }
         }
-        .sheet(isPresented: $showingPolls) { TripPollsView(tripID: tripID) }
+        .sheet(isPresented: $newPoll) { NewPollSheet(tripID: tripID, dayCount: trip?.dayCount ?? 1, onCreated: { polls.insert($0, at: 0) }, day: day) }
         .sheet(isPresented: $askingDate) { StartDatePrompt(tripID: tripID) { Task { await load() } }.presentationDetents([.height(300)]) }
         .sheet(isPresented: $showingLedger) { LedgerView(initialTrip: LedgerTrip(id: tripID, title: trip?.title ?? "行程")) }
         .toolbar(.hidden, for: .tabBar)
@@ -266,7 +270,6 @@ struct TripDetailView: View {
                     Button("调整当天顺序", systemImage: "arrow.up.arrow.down") { sheet = .reorder }
                     Button("旅行账本", systemImage: "book.closed") { showingLedger = true }
                     Button("记一笔共同账单", systemImage: "creditcard") { sheet = .expense }
-                    Button("一起投票", systemImage: "checklist") { showingPolls = true }
                     Divider()
                     Button("成员与邀请", systemImage: "person.2") { sheet = .members }
                     Button("行程设置", systemImage: "gearshape") { sheet = .settings }
@@ -330,6 +333,31 @@ struct TripDetailView: View {
         .frame(minHeight: 30)
     }
 
+    /// 投票跟着天走：顶部一句话提示有几个等我选（点了跳到那天）；整趟行程的投票每天都看得到，当天的紧跟在当天安排上面。
+    @ViewBuilder private func pollSection(_ trip: TripDetail) -> some View {
+        let waiting = polls.filter(\.waitingForMe)
+        let waitingDays = Set(waiting.compactMap(\.day)).sorted()
+        if !waiting.isEmpty {
+            Button { if let first = waitingDays.first { day = first } } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "checklist")
+                    Text("有 \(waiting.count) 个投票等你选" + (waitingDays.isEmpty ? "" : "（第 " + waitingDays.map(String.init).joined(separator: "、") + " 天）"))
+                    Spacer(minLength: 0)
+                    if !waitingDays.isEmpty { Text("去投票").fontWeight(.semibold) }
+                }
+                .font(.subheadline).foregroundStyle(Palette.sky)
+                .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                .background(Palette.sky.opacity(0.1), in: .rect(cornerRadius: 16))
+            }.buttonStyle(TravelPressStyle())
+        }
+        ForEach(polls.filter { $0.day == nil || $0.day == day }) { poll in
+            PollCardView(tripID: tripID, poll: poll) { updated in
+                if let updated, let index = polls.firstIndex(where: { $0.id == updated.id }) { polls[index] = updated }
+                else { polls.removeAll { $0.id == poll.id } }
+            }
+        }
+    }
+
     private func dayOverview(_ trip: TripDetail) -> some View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {
@@ -355,8 +383,10 @@ struct TripDetailView: View {
                         Button {
                             day = value; selectedStop = nil; camera = .automatic
                         } label: {
-                            VStack(spacing: 1) {
+                            HStack(spacing: 4) {
                                 Text("Day \(value)").font(.subheadline.weight(.semibold))
+                                // 这一天有投票等我选：标签上带个红点
+                                if polls.contains(where: { $0.day == value && $0.waitingForMe }) { Circle().fill(.red).frame(width: 6, height: 6) }
                             }
                             .foregroundStyle(day == value ? .white : .primary)
                             .padding(.horizontal, 14).padding(.vertical, 8)
@@ -469,6 +499,7 @@ struct TripDetailView: View {
     private func load() async {
         do {
             let detail = try await API.shared.get("trips/\(tripID)", as: TripDetail.self)
+            if let fresh = try? await API.shared.get("trips/\(tripID)/polls", as: [TripPoll].self) { polls = fresh }
             let names = detail.members?.map(\.username) ?? []
             let added = TravelPetLogic.addedMembers(previous: petBaselineTrip == tripID ? petMemberBaseline : nil, current: names, username: session.account?.username ?? "")
             petMemberBaseline = names; petBaselineTrip = tripID

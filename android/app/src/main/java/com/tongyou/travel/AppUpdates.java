@@ -21,7 +21,7 @@ import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 
 /** An optional foreground check, separate from startup, business APIs and WebView state. */
-final class AppUpdates {
+public final class AppUpdates {
     interface Source { UpdateInfo fetch() throws Exception; }
     private final Activity activity;
     private final Source source;

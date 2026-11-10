@@ -208,6 +208,8 @@ def migrate_and_bootstrap(engine: Engine) -> None:
             ("travel_trip_expense", "spent_at", "VARCHAR(10) DEFAULT ''"),
             # Phase 96：美食模块升级为按天/餐次的旅行执行清单，不接地图坐标。
             ("travel_trip_food", "day", "INTEGER"),
+            # 2026-11-10：投票按天归属。表当天已由 create_all 建好，加列必须显式写这里。
+            ("travel_trip_poll", "day", "INTEGER"),
             ("travel_trip_food", "meal_type", "VARCHAR(16) DEFAULT '待定'"),
             ("travel_trip_food", "address", "VARCHAR(200) DEFAULT ''"),
             ("travel_trip_food", "rating", "FLOAT"),

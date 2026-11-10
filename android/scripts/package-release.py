@@ -26,11 +26,8 @@ cert_sha = re.search(r'Signer #1 certificate SHA-256 digest: ([a-fA-F0-9]+)', ve
 assert cert_sha == association['target']['sha256_cert_fingerprints'][0].replace(':','')
 assert 'android.intent.action.VIEW' in subprocess.check_output([str(sdk / 'build-tools/35.0.0/aapt'), 'dump', 'xmltree', str(apk), 'AndroidManifest.xml'], text=True)
 with zipfile.ZipFile(apk) as z:
-    assert 'assets/web/index.html' in z.namelist()
-    assert 'assets/android-test.html' not in z.namelist()
-    manifest = json.loads(z.read('assets/web-manifest.json'))
-    for file, sha in manifest.items():
-        assert hashlib.sha256(z.read('assets/web/' + file)).hexdigest() == sha, file
+    # Native UI only: a bundled web snapshot means a stale build step slipped back in.
+    assert not any(name.startswith('assets/web') for name in z.namelist()), 'APK still bundles a web snapshot'
 folder = root / 'releases' / f'{version}-{code}'
 folder.mkdir(parents=True, exist_ok=True)
 destination = folder / f'17tongyou-android-{version}-{code}.apk'
@@ -41,8 +38,8 @@ digest = hashlib.sha256(destination.read_bytes()).hexdigest()
 metadata = dict(platform='Android', application_id='com.tongyou.travel', version=version, version_code=code,
     min_sdk=int(re.search(r"sdkVersion:'(\d+)'",badging)[1]),
     built_at=datetime.datetime.now(datetime.timezone.utc).isoformat(), apk=destination.name,
-    bytes=destination.stat().st_size, sha256=digest, web_files=len(manifest),
-    backend='https://17tongyou.com/travel/api', web_snapshot=manifest,
+    bytes=destination.stat().st_size, sha256=digest,
+    backend='https://17tongyou.com/travel/api', ui='native',
     source_commit=subprocess.check_output(['git','rev-parse','HEAD'],cwd=root,text=True).strip(),
     source_has_uncommitted_changes=bool(subprocess.check_output(['git','status','--porcelain'],cwd=root,text=True).strip()))
 (folder / 'release.json').write_text(json.dumps(metadata,ensure_ascii=False,indent=2))
@@ -52,7 +49,7 @@ metadata = dict(platform='Android', application_id='com.tongyou.travel', version
 3. 打开「17同游」，用已有账号登录；新用户需按注册页提示提供邀请码。
 4. 使用的是正式服务器数据，请用自己的账号，删除行程/账本会实际生效。
 5. 更新时直接安装新版 APK，不要先卸载；同签名更新可保留登录。
-6. 需要联网。Android 8+；若提示 WebView 过旧，先更新系统 WebView/浏览器。
+6. 需要联网，Android 8 及以上。
 7. 华为 HarmonyOS 5+ 兼容方式需另测，本包不是鸿蒙原生应用。
 8. 反馈时提供手机型号、系统版本、“我的”底部的 Android 版本及具体操作。
 

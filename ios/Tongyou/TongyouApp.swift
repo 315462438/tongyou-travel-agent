@@ -4,6 +4,8 @@ import SwiftUI
 struct TongyouApp: App {
     @State private var session = AppSession()
     @State private var router = AppRouter()
+    /// 外观：跟随系统 / 浅色 / 深色。存在本机，不同步到账号。
+    @AppStorage("appearance") private var appearance = AppAppearance.system.rawValue
 
     var body: some Scene {
         WindowGroup {
@@ -11,6 +13,7 @@ struct TongyouApp: App {
                 .environment(session)
                 .environment(router)
                 .tint(Palette.sky)
+                .preferredColorScheme(AppAppearance(rawValue: appearance)?.scheme)
         }
     }
 }
@@ -167,4 +170,12 @@ struct JourneyDock: View {
         .buttonStyle(.plain).accessibilityAddTraits(router.tab == tab ? .isSelected : [])
         .accessibilityIdentifier("journeyTab_" + title)
     }
+}
+
+enum AppAppearance: String, CaseIterable, Identifiable {
+    case system, light, dark
+    var id: String { rawValue }
+    var label: String { switch self { case .system: "跟随系统"; case .light: "浅色"; case .dark: "深色" } }
+    /// nil = 跟随系统
+    var scheme: ColorScheme? { switch self { case .system: nil; case .light: .light; case .dark: .dark } }
 }

@@ -130,6 +130,8 @@ fun parseTripDate(text: String, today: LocalDate = LocalDate.now()): String? {
     var menu by remember { mutableStateOf(false) }
     var removing by rememberSaveable { mutableStateOf(false) }
     var askedDate by rememberSaveable { mutableStateOf(false) }
+    var polls by remember { mutableStateOf<List<JsonObject>>(emptyList()) }
+    var pollBusy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -137,7 +139,10 @@ fun parseTripDate(text: String, today: LocalDate = LocalDate.now()): String? {
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             // 同伴的改动 5 秒内能看到；有弹窗开着时不刷新，免得打断输入
             while (isActive) {
-                if (trip == null || (sheet.isEmpty() && !adding && editing == null)) call({ error = it }) { api.request("GET", "trips/$id").obj() }?.let { trip = it }
+                if (trip == null || (sheet.isEmpty() && !adding && editing == null)) {
+                    call({ error = it }) { api.request("GET", "trips/$id").obj() }?.let { trip = it }
+                    call({}) { api.request("GET", "trips/$id/polls").array().map { it.obj() } }?.let { polls = it }
+                }
                 delay(5000)
             }
         }
@@ -163,7 +168,6 @@ fun parseTripDate(text: String, today: LocalDate = LocalDate.now()): String? {
                         DropdownMenuItem({ Text("避坑提醒") }, { menu = false; sheet = "tips" })
                         HorizontalDivider()
                         DropdownMenuItem({ Text("成员与邀请") }, { menu = false; sheet = "members" })
-                        DropdownMenuItem({ Text("一起投票") }, { menu = false; sheet = "polls" })
                         DropdownMenuItem({ Text("旅行账本") }, { menu = false; openLedger() })
                         DropdownMenuItem({ Text("行程设置") }, { menu = false; sheet = "settings" })
                         DropdownMenuItem({ Text(if (owner) "删除行程" else "退出行程", color = MaterialTheme.colorScheme.error) }, { menu = false; removing = true })
@@ -195,11 +199,28 @@ fun parseTripDate(text: String, today: LocalDate = LocalDate.now()): String? {
                     }
                 }
             }
+            // 等我投票的：没结束、我还没投。每天的标签上带个点，顶部一句话提示，点了直接跳到那天。
+            val waiting = polls.filter { !it["closed"].bool() && it["my_vote"] is JsonNull }
+            val waitingDays = waiting.mapNotNull { (it["day"] as? JsonPrimitive)?.intOrNull }.toSet()
+            if (waiting.isNotEmpty()) item {
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.primaryContainer)
+                    .clickable { waitingDays.minOrNull()?.let { day = it } }.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Outlined.HowToVote, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer); Spacer(Modifier.width(8.dp))
+                    Text("有 ${waiting.size} 个投票等你选" + (waitingDays.sorted().takeIf { it.isNotEmpty() }?.joinToString("、", prefix = "（第 ", postfix = " 天）") ?: ""),
+                        Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    if (waitingDays.isNotEmpty()) Text("去投票", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                }
+            }
+            // 关于整趟行程的投票（不属于某一天），每天都看得到
+            polls.filter { it["day"] is JsonNull || it["day"] == null }.forEach { poll ->
+                item(key = "poll-" + poll["id"].string()) { PollCard(api, id, poll, pollBusy, { pollBusy = it }) { updated -> polls = polls.map { if (it["id"] == updated["id"]) updated else it } ; if (updated.isEmpty()) reload++ } }
+            }
             item {
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     (1..days).forEach { n ->
                         val label = startDate.takeIf { it.isNotBlank() }?.let { runCatching { LocalDate.parse(it).plusDays(n - 1L) }.getOrNull() }?.let { "${it.monthValue}/${it.dayOfMonth}" }
-                        FilterChip(day == n, { day = n }, { Text("第 $n 天" + (label?.let { " · $it" } ?: "")) })
+                        FilterChip(day == n, { day = n }, { Text("第 $n 天" + (label?.let { " · $it" } ?: "")) },
+                            trailingIcon = if (n in waitingDays) { { Box(Modifier.size(7.dp).clip(CircleShape).background(MaterialTheme.colorScheme.error)) } } else null)
                     }
                 }
             }
@@ -208,6 +229,10 @@ fun parseTripDate(text: String, today: LocalDate = LocalDate.now()): String? {
             val stops = current["stops"].array().map { it.obj() }.filter { it["day"].int() == day }
             if (stops.isNotEmpty()) item { DayMap(stops) }
             if (stops.isEmpty()) item { Text("这一天还没有安排。点右下角「加地点」开始。", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            // 这一天的投票紧跟在当天安排上面：住哪家、去哪个景点，在要决定的那天里决定
+            polls.filter { (it["day"] as? JsonPrimitive)?.intOrNull == day }.forEach { poll ->
+                item(key = "poll-" + poll["id"].string()) { PollCard(api, id, poll, pollBusy, { pollBusy = it }) { updated -> polls = polls.map { if (it["id"] == updated["id"]) updated else it }; if (updated.isEmpty()) reload++ } }
+            }
             itemsIndexed(stops, key = { _, stop -> stop["id"].string() }) { index, stop ->
                 Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(MaterialTheme.colorScheme.surface.copy(alpha = .92f))
                     .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(20.dp)).clickable { editing = stop }.padding(start = 14.dp, top = 12.dp, bottom = 12.dp, end = 6.dp),
@@ -225,6 +250,7 @@ fun parseTripDate(text: String, today: LocalDate = LocalDate.now()): String? {
                     if (url.isNotBlank()) TextButton({ external(url) }) { Text("导航") }
                 }
             }
+            item { TextButton({ sheet = "newPoll" }, contentPadding = PaddingValues(0.dp)) { Icon(Icons.Outlined.HowToVote, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("第 $day 天有拿不准的？发起投票") } }
         }
     }
     if ((adding || editing != null) && current != null) StopDialog(api, id, editing, day, days, { adding = false; editing = null }) { adding = false; editing = null; reload++ }
@@ -237,7 +263,7 @@ fun parseTripDate(text: String, today: LocalDate = LocalDate.now()): String? {
     if (current != null) when (sheet) {
         "settings" -> TripSettingsDialog(api, current, { sheet = "" }) { sheet = ""; askedDate = true; reload++ }
         "members" -> TripMembersDialog(api, current, context) { sheet = "" }
-        "polls" -> TripPollsDialog(api, id) { sheet = "" }
+        "newPoll" -> NewPollSheet(api, id, day, days, { sheet = "" }) { created -> sheet = ""; polls = listOf(created) + polls }
         "chat" -> TripChatDialog(api, id) { sheet = "" }
         "copilot" -> CopilotSheet(api, id, { sheet = ""; reload++ }) { reload++ }
         "reorder" -> ReorderSheet(api, id, day, current["stops"].array().map { it.obj() }.filter { it["day"].int() == day }, { sheet = "" }) { sheet = ""; reload++ }
@@ -344,56 +370,78 @@ fun parseTripDate(text: String, today: LocalDate = LocalDate.now()): String? {
     }, confirmButton = { TextButton(dismiss) { Text("完成") } })
 }
 
-/** 同行人投票：每人一票，可以改。 */
-@Composable private fun TripPollsDialog(api: TravelService, tripId: String, dismiss: () -> Unit) {
-    var polls by remember { mutableStateOf<List<JsonObject>?>(null) }
+/** 一个投票：直接在行程里点选项投票，每人一票可以改；发起人可以结束或删除。update(空对象) 表示已删除。 */
+@Composable private fun PollCard(api: TravelService, tripId: String, poll: JsonObject, busy: Boolean, setBusy: (Boolean) -> Unit, update: (JsonObject) -> Unit) {
+    val scope = rememberCoroutineScope()
+    var error by remember { mutableStateOf<String?>(null) }
+    val pid = poll["id"].string(); val closed = poll["closed"].bool(); val total = poll["total"].int()
+    val myVote = (poll["my_vote"] as? JsonPrimitive)?.intOrNull
+    fun act(method: String, path: String, body: JsonObject? = null) { setBusy(true); scope.launch {
+        call({ error = it }) { api.request(method, "trips/$tripId/polls/$pid$path", body).obj() }?.let { update(if (method == "DELETE") JsonObject(emptyMap()) else it) }
+        setBusy(false)
+    } }
+    GlassCard(Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Icon(Icons.Outlined.HowToVote, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+            Text(poll["question"].string(), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+            if (!closed && myVote == null) Text("等你投票", Modifier.clip(CircleShape).background(MaterialTheme.colorScheme.errorContainer).padding(horizontal = 8.dp, vertical = 2.dp),
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onErrorContainer)
+        }
+        Text((if (closed) "已结束" else "$total/${poll["members"].int()} 人已投 · 每人一票，可以改") + poll["created_by"].string().let { if (it.isBlank()) "" else " · $it 发起" },
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        val top = poll["options"].array().maxOfOrNull { it.obj()["votes"].int() } ?: 0
+        poll["options"].array().forEachIndexed { index, item -> val option = item.obj()
+            val mine = myVote == index
+            val share = if (total > 0) option["votes"].int() / total.toFloat() else 0f
+            Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).border(1.dp, if (mine) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
+                .clickable(enabled = !closed && !busy && !mine) { act("POST", "/vote", jsonBody("option" to index)) }) {
+                Box(Modifier.matchParentSize().fillMaxWidth(share).background(MaterialTheme.colorScheme.primary.copy(alpha = .12f)))
+                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text((if (mine) "✓ " else "") + option["text"].string(), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = if (closed && option["votes"].int() == top && top > 0) FontWeight.SemiBold else FontWeight.Normal)
+                    Text("${option["votes"].int()} 票" + option["voters"].array().map { it.string() }.takeIf { it.isNotEmpty() }?.joinToString("、", prefix = " · ").orEmpty(),
+                        style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+        if (poll["mine"].bool()) Row {
+            if (!closed) TextButton({ act("POST", "/close") }, enabled = !busy, contentPadding = PaddingValues(horizontal = 0.dp)) { Text("结束投票") }
+            Spacer(Modifier.width(12.dp))
+            TextButton({ act("DELETE", "") }, enabled = !busy, contentPadding = PaddingValues(horizontal = 0.dp)) { Text("删除", color = MaterialTheme.colorScheme.error) }
+        }
+        error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+    }
+}
+
+/** 发起投票：默认归到当前这一天，也可以选「整趟行程」。 */
+@Composable private fun NewPollSheet(api: TravelService, tripId: String, defaultDay: Int, days: Int, dismiss: () -> Unit, created: (JsonObject) -> Unit) {
     var question by rememberSaveable { mutableStateOf("") }
     var options by rememberSaveable { mutableStateOf(listOf("", "")) }
-    var message by remember { mutableStateOf<String?>(null) }
+    var day by rememberSaveable { mutableIntStateOf(defaultDay) }          // 0 = 整趟行程
+    var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
-    var reload by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
-    LaunchedEffect(reload) { call({ message = it }) { api.request("GET", "trips/$tripId/polls").array().map { it.obj() } }?.let { polls = it } }
-    fun act(block: suspend () -> Unit) { if (busy) return; busy = true; scope.launch { call({ message = it }) { block() }; busy = false; reload++ } }
-    SheetDialog(onDismissRequest = dismiss, title = { Text("一起决定") }, text = {
-        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            if (polls == null) LinearProgressIndicator(Modifier.fillMaxWidth())
-            if (polls?.isEmpty() == true) Text("还没有投票。住哪家、哪天走，发一个让大家点一下。", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            polls.orEmpty().forEach { poll ->
-                val closed = poll["closed"].bool(); val pid = poll["id"].string(); val total = poll["total"].int()
-                Text(poll["question"].string(), style = MaterialTheme.typography.titleMedium)
-                Text((if (closed) "已结束" else "$total/${poll["members"].int()} 人已投") + poll["created_by"].string().let { if (it.isBlank()) "" else " · $it 发起" },
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                poll["options"].array().forEachIndexed { index, item -> val option = item.obj()
-                    val mine = (poll["my_vote"] as? JsonPrimitive)?.intOrNull == index
-                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).border(1.dp, if (mine) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
-                        .clickable(enabled = !closed && !busy) { act { api.request("POST", "trips/$tripId/polls/$pid/vote", jsonBody("option" to index)) } }.padding(12.dp)) {
-                        Row { Text((if (mine) "✓ " else "") + option["text"].string(), Modifier.weight(1f)); Text("${option["votes"].int()} 票", style = MaterialTheme.typography.bodySmall) }
-                        LinearProgressIndicator({ if (total > 0) option["votes"].int() / total.toFloat() else 0f }, Modifier.fillMaxWidth().padding(top = 6.dp))
-                        option["voters"].array().map { it.string() }.takeIf { it.isNotEmpty() }?.let { Text(it.joinToString("、"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1) }
-                    }
-                }
-                if (poll["mine"].bool()) Row {
-                    if (!closed) TextButton({ act { api.request("POST", "trips/$tripId/polls/$pid/close") } }, enabled = !busy) { Text("结束投票") }
-                    TextButton({ act { api.request("DELETE", "trips/$tripId/polls/$pid") } }, enabled = !busy) { Text("删除", color = MaterialTheme.colorScheme.error) }
-                }
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+    val filled = options.map(String::trim).filter(String::isNotEmpty)
+    SheetDialog(onDismissRequest = { if (!busy) dismiss() }, title = { Text("发起投票") },
+        dismissButton = { TextButton(dismiss, enabled = !busy) { Text("取消") } },
+        confirmButton = { TextButton({ busy = true; scope.launch {
+            call({ error = it }) { api.request("POST", "trips/$tripId/polls", jsonBody("question" to question.trim(), "options" to JsonArray(filled.map(::JsonPrimitive)),
+                "day" to day.takeIf { it > 0 })).obj() }?.let(created)
+            busy = false
+        } }, enabled = !busy && question.isNotBlank() && filled.size >= 2) { Text("发起") } },
+        text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                (1..days).forEach { n -> FilterChip(day == n, { day = n }, { Text("第 $n 天") }) }
+                FilterChip(day == 0, { day = 0 }, { Text("整趟行程") })
             }
-            Text("发起投票", style = MaterialTheme.typography.titleMedium)
-            OutlinedTextField(question, { question = it.take(120) }, Modifier.fillMaxWidth(), placeholder = { Text("要大家决定什么？如「住哪家」") }, singleLine = true, enabled = !busy)
+            OutlinedTextField(question, { question = it.take(120) }, Modifier.fillMaxWidth(), label = { Text("要大家决定什么") }, placeholder = { Text("如「晚上住哪家」") }, singleLine = true, enabled = !busy)
             options.forEachIndexed { index, value ->
-                OutlinedTextField(value, { text -> options = options.toMutableList().also { it[index] = text.take(60) } }, Modifier.fillMaxWidth(), placeholder = { Text("选项 ${index + 1}") }, singleLine = true, enabled = !busy)
+                OutlinedTextField(value, { text -> options = options.toMutableList().also { it[index] = text.take(60) } }, Modifier.fillMaxWidth(), label = { Text("选项 ${index + 1}") }, singleLine = true, enabled = !busy)
             }
-            Row {
-                if (options.size < 4) TextButton({ options = options + "" }) { Text("＋ 加选项") }
-                Spacer(Modifier.weight(1f))
-                val filled = options.map(String::trim).filter(String::isNotEmpty)
-                Button({ act { api.request("POST", "trips/$tripId/polls", jsonBody("question" to question.trim(), "options" to JsonArray(filled.map(::JsonPrimitive)))); question = ""; options = listOf("", "") } },
-                    enabled = !busy && question.isNotBlank() && filled.size >= 2) { Text("发起") }
-            }
-            message?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
-        }
-    }, confirmButton = { TextButton(dismiss) { Text("完成") } })
+            if (options.size < 4) TextButton({ options = options + "" }, contentPadding = PaddingValues(0.dp)) { Text("＋ 再加一个选项") }
+            Text("发起后同行的人会收到通知，在这一天的行程里直接点选。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+        } })
 }
 
 /** 行程群聊：打开时每 3 秒取新消息。 */

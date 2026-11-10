@@ -402,6 +402,7 @@ def delete_tip(trip_id: str, tip_id: str, db: Session = Depends(get_db),
 class PollBody(BaseModel):
     question: str
     options: list[str]
+    day: int | None = None   # 第几天；不填 = 关于整趟行程
 
 
 class VoteBody(BaseModel):
@@ -420,7 +421,7 @@ def _poll_dict(db: Session, poll: TravelTripPoll, users: dict[str, str], me: str
         if v.user_id == me:
             mine = v.option_idx
     return {
-        "id": poll.id, "question": poll.question, "closed": bool(poll.closed),
+        "id": poll.id, "question": poll.question, "closed": bool(poll.closed), "day": poll.day,
         "options": [{"text": text, "votes": len(voters[i]), "voters": voters[i]} for i, text in enumerate(options)],
         "my_vote": mine, "total": sum(len(v) for v in voters), "members": len(users),
         "created_by": users.get(poll.created_by, ""), "mine": poll.created_by == me,
@@ -463,7 +464,9 @@ def create_poll(trip_id: str, body: PollBody, db: Session = Depends(get_db),
         raise HTTPException(400, "写一下要大家决定什么")
     if not 2 <= len(options) <= 4:
         raise HTTPException(400, "需要 2 到 4 个不重复的选项")
-    poll = TravelTripPoll(trip_id=trip_id, question=question,
+    # 天数越界（行程后来缩短了等）就当成整趟行程的投票，不让发起失败
+    day = body.day if body.day is not None and 1 <= body.day <= max(1, trip.days or 1) else None
+    poll = TravelTripPoll(trip_id=trip_id, question=question, day=day,
                           options_json=json.dumps(options, ensure_ascii=False), created_by=user.id)
     db.add(poll)
     db.flush()
@@ -476,10 +479,10 @@ def create_poll(trip_id: str, body: PollBody, db: Session = Depends(get_db),
             continue
         upsert_notification(  # 与投票同事务：投票建了通知没落，或反过来，都比一起失败难查
             db, user_id=member_id, actor_id=user.id, type="trip_poll",
-            title=f"{actor} 发起了投票", body=question[:80],
+            title=f"{actor} 发起了投票", body=(f"第 {day} 天：" if day else "") + question[:80],
             target_kind="trip", target_id=trip_id,
             dedupe_key=f"trip-poll:{poll.id}:{member_id}",
-            meta={"trip_id": trip_id, "poll_id": poll.id, "trip_title": trip.title or ""},
+            meta={"trip_id": trip_id, "poll_id": poll.id, "trip_title": trip.title or "", "day": day},
         )
     db.commit()
     return _poll_dict(db, poll, users, user.id)

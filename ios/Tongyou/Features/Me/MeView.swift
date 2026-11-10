@@ -11,6 +11,7 @@ struct MeView: View {
     @State private var supportUnread = 0
     @State private var adminSupportUnread = 0
     @State private var friendRequests = 0
+    @AppStorage("appearance") private var appearance = AppAppearance.system.rawValue
 
     var body: some View {
         NavigationStack {
@@ -42,6 +43,13 @@ struct MeView: View {
                     NavigationLink { SupportChatView(mode: .user) } label: {
                         Label("联系客服", systemImage: "questionmark.bubble").badge(supportUnread)
                     }
+                }
+
+                Section("外观") {
+                    Picker("外观", selection: $appearance) {
+                        ForEach(AppAppearance.allCases) { Text($0.label).tag($0.rawValue) }
+                    }
+                    .pickerStyle(.segmented)
                 }
 
                 if session.account?.isAdmin == true {

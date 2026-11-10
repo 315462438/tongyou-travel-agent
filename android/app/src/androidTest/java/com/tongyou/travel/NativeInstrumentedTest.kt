@@ -99,8 +99,6 @@ class NativeInstrumentedTest {
         LegacySession.exchange(app, "legacy-fixture", write = true)
         val session = Session(app, TokenVault(app)); session.restore(fake)
         assertEquals("legacy-fixture", session.token()); assertEquals("legacy-fixture", TokenVault(app).read())
-        val coldFallback = Session(app, TokenVault(app))
-        assertTrue(coldFallback.restoreForFallback()); assertEquals("legacy-fixture", coldFallback.token())
         assertNull(LegacySession.exchange(app))
         val persisted = app.getSharedPreferences("native_session", 0).getString("ciphertext", "")!!
         assertFalse(persisted.contains("legacy-fixture"))
@@ -125,9 +123,9 @@ class NativeInstrumentedTest {
         assertNull(session.token()); assertNull(session.state.value.error); assertFalse(session.state.value.checking)
     }
     @Test fun webSignOutAndStaleWebViewCannotOverwriteNewSession() {
-        app.session.fromWeb("other-token", "bad-token"); assertEquals("native-fixture", app.session.token())
-        app.session.fromWeb("native-fixture", null); assertNull(app.session.token()); assertNull(TokenVault(app).read())
-        app.session.fromWeb("native-fixture", "resurrected"); assertNull(app.session.token())
+        app.session.replaceToken("other-token", "bad-token"); assertEquals("native-fixture", app.session.token())
+        app.session.replaceToken("native-fixture", null); assertNull(app.session.token()); assertNull(TokenVault(app).read())
+        app.session.replaceToken("native-fixture", "resurrected"); assertNull(app.session.token())
     }
     @Test fun navigationRejectsSpoofedLinksAndPreservesInvitationAcrossLogin() {
         assertNull(MainActivity.incoming(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://17tongyou.com.evil/travel/?ledger_join=x"))))

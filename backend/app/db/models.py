@@ -722,6 +722,8 @@ class TravelTripPoll(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
     trip_id: Mapped[str] = mapped_column(String(32), index=True)
     question: Mapped[str] = mapped_column(String(120))
+    # 属于第几天（null = 关于整趟行程）。投票跟着那天的安排显示，不再全堆在一个面板里。
+    day: Mapped[int | None] = mapped_column(Integer, nullable=True)
     options_json: Mapped[str] = mapped_column(Text)  # ["选项一", "选项二", …]
     created_by: Mapped[str] = mapped_column(String(32), default="")
     closed: Mapped[bool] = mapped_column(Boolean, default=False)

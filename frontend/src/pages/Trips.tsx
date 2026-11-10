@@ -1891,6 +1891,19 @@ function TripBoard({
   const [copilotInput, setCopilotInput] = useState('')
   const [retrying, setRetrying] = useState(false)
   const [selectedDay, setSelectedDay] = useState(1)
+  // 「投票」标签上的数字：没结束、我还没投的投票数。面板没打开时也要看得到，所以单独低频拉取。
+  const [pollsWaiting, setPollsWaiting] = useState(0)
+  useEffect(() => {
+    let alive = true
+    const check = () => authFetch(`${API}/trips/${tripId}/polls`).then(async (r) => {
+      if (!r.ok || !alive) return
+      const rows: PollItem[] = await r.json()
+      setPollsWaiting(rows.filter((p) => !p.closed && p.my_vote === null).length)
+    }).catch(() => {})
+    check()
+    const timer = window.setInterval(check, 20000)
+    return () => { alive = false; window.clearInterval(timer) }
+  }, [tripId])
   const [flashId, setFlashId] = useState<string | null>(null)
   const [editing, setEditing] = useState<TripStop | null>(null)
   const [addingStopDay, setAddingStopDay] = useState<number | null>(null)
@@ -3075,6 +3088,7 @@ function TripBoard({
             >
               <span aria-hidden="true">{tab.icon}</span>{tab.label}
               {tab.id === 'assistant' && issues.length > 0 ? <small>{issues.length}</small> : null}
+              {tab.id === 'polls' && pollsWaiting > 0 ? <small title="等你投票">{pollsWaiting}</small> : null}
             </button>
           ))}
         </div>
@@ -3429,7 +3443,7 @@ function TripBoard({
               onInvite={(n) => call('/invite', 'POST', { username: n }).then((r) => !!r)} />
           )}
           {aiTab === 'tips' && <TipsPanel tripId={tripId} active />}
-          {aiTab === 'polls' && <PollsPanel tripId={tripId} active />}
+          {aiTab === 'polls' && <PollsPanel tripId={tripId} active day={selectedDay} days={trip.days} onPickDay={setSelectedDay} onWaiting={setPollsWaiting} />}
 
           {/* ---- 住宿 tab：每晚住哪汇总 + 酒店推荐 ---- */}
           {aiTab === 'stay' && (
@@ -5585,14 +5599,19 @@ function TipsPanel({ tripId, active }: { tripId: string; active: boolean }) {
 
 
 interface PollItem {
-  id: string; question: string; closed: boolean; my_vote: number | null; total: number; members: number
+  id: string; question: string; closed: boolean; day: number | null; my_vote: number | null; total: number; members: number
   created_by: string; mine: boolean
   options: { text: string; votes: number; voters: string[] }[]
 }
 
 /** 同行人投票：住哪家、哪天走这类事，发个投票比在群里来回问快。每人一票，可以改。 */
-function PollsPanel({ tripId, active }: { tripId: string; active: boolean }) {
+function PollsPanel({ tripId, active, day, days, onPickDay, onWaiting }: {
+  tripId: string; active: boolean; day: number; days: number; onPickDay: (day: number) => void; onWaiting: (count: number) => void
+}) {
   const { data, setData, reload } = useModuleData<PollItem[]>(tripId, 'polls', active, [])
+  useEffect(() => { onWaiting(data.filter((p) => !p.closed && p.my_vote === null).length) }, [data, onWaiting])
+  const [pollDay, setPollDay] = useState(day)   // 0 = 整趟行程
+  useEffect(() => { setPollDay(day) }, [day])
   const [question, setQuestion] = useState('')
   const [options, setOptions] = useState(['', ''])
   const [busy, setBusy] = useState(false)
@@ -5607,7 +5626,7 @@ function PollsPanel({ tripId, active }: { tripId: string; active: boolean }) {
   const create = async () => {
     if (busy) return
     setBusy(true)
-    const made = await call('', 'POST', { question, options: options.filter(o => o.trim()) })
+    const made = await call('', 'POST', { question, options: options.filter(o => o.trim()), day: pollDay || null })
     setBusy(false)
     if (made) { setQuestion(''); setOptions(['', '']); reload() }
   }
@@ -5615,12 +5634,14 @@ function PollsPanel({ tripId, active }: { tripId: string; active: boolean }) {
   return (
     <div className="trip-panel trip-module">
       <div className="trip-panel-head">🗳️ 一起决定 <span className="trip-day-km">每人一票，可以改</span></div>
-      {data.length === 0 && <p className="trip-module-empty">还没有投票。住哪家、哪天走，发一个让大家点一下。</p>}
-      {data.map(poll => {
+      {data.length === 0 && <p className="trip-module-empty">还没有投票。住哪家、去哪个景点，发一个让大家点一下。</p>}
+      {/* 当前这一天的排最前，其次整趟行程的，其余天的在后面 */}
+      {[...data].sort((a, b) => (a.day === day ? 0 : a.day === null ? 1 : 2) - (b.day === day ? 0 : b.day === null ? 1 : 2)).map(poll => {
         const top = Math.max(0, ...poll.options.map(o => o.votes))
         return (
           <section key={poll.id} className={`trip-poll${poll.closed ? ' closed' : ''}`}>
-            <header><b>{poll.question}</b><small>{poll.closed ? '已结束' : `${poll.total}/${poll.members} 人已投`}{poll.created_by ? ` · ${poll.created_by} 发起` : ''}</small></header>
+            <header><b>{poll.question}{!poll.closed && poll.my_vote === null && <em className="trip-poll-waiting">等你投票</em>}</b>
+              <button type="button" className="trip-poll-day" onClick={() => poll.day && onPickDay(poll.day)} disabled={!poll.day}>{poll.day ? `第 ${poll.day} 天` : '整趟行程'}</button><small>{poll.closed ? '已结束' : `${poll.total}/${poll.members} 人已投`}{poll.created_by ? ` · ${poll.created_by} 发起` : ''}</small></header>
             {poll.options.map((option, index) => (
               <button key={option.text} disabled={poll.closed} aria-pressed={poll.my_vote === index}
                 className={`trip-poll-option${poll.my_vote === index ? ' mine' : ''}${poll.closed && option.votes === top && top > 0 ? ' win' : ''}`}
@@ -5638,6 +5659,10 @@ function PollsPanel({ tripId, active }: { tripId: string; active: boolean }) {
         )
       })}
       <div className="trip-poll-new">
+        <select aria-label="投票属于哪一天" value={pollDay} onChange={e => setPollDay(Number(e.target.value))}>
+          {Array.from({ length: Math.max(1, days) }, (_, i) => i + 1).map(n => <option key={n} value={n}>第 {n} 天</option>)}
+          <option value={0}>整趟行程</option>
+        </select>
         <input placeholder="要大家决定什么？如「住哪家」" value={question} maxLength={120} onChange={e => setQuestion(e.target.value)} />
         {options.map((value, index) => (
           <input key={index} placeholder={`选项 ${index + 1}`} value={value} maxLength={60}

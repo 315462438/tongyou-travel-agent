@@ -23,19 +23,6 @@ class Session(private val vault: SessionVault, private val legacy: LegacyStore) 
     @Volatile private var current: String? = null
     fun token(): String? = current
 
-    /** Android can recreate the last fallback Activity without recreating MainActivity first. */
-    @Synchronized fun restoreForFallback(): Boolean {
-        if (mutable.value.checking) {
-            try {
-                current = vault.read()
-                mutable.value = SessionState(false, current)
-            } catch (_: Exception) {
-                mutable.value = SessionState(false, error = "登录信息暂时无法读取，请重试")
-            }
-        }
-        return current != null
-    }
-
     suspend fun restore(api: TravelService) {
         try {
             mutable.value = mutable.value.copy(checking = true, error = null)
@@ -99,9 +86,7 @@ class Session(private val vault: SessionVault, private val legacy: LegacyStore) 
     }
     fun invalidate(expected: String) {
         synchronized(this) { if (current != expected) return; replace(null) }
-        // Do not asynchronously rewrite a live WebView here: a delayed clear could erase a
-        // newer login. The committed migration marker prevents old plaintext being imported;
-        // the fallback clears/sets its storage at document start using the current vault.
+        // The committed migration marker prevents the old WebView plaintext from ever being imported again.
     }
     suspend fun logout(api: TravelService) {
         val expected = current ?: return
@@ -111,8 +96,8 @@ class Session(private val vault: SessionVault, private val legacy: LegacyStore) 
         invalidate(expected)
     }
 
-    /** Fallback may sign out or change password; a stale WebView cannot replace a newer login. */
-    @Synchronized fun fromWeb(expected: String?, token: String?) {
+    /** Swaps in a token the server just issued (password change). A stale caller cannot replace a newer login. */
+    @Synchronized fun replaceToken(expected: String?, token: String?) {
         if (current != expected) return
         replace(token?.takeIf { it.isNotEmpty() }, mutable.value.account.takeIf { token != null })
     }

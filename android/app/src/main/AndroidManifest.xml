@@ -2,7 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <!-- 只在用户问「附近」时由网页请求一次定位；粗略位置足够 -->
+    <!-- 只在用户问「附近」时请求一次定位；粗略位置足够 -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <queries>
         <intent><action android:name="android.intent.action.VIEW" /><category android:name="android.intent.category.BROWSABLE" /><data android:scheme="https" /></intent>
@@ -31,9 +31,6 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
-        <activity android:name=".WebFallbackActivity" android:exported="false"
-            android:windowSoftInputMode="adjustResize"
-            android:configChanges="keyboardHidden|orientation|screenSize|smallestScreenSize|uiMode" />
         <provider android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.files" android:exported="false" android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />

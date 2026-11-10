@@ -46,17 +46,28 @@ import kotlinx.coroutines.launch
 /** The old component name remains the exported entry, preserving installed shortcuts and App Links. */
 class MainActivity : ComponentActivity() {
     private var pendingLink by mutableStateOf<String?>(null)
-    private lateinit var updates: AppUpdates
+    private val appearancePrefs by lazy { getSharedPreferences("appearance", MODE_PRIVATE) }
+    private var appearance by mutableStateOf(Appearance.SYSTEM)
+    /** Replaced by the update instrumentation test with a fake source. */
+    @androidx.annotation.VisibleForTesting lateinit var updates: AppUpdates
     private val app get() = application as TongyouApplication
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        appearance = readAppearance(appearancePrefs)
         pendingLink = savedInstanceState?.getString("pending_link") ?: incoming(intent)
         updates = AppUpdates(this, AppUpdates.Source { if (app.service is TravelApi) AppUpdates.fetchOfficial() else null },
             ::external, getSharedPreferences("app_updates", MODE_PRIVATE))
         if (app.session.state.value.checking) lifecycleScope.launch { app.session.restore(app.service) }
         setContent {
-            TongyouTheme {
+            TongyouTheme(appearance) {
+                // Status / navigation bar icons follow the in-app choice, not only the system setting.
+                val dark = LocalDarkTheme.current
+                LaunchedEffect(dark) {
+                    val transparent = android.graphics.Color.TRANSPARENT
+                    val style = if (dark) androidx.activity.SystemBarStyle.dark(transparent) else androidx.activity.SystemBarStyle.light(transparent, transparent)
+                    enableEdgeToEdge(style, style)
+                }
                 CompositionLocalProvider(LocalUriHandler provides object : UriHandler { override fun openUri(uri: String) = external(uri) }) {
                     Backdrop(Modifier.fillMaxSize()) {
                       CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground) {
@@ -73,7 +84,9 @@ class MainActivity : ComponentActivity() {
                             }
                             state.token == null -> LoginScreen(app.session, app.service)
                             else -> key(state.token) {
-                                NativeShell(app, ::external, pendingLink) { pendingLink = null }
+                                NativeShell(app, ::external, pendingLink, { pendingLink = null }, appearance) { choice ->
+                                    appearance = choice; appearancePrefs.edit().putString("appearance", choice.name).apply()
+                                }
                             }
                         }
                       }
@@ -111,7 +124,8 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@Composable private fun NativeShell(app: TongyouApplication, external: (String) -> Unit, pendingLink: String?, consumeLink: () -> Unit) {
+@Composable private fun NativeShell(app: TongyouApplication, external: (String) -> Unit, pendingLink: String?, consumeLink: () -> Unit,
+                                    appearance: Appearance, setAppearance: (Appearance) -> Unit) {
     val session by app.session.state.collectAsStateWithLifecycle()
     val activeToken = session.token ?: return
     val navigation = rememberNavController()
@@ -129,7 +143,7 @@ class MainActivity : ComponentActivity() {
     val forcedPassword = session.account?.get("must_change_password").bool()
     // 改密码后服务端签发新令牌、旧令牌全部作废：交回会话，界面以新令牌重建，不会被踢回登录页。
     if (forcedPassword || changingPassword) ChangePasswordSheet(api, forcedPassword, { changingPassword = false }) { token ->
-        changingPassword = false; app.session.fromWeb(activeToken, token); scope.launch { app.session.refresh(app.service) }
+        changingPassword = false; app.session.replaceToken(activeToken, token); scope.launch { app.session.refresh(app.service) }
     }
     // 收到的行程 / 账本邀请链接：先确认，再在原生里加入并打开。
     var joining by remember { mutableStateOf(false) }
@@ -235,6 +249,14 @@ class MainActivity : ComponentActivity() {
                         listOf("好友" to "friends", "历史对话" to "history", "通知与公告" to "notifications", "帮助与反馈" to "support").forEachIndexed { i, (label, to) ->
                             if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                             MenuRow(label) { go(to, null) }
+                        }
+                    }
+                    Text("外观", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    GlassCard(Modifier.fillMaxWidth()) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Appearance.entries.forEach { option ->
+                                FilterChip(appearance == option, { setAppearance(option) }, { Text(option.label) }, Modifier.weight(1f))
+                            }
                         }
                     }
                     Text("更多工具与设置", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)

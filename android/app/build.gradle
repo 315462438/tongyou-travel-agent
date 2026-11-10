@@ -16,8 +16,8 @@ android {
         applicationId 'com.tongyou.travel'
         minSdk 26
         targetSdk 35
-        versionCode 34
-        versionName '0.14.0'
+        versionCode 35
+        versionName '0.15.0'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
     signingConfigs {
@@ -40,26 +40,12 @@ android {
         debug { applicationIdSuffix '.debug'; versionNameSuffix '-debug' }
     }
     buildFeatures { buildConfig true; compose true }
-    sourceSets.main.assets.srcDirs += ['build/generated/webAssets']
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = '17' }
     packaging { resources.excludes += ['/META-INF/{AL2.0,LGPL2.1}'] }
     lint { abortOnError true }
 }
 
-tasks.register('bundleWeb', Exec) {
-    workingDir rootProject.projectDir
-    commandLine 'python3', 'scripts/bundle-web.py'
-    inputs.dir "${rootProject.projectDir}/../frontend/src"
-    inputs.dir "${rootProject.projectDir}/../frontend/public"
-    inputs.file "${rootProject.projectDir}/../frontend/index.html"
-    inputs.file "${rootProject.projectDir}/../frontend/package-lock.json"
-    inputs.file "${rootProject.projectDir}/../frontend/vite.config.ts"
-    inputs.file "${rootProject.projectDir}/scripts/bundle-web.py"
-    inputs.file "${rootProject.projectDir}/scripts/vite-native.mjs"
-    outputs.dir 'build/generated/webAssets'
-}
-tasks.named('preBuild').configure { dependsOn 'bundleWeb' }
 tasks.configureEach { task ->
     if (task.name == 'validateSigningRelease') task.doFirst {
         if (keys.isEmpty()) throw new GradleException('Missing private signing config. Run scripts/create-signing.py first.')
@@ -81,7 +67,6 @@ dependencies {
     implementation 'dev.chrisbanes.haze:haze:1.5.3'
     implementation 'org.commonmark:commonmark:0.24.0'
     implementation 'org.commonmark:commonmark-ext-gfm-tables:0.24.0'
-    implementation 'androidx.webkit:webkit:1.12.1'
     implementation 'androidx.core:core:1.15.0'
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2'

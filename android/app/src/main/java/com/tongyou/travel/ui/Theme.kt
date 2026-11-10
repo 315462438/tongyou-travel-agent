@@ -45,7 +45,16 @@ private val Dark = darkColorScheme(
     surfaceContainerHigh = Color(0xFF1D2433), surfaceContainerHighest = Color(0xFF252D3E), surfaceTint = Color.Transparent,
 )
 
-@Composable fun TongyouTheme(content: @Composable () -> Unit) {
+/** Whether the app is currently drawn dark — use this, not isSystemInDarkTheme(), so the in-app switch wins. */
+val LocalDarkTheme = staticCompositionLocalOf { false }
+
+/** 外观：跟随系统 / 浅色 / 深色。保存在本机，不同步到账号。 */
+enum class Appearance(val label: String) { SYSTEM("跟随系统"), LIGHT("浅色"), DARK("深色") }
+fun readAppearance(prefs: android.content.SharedPreferences) =
+    runCatching { Appearance.valueOf(prefs.getString("appearance", null) ?: "SYSTEM") }.getOrDefault(Appearance.SYSTEM)
+
+@Composable fun TongyouTheme(appearance: Appearance = Appearance.SYSTEM, content: @Composable () -> Unit) {
+    val dark = when (appearance) { Appearance.SYSTEM -> isSystemInDarkTheme(); Appearance.LIGHT -> false; Appearance.DARK -> true }
     val base = Typography()
     // Chinese text needs smaller display sizes and firmer weights than Material's Latin-tuned defaults.
     // One notch below Material's Latin-tuned defaults: Chinese glyphs are visually larger at the same sp,
@@ -65,8 +74,8 @@ private val Dark = darkColorScheme(
         labelMedium = base.labelMedium.copy(fontSize = 12.sp, lineHeight = 16.sp),
         labelSmall = base.labelSmall.copy(fontSize = 11.sp, lineHeight = 15.sp),
     )
-    CompositionLocalProvider(LocalMotion provides ValueAnimator.areAnimatorsEnabled()) {
-        MaterialTheme(colorScheme = if (isSystemInDarkTheme()) Dark else Light, typography = type, content = content)
+    CompositionLocalProvider(LocalMotion provides ValueAnimator.areAnimatorsEnabled(), LocalDarkTheme provides dark) {
+        MaterialTheme(colorScheme = if (dark) Dark else Light, typography = type, content = content)
     }
 }
 
