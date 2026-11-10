@@ -120,3 +120,24 @@ def test_day_poll_notification_names_the_day(client, trip):
     db = next(c.app.dependency_overrides[get_db]())
     row = db.execute(select(TravelNotification).where(TravelNotification.type == "trip_poll")).scalars().one()
     assert row.body.startswith("第 2 天：")
+
+
+@pytest.mark.parametrize("day", [None, 2])
+def test_poll_notification_api_preserves_destination_and_read_state(client, trip, day):
+    from app.api.notification_api import router
+    c, current = client
+    c.app.include_router(router)
+    poll = _poll(c, trip, day=day).json()
+    assert c.get("/api/notifications").json()["notifications"] == []
+    current["id"] = "ub"
+    notice, = c.get("/api/notifications").json()["notifications"]
+    assert notice["type"] == "trip_poll" and notice["target_kind"] == "trip"
+    assert notice["target_id"] == trip
+    assert notice["meta"]["trip_id"] == trip and notice["meta"]["poll_id"] == poll["id"]
+    assert notice["meta"]["day"] == day
+    assert c.post(f"/api/notifications/{notice['id']}/read").status_code == 200
+    read, = c.get("/api/notifications").json()["notifications"]
+    assert read["read"] is True and read["meta"] == notice["meta"]
+    current["id"] = "uc"
+    assert c.get("/api/notifications").json()["notifications"] == []
+    assert c.get(f"/api/trips/{trip}/polls").status_code == 404

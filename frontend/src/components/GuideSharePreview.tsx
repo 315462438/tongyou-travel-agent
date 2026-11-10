@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { paginateShare, type ShareSummary } from '../shareSummary'
-import { isAndroidApp, shareAndroidImages } from '../nativeAndroid'
 import './GuideSharePreview.css'
 
 // 一张长图的上限：iOS Safari 画布面积约 1678 万像素，宽 560 逻辑像素时 2 倍图最多约 7490 高，超了就降倍率。
@@ -96,12 +95,11 @@ export default function GuideSharePreview({summary, onClose}: {summary:ShareSumm
     return()=>{cancelled=true;document.removeEventListener('keydown',key);before?.focus()}
   },[signature,mode])
   const fileName=(index:number)=>`${summary.title.replace(/[/\\:*?"<>|]/g,'_').slice(0,40)}_${mode==='book'?'旅行手册':`计划单_${index+1}`}.png`
-  // 一次全部：手机浏览器走系统分享（一次带上所有图，可直接发微信）；App 交给原生「全部存相册 / 一起分享」；其余逐张下载。
+  // 一次全部：手机浏览器走系统分享（一次带上所有图，可直接发微信）；其余逐张下载。
   const saveAll=async()=>{
     if(busy||!canvases.current.length)return;setBusy(true);setError('')
     try{
       const blobs=await Promise.all(canvases.current.map(toBlob))
-      if(isAndroidApp()){shareAndroidImages(images.map((data,i)=>({name:fileName(i),data})));return}
       const files=blobs.map((blob,i)=>new File([blob],fileName(i),{type:'image/png'}))
       // 系统分享只在触屏设备用（桌面 Chrome/Safari 也支持，但电脑上用户要的是文件落到下载目录）。
       if(matchMedia('(pointer: coarse)').matches&&navigator.canShare?.({files})){
@@ -119,12 +117,11 @@ export default function GuideSharePreview({summary, onClose}: {summary:ShareSumm
       const name=fileName(page)
       // 手册只有一张：手机浏览器直接走系统分享，能一步发到微信。
       const file=new File([blob],name,{type:'image/png'})
-      if(!window.tongyouAndroidDownload&&matchMedia('(pointer: coarse)').matches&&navigator.canShare?.({files:[file]})){
+      if(matchMedia('(pointer: coarse)').matches&&navigator.canShare?.({files:[file]})){
         try{await navigator.share({files:[file],title:summary.title})}catch(e){if(!(e instanceof DOMException&&e.name==='AbortError'))throw e}
         return
       }
-      if(window.tongyouAndroidDownload){const url=URL.createObjectURL(blob);await window.tongyouAndroidDownload(url,name);URL.revokeObjectURL(url)}
-      else downloadShareFile(blob,name)
+      downloadShareFile(blob,name)
     }catch(e){setError(e instanceof Error?e.message:'保存失败，请重试')}finally{setBusy(false)}
   }
   return createPortal(<div className="guide-share-mask" onClick={onClose}>

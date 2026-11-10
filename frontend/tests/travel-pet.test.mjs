@@ -105,7 +105,6 @@ test('trip board dark theme flips surfaces together with text', async () => {
   const media = css.slice(css.indexOf('@media (prefers-color-scheme: dark)'))
   for (const token of ['--trip-surface:', '--tx-surface:', '--x-n100:', '--x-glass:', '--tw-surface:', '--tw-ink:'])
     assert.ok(media.includes(token), `dark block sets ${token}`)
-  assert.ok(css.includes('html.native-android[data-android-appearance=dark] .app.journey-shell .trips-overlay'), 'Android dark copy')
   // Light palette stays exactly the pre-dark values.
   assert.match(css, /--tw-surface: #fff; --tw-canvas: #f5f7fb;/)
   const lightPart = css.slice(css.indexOf('*/') + 2, css.indexOf('/* ---------- 深色主题'))
@@ -134,9 +133,9 @@ test('AI chat dark theme flips the guide palette, not just the page background',
   const fs = await import('node:fs/promises')
   const css = await fs.readFile(new URL('../src/pages/JourneyShell.css', import.meta.url), 'utf8')
   const dark = css.slice(css.indexOf('AI 对话深色'))
-  for (const scope of ['@media (prefers-color-scheme: dark) {\n.app.journey-shell .ai-workspace {', 'html.native-android[data-android-appearance=dark] .app.journey-shell .ai-workspace {'])
+  for (const scope of ['@media (prefers-color-scheme: dark) {\n.app.journey-shell .ai-workspace {'])
     assert.ok(dark.includes(scope), scope)
   // index.css 的攻略正文、表格、续作卡、手机玻璃卡都读这些令牌；漏一个就是深底深字或深底白卡。
-  for (const token of ['--x-n100:', '--x-n20:', '--x-pine-96:', '--tx-ink:', '--mobile-glass-card:']) assert.equal(dark.split(token).length - 1, 2, token)
+  for (const token of ['--x-n100:', '--x-n20:', '--x-pine-96:', '--tx-ink:', '--mobile-glass-card:']) assert.equal(dark.split(token).length - 1, 1, token)
   assert.match(dark, /\.ai-workspace \.next-steps \{ background:/)
 })

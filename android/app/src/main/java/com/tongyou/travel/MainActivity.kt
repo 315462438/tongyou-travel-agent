@@ -38,6 +38,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.navigation.compose.*
+import androidx.navigation.navArgument
+import androidx.navigation.NavType
 import com.tongyou.travel.chat.*
 import com.tongyou.travel.data.*
 import com.tongyou.travel.ui.*
@@ -206,14 +208,17 @@ class MainActivity : ComponentActivity() {
                 { navigation.navigate("history") { launchSingleTop = true } }) { id -> navigation.navigate("trip/$id") { launchSingleTop = true } } }
             composable("trips") { TripsScreen(api, false, { navigation.popBackStack() }) { id -> navigation.navigate("trip/$id") { launchSingleTop = true } } }
             composable("trips/new") { TripsScreen(api, true, { navigation.popBackStack() }) { id -> navigation.navigate("trip/$id") { popUpTo("home"); launchSingleTop = true } } }
-            composable("trip/{id}") { stack -> TripDetailScreen(api, stack.arguments?.getString("id").orEmpty(), session.account?.get("username").string(),
-                { navigation.popBackStack() }, external) { navigation.navigate("ledger") { launchSingleTop = true } } }
+            composable("trip/{id}?notification={notification}&day={day}&poll={poll}", arguments = listOf(
+                navArgument("notification") { defaultValue = "" }, navArgument("day") { type = NavType.IntType; defaultValue = 0 }, navArgument("poll") { defaultValue = "" }
+            )) { stack -> TripDetailScreen(api, stack.arguments?.getString("id").orEmpty(), session.account?.get("username").string(),
+                { navigation.popBackStack() }, external, notification = if (stack.arguments?.getString("notification") == "poll") TripNotification(
+                    stack.arguments?.getString("id").orEmpty(), stack.arguments?.getInt("day")?.takeIf { it > 0 }, stack.arguments?.getString("poll")?.ifBlank { null }) else null) { navigation.navigate("ledger") { launchSingleTop = true } } }
             composable("friends") { FriendsScreen(api) { navigation.popBackStack() } }
             composable("history") { HistoryScreen(api, { navigation.popBackStack() }) { id -> chat.open(id); navigation.navigate("chat") { popUpTo("home"); launchSingleTop = true } } }
-            composable("notifications") { NotificationsScreen(api, { navigation.popBackStack() }) { kind, id ->
+            composable("notifications") { NotificationsScreen(api, { navigation.popBackStack() }) { kind, id, poll ->
                 when (kind) {
                     "friends" -> navigation.navigate("friends") { launchSingleTop = true }
-                    "trip" -> if (id.isNotBlank()) navigation.navigate("trip/$id") { launchSingleTop = true }
+                    "trip" -> if (id.isNotBlank()) navigation.navigate(poll?.route() ?: "trip/$id") { launchSingleTop = true }
                 }
             } }
             composable("profile") { ProfileScreen(api, { navigation.popBackStack() }, { changingPassword = true }) { scope.launch { app.session.refresh(app.service) } } }

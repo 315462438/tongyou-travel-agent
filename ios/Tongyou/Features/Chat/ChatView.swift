@@ -1,7 +1,7 @@
 import PhotosUI
 import SwiftUI
 
-struct TripRef: Hashable { var id: String }
+struct TripRef: Hashable { var id: String; var notification: TripNotificationTarget? = nil }
 
 struct ChatView: View {
     @Environment(AppRouter.self) private var router

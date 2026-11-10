@@ -1,6 +1,6 @@
-# 17同游 Web 与 Android 共享界面
+# 17同游 Web 界面
 
-React + TypeScript + Vite，部署基路径 `/travel/`，后端 API 为 `/travel/api`。截至 2026-10-20：旅行 / 记账 / 我的三入口、独立问 AI；协同行程地图与行程同屏、景点图文详情、紧凑卡片；修复我的页面工具弹层遮挡。本次补充 AI 明暗文字及输入卡配色修复。Android 0.8.2 (13) 为此前发布的界面快照，尚不包含这次配色修复，iOS 为独立 SwiftUI 实现。
+React + TypeScript + Vite，部署基路径 `/travel/`，后端 API 为 `/travel/api`。旅行 / 记账 / 我的三入口、独立问 AI；支持手机与桌面浏览器。Android 已使用独立 Kotlin / Compose 工程，iOS 使用 SwiftUI；网页不再承担原生壳适配。
 
 ## 本地开发
 
@@ -21,11 +21,11 @@ npm run dev
 | --- | --- |
 | 三入口导航、AI 与工具弹层 | src/pages/Home.tsx、JourneyShell.css |
 | 旅行册首页 | src/pages/TravelHome.tsx |
-| 地图与逐日行程 | src/pages/Trips.tsx、AndroidTripWorkspace.tsx、TripRouteLayout.css |
+| 地图与逐日行程 | src/pages/Trips.tsx、MobileTripWorkspace.tsx、TripRouteLayout.css |
 | 地点图片与详情 | src/pages/TripStopThumbnail.tsx、PlaceDetails.tsx |
 | 高德地图、编号与定位 | src/components/TripMap.tsx |
 | 独立记账与协作 | src/pages/Ledger.tsx |
-| Android 桥接与返回 | src/nativeAndroid.ts |
+| 投票通知定位 | src/tripNotification.ts、pages/Trips.tsx |
 
 ## 验证
 
@@ -44,9 +44,9 @@ npm run test:account
 npm run test:ai-contrast
 ```
 
-以上测试拦截业务 API 使用 fixture，不修改生产数据。`REAL_MAP=1 QA_CASE=web-mobile` 可验证真实高德 SDK；正式域名测试见[地图验收](../docs/test_cases/行程卡片密度与安卓地图比例-2026-10-20.md)。本轮 99 单测、主流程 6 组、地图 7 组、账户工具 6 组通过，结果见 `../docs/test_cases/`；lint 为额外检查入口，不等于本轮所有规则均无历史告警。
+以上测试拦截业务 API 使用 fixture，不修改生产数据。`REAL_MAP=1 QA_CASE=web-mobile` 可验证真实高德 SDK；正式域名测试见[地图验收](../docs/test_cases/行程卡片密度与安卓地图比例-2026-10-20.md)。本次通知定位及旧壳清理的可运行用例和结果见 [测试记录](../docs/test_cases/旧安卓适配清理与投票通知直达-2026-11-10.md)。通知专项使用 `NOTIFICATION_QA_URL` 指定地址，默认 4190 端口，运行 `npm run test:notifications`。
 
 ## 构建与发布边界
 
 `npm run build` 生成 dist。Web 将 dist 内容部署到后端静态目录；先发布资源，再切换入口，保留旧哈希资源供已打开页面使用。部署后校验线上资源与健康状态。
-Android 由 `../android/scripts/bundle-web.py` 生成独立固定快照，不覆盖 dist/backend/static；修改共享 UI 后需要另发 APK。iOS 构建不使用这份 UI。签名、APK、环境文件与构建输出均不提交 Git。
+Android 与 iOS 均直接调用后端 API，独立构建和发布，不打包此目录中的 UI。签名、APK、环境文件与构建输出均不提交 Git。

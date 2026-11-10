@@ -1,6 +1,5 @@
-import { lazy, Suspense, useCallback, useEffect, useState, type ReactNode } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { API, authFetch, clearToken, getToken, setUnauthorizedHandler } from './api'
-import { isAndroidApp, notifyAndroidReady } from './nativeAndroid'
 
 const Home = lazy(() => import('./pages/Home'))
 const LedgerJoin = lazy(() => import('./pages/LedgerJoin'))
@@ -70,10 +69,10 @@ export default function App() {
       setReady(true)
       return
     }
-    // A stalled authentication request must not leave the Android launch screen forever.
+    // Keep login recoverable when the authentication service stalls.
     const controller = new AbortController()
     let active = true
-    const timeout = isAndroidApp() ? window.setTimeout(() => controller.abort(), 8000) : undefined
+    const timeout = window.setTimeout(() => controller.abort(), 8000)
     authFetch(`${API}/auth/me`, { signal: controller.signal })
       .then((r) => { if (r.status >= 500) throw new Error('service unavailable'); return r.ok ? r.json() : null })
       .then((data) => active && data && setUser({
@@ -81,17 +80,16 @@ export default function App() {
         display_name: data.display_name, avatar_url: data.avatar_url,
         must_change_password: data.must_change_password,
       }))
-      .catch(() => { if (active && isAndroidApp()) setConnectionError(true) })
+      .catch(() => { if (active) setConnectionError(true) })
       .finally(() => { window.clearTimeout(timeout); if (active) setReady(true) })
     return () => { active = false; window.clearTimeout(timeout); controller.abort() }
 
   }, [retry])
 
-  if (connectionError) return <AndroidReady><div className="app-loading" role="alert"><span>暂时连接不上服务器，登录信息已保留。</span><button onClick={() => { setReady(false); setRetry(n => n + 1) }}>重新连接</button></div></AndroidReady>
+  if (connectionError) return <div className="app-loading" role="alert"><span>暂时连接不上服务器，登录信息已保留。</span><button onClick={() => { setReady(false); setRetry(n => n + 1) }}>重新连接</button></div>
   if (!ready) return <AppLoading label="正在确认登机信息…" />
   return (
     <Suspense fallback={<AppLoading label="正在准备你的旅程…" />}>
-      <AndroidReady>
       {ledgerJoin && (user || !joinLogin) ? <LedgerJoin token={ledgerJoin} loggedIn={!!user} onLogin={() => setJoinLogin(true)} onCancel={finishLedgerInvite} onJoined={id => {localStorage.removeItem('travel_pending_join'); localStorage.setItem('travel_open_ledger', id); finishLedgerInvite()}} /> : !user ? <Auth onAuthed={setUser} /> : (
         <Home
           user={user}
@@ -100,7 +98,6 @@ export default function App() {
           onPasswordChanged={() => setUser((u) => (u ? { ...u, must_change_password: false } : u))}
         />
       )}
-      </AndroidReady>
     </Suspense>
   )
 }
@@ -112,10 +109,4 @@ function AppLoading({ label }: { label: string }) {
       <span>{label}</span>
     </div>
   )
-}
-
-// Inside Suspense: runs only after the actual screen (including lazy chunks) commits.
-function AndroidReady({ children }: { children: ReactNode }) {
-  useEffect(() => notifyAndroidReady(), [])
-  return children
 }

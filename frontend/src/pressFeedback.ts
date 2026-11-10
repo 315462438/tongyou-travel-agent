@@ -1,11 +1,10 @@
-// 全站按压反馈：按下形变 + 波纹 + 安卓 App 触感。main.tsx 安装一次，组件无需改动。
+// 全站按压反馈：按下形变 + 波纹。main.tsx 安装一次，组件无需改动。
 // 波纹画在 body 上与按钮重合的 fixed 容器里，不往按钮内部插节点、不改它的 position/overflow，
 // 所以不会碰到任何现有布局；形变用独立的 `scale` 属性，不覆盖元素已有的 transform。
 
 export const PRESS_SELECTOR = 'button, [role="button"], [role="tab"], [role="switch"], a.btn, summary'
 // 面积超过它的卡片只轻微下沉，否则整张大卡缩 4% 会显得在「跳」。
 export const LARGE_PRESS_AREA = 160 * 64
-export type HapticKind = 'tick' | 'confirm' | 'reject'
 
 interface Rect { left: number; top: number; width: number; height: number }
 
@@ -21,27 +20,12 @@ export function pressSize(rect: Rect): 'sm' | 'lg' {
   return rect.width * rect.height > LARGE_PRESS_AREA ? 'lg' : 'sm'
 }
 
-/** 只有切换类控件按下时给轻触；普通按钮每点都震是噪声。 */
-export function pressHaptic(el: Element): HapticKind | null {
-  const role = el.getAttribute('role')
-  if (role === 'tab' || role === 'switch' || el.hasAttribute('aria-pressed') || el.hasAttribute('aria-checked')) return 'tick'
-  const opt = el.getAttribute('data-haptic')
-  return opt === 'tick' || opt === 'confirm' || opt === 'reject' ? opt : null
-}
-
 export function pressTarget(target: EventTarget | null): HTMLElement | null {
   if (!(target instanceof Element)) return null
   const el = target.closest<HTMLElement>(PRESS_SELECTOR)
   if (!el || el.closest('[data-no-press]')) return null
   if ((el as HTMLButtonElement).disabled || el.getAttribute('aria-disabled') === 'true') return null
   return el
-}
-
-const isAndroidApp = () => /17TongyouAndroid\//.test(navigator.userAgent) && !!window.TongyouNative
-
-export function nativeHaptic(kind: HapticKind) {
-  if (!isAndroidApp()) return
-  try { window.TongyouNative?.postMessage(JSON.stringify({ type: 'haptic', kind })) } catch { /* 触感是锦上添花，失败不影响操作 */ }
 }
 
 function spawnRipple(el: HTMLElement, x: number, y: number) {
@@ -78,8 +62,6 @@ export function installPressFeedback() {
     if (e.button !== 0) return
     const el = pressTarget(e.target)
     if (!el) return
-    const haptic = pressHaptic(el)
-    if (haptic) nativeHaptic(haptic)
     if (reduce.matches) return
     release()
     pressed = el

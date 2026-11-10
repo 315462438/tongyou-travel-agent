@@ -1,5 +1,13 @@
 17同游 Android 好友测试版
 
+2026-11-10 当前版本：0.15.1 (36)，原生 Kotlin / Compose。
+- 已删除网页兜底和网页快照；frontend 不再包含旧壳桥接。
+- 投票通知携带日期与投票 ID，加载行程后定位；日期变动、整趟投票和过期通知均有回退。
+- 44 项 JVM 单测、lintRelease、正式签名 Release 通过；未启动模拟器。
+- 下方为历史开发与发布记录，当前发布状态以 docs/dev_docs/mobile-release-management.txt 为准。
+
+历史记录：
+
 2026-11-10 原生改造（本地开发版，未发布）：0.12.0 (29)
 - 已落实方案阶段 0 + 1：Kotlin / Compose 登录、旅行首页、AI 对话与 Markdown；OkHttp 协议层、Keystore AES-GCM 登录迁移、原生深浅主题。
 - 行程详情、账本、账户高级工具、通知、海报/预算/分享/扫码继续由 WebFallbackActivity 打开 APK 固定网页快照；原生首页保留旅行 / 记账 / 我的入口。

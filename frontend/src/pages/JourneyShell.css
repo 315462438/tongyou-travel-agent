@@ -87,7 +87,6 @@ html .app.journey-shell.journey-shell .mobile-bottom-nav button svg { width:22px
  .travel-tone-0 { --book:#243c57;--book-ink:#c6dcf6; }.travel-tone-1 { --book:#2c403b;--book-ink:#d3e5d6; }.travel-tone-2 { --book:#463c36;--book-ink:#e8d5c5; }.travel-tone-3 { --book:#36344d;--book-ink:#dcd6f3; }
  .travel-book { border-color:#ffffff15; }
 }
-html.native-android[data-android-appearance=dark] .app.journey-shell { --journey-ink:#eef2f8;--journey-muted:#a1acbd;--journey-card:#202737dd;--journey-line:#ffffff15;--journey-bg:#0f1521;--journey-accent:#8bb6ff; }
 @media(prefers-reduced-motion:reduce) { .journey-shell *,.journey-shell *::before,.journey-shell *::after { animation:none!important;transition:none!important;scroll-behavior:auto!important; }.journey-shell .travel-book:hover,.journey-shell .travel-destination:hover { transform:none; } }
 /* Keep the same stacking order for desktop and mobile, including lazy-loaded modules. */
 .app.journey-shell .trips-overlay,.app.journey-shell .ledger-shell { z-index:55;bottom:0; }
@@ -161,7 +160,7 @@ html .app.journey-shell .ai-workspace .inspiration-launchpad.simple {
 }
 html .app.journey-shell .ai-workspace .inspiration-launchpad.simple:focus-within { border-color:var(--journey-accent); }
 
-/* ---------- AI 对话深色：攻略正文与卡片跟着翻（系统深色 / 安卓 App 深色各一份） ---------- */
+/* ---------- AI 对话深色：攻略正文与卡片跟着翻（跟随浏览器系统配色） ---------- */
 @media (prefers-color-scheme: dark) {
 .app.journey-shell .ai-workspace {
   /* AI 对话里的攻略正文、表格、来源、续作卡直接用 :root 的浅色中性色阶（:root 已求值）：在面板范围内整体换成深色值。
@@ -187,29 +186,6 @@ html .app.journey-shell .ai-workspace .inspiration-launchpad.simple:focus-within
 .app.journey-shell .ai-workspace .jump-bottom { background: var(--x-n100); color: var(--tx-brand); border-color: var(--x-n88); }
 .app.journey-shell.view-mobile .ai-workspace .composer-wrap { background: rgba(15, 21, 33, .72); }
 }
-html.native-android[data-android-appearance=dark] .app.journey-shell .ai-workspace {
-  /* AI 对话里的攻略正文、表格、来源、续作卡直接用 :root 的浅色中性色阶（:root 已求值）：在面板范围内整体换成深色值。
-     同行程板深色修复（docs/pitfalls/深色主题只换了字色没换底色-2026-10-22.md）。 */
-  --x-n100: #182030; --x-n96: #1f2839; --x-n88: #2c3648; --x-n78: #3a4558; --x-n68: #93a0b2; --x-n60: #9eabbd;
-  --x-n50: #aab5c6; --x-n41: #c0c9d6; --x-n30: #d5dce6; --x-n20: #e3e8ef; --x-n12: #eef2f8;
-  --x-pine-96: #1a2333; --x-pine-90: #2a3852; --x-pine-44: #9cc0ff; --x-sky-96: #1a2333; --x-sky-90: #2a3852;
-  --x-cinnabar-96: #3a1f24; --x-cinnabar-90: #5a2a31; --x-warn-96: #33291a; --x-warn-90: #4d3d22;
-  --x-glass: rgba(24, 32, 48, .92); --x-glass-strong: rgba(24, 32, 48, .96); --x-glass-line: #ffffff17;
-  --tx-bg: #0f1521; --tx-surface: #182030; --tx-surface-soft: #1f2839; --tx-ink: #eef2f8; --tx-muted: #a1acbd; --tx-line: #ffffff17;
-  --tx-brand: #8bb6ff; --tx-brand-strong: #a9c8ff; --tx-brand-soft: #1c2b4a;
-  /* 手机布局的玻璃卡片（MobileGlass.css）只有浅色值。 */
-  --mobile-glass-fill: rgba(24, 32, 48, .6); --mobile-glass-card: linear-gradient(135deg, rgba(36, 46, 66, .92), rgba(24, 32, 48, .86));
-  --mobile-glass-edge: #ffffff1f; --mobile-glass-shadow: inset 0 1px 0 #ffffff14, 0 8px 28px -18px #0008;
-  color-scheme: dark;
-}
-html.native-android[data-android-appearance=dark] .app.journey-shell .ai-workspace .guide-markdown .guide-table-wrap tbody tr:nth-child(even) { background: #1c2536; }
-html.native-android[data-android-appearance=dark] .app.journey-shell .ai-workspace .guide-markdown .guide-day-heading { background: linear-gradient(135deg, #1c2b4a, #1a2333); }
-html.native-android[data-android-appearance=dark] .app.journey-shell .ai-workspace .guide-markdown blockquote { background: linear-gradient(90deg, #1c2b4a, #1a2333); }
-html.native-android[data-android-appearance=dark] .app.journey-shell .ai-workspace .web-toggle.on, html.native-android[data-android-appearance=dark] .app.journey-shell .ai-workspace .deep-toggle.on { color: #fff; }
-html.native-android[data-android-appearance=dark] .app.journey-shell .ai-workspace .composer-hint { color: var(--x-n60); }
-html.native-android[data-android-appearance=dark] .app.journey-shell .ai-workspace .next-steps { background: linear-gradient(180deg, #1a2232, #182030); border-color: var(--x-n88); }
-html.native-android[data-android-appearance=dark] .app.journey-shell .ai-workspace .jump-bottom { background: var(--x-n100); color: var(--tx-brand); border-color: var(--x-n88); }
-html.native-android[data-android-appearance=dark] .app.journey-shell.view-mobile .ai-workspace .composer-wrap { background: rgba(15, 21, 33, .72); }
 
 /* 2026-11-10：出行当天的首页卡 */
 .travel-today { margin-bottom:24px;padding:16px 18px;border:1px solid var(--journey-line);border-radius:24px;background:var(--journey-card, rgba(255,255,255,.72)); }

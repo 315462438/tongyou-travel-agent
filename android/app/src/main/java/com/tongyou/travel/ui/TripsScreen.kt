@@ -119,7 +119,7 @@ fun parseTripDate(text: String, today: LocalDate = LocalDate.now()): String? {
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable fun TripDetailScreen(api: TravelService, id: String, username: String, back: () -> Unit, external: (String) -> Unit, openLedger: () -> Unit) {
+@Composable fun TripDetailScreen(api: TravelService, id: String, username: String, back: () -> Unit, external: (String) -> Unit, notification: TripNotification? = null, openLedger: () -> Unit) {
     var trip by remember { mutableStateOf<JsonObject?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var reload by remember { mutableIntStateOf(0) }
@@ -131,6 +131,10 @@ fun parseTripDate(text: String, today: LocalDate = LocalDate.now()): String? {
     var removing by rememberSaveable { mutableStateOf(false) }
     var askedDate by rememberSaveable { mutableStateOf(false) }
     var polls by remember { mutableStateOf<List<JsonObject>>(emptyList()) }
+    var notificationConsumed by rememberSaveable { mutableStateOf(false) }
+    var focusPoll by rememberSaveable { mutableStateOf<String?>(null) }
+    var notificationScrolled by rememberSaveable { mutableStateOf(false) }
+    val listState = rememberLazyListState()
     var pollBusy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -142,6 +146,12 @@ fun parseTripDate(text: String, today: LocalDate = LocalDate.now()): String? {
                 if (trip == null || (sheet.isEmpty() && !adding && editing == null)) {
                     call({ error = it }) { api.request("GET", "trips/$id").obj() }?.let { trip = it }
                     call({}) { api.request("GET", "trips/$id/polls").array().map { it.obj() } }?.let { polls = it }
+                    if (!notificationConsumed && notification != null && trip != null) {
+                        val resolved = notification.resolve(trip?.get("days").int().coerceAtLeast(1), polls, day)
+                        day = resolved.first; focusPoll = resolved.second
+                        askedDate = true
+                        notificationConsumed = true
+                    }
                 }
                 delay(5000)
             }
@@ -150,7 +160,15 @@ fun parseTripDate(text: String, today: LocalDate = LocalDate.now()): String? {
     val current = trip
     val owner = current?.get("members").array().any { it.obj()["username"].string() == username && it.obj()["role"].string() == "owner" }
     val days = (current?.get("days").int()).coerceAtLeast(1)
-    if (day > days) day = 1
+    LaunchedEffect(days) { if (current != null && day > days) day = 1 }
+    LaunchedEffect(focusPoll, day) {
+        if (!notificationScrolled && focusPoll != null && current != null) {
+            val index = notificationPollIndex(polls, day, focusPoll!!, error != null,
+                current["start_date"].string().isBlank() && !askedDate,
+                (current["day_titles"] as? JsonObject)?.get(day.toString()).string().isNotBlank())
+            if (index != null) { listState.scrollToItem(index); notificationScrolled = true }
+        }
+    }
     Scaffold(containerColor = Color.Transparent, contentWindowInsets = WindowInsets(0), topBar = {
         CenterAlignedTopAppBar(title = { Text(current?.get("title").string().ifBlank { "行程" }, maxLines = 1, overflow = TextOverflow.Ellipsis) },
             navigationIcon = { IconButton(back) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回") } },
@@ -178,7 +196,7 @@ fun parseTripDate(text: String, today: LocalDate = LocalDate.now()): String? {
         if (current != null) ExtendedFloatingActionButton(shape = androidx.compose.foundation.shape.CircleShape, elevation = FloatingActionButtonDefaults.elevation(2.dp, 2.dp, 2.dp, 2.dp), onClick = { adding = true }, containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary,
             icon = { Icon(Icons.Outlined.Add, null) }, text = { Text("加地点") })
     }) { padding ->
-        LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(start = 20.dp, top = 4.dp, end = 20.dp, bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        LazyColumn(Modifier.padding(padding), state = listState, contentPadding = PaddingValues(start = 20.dp, top = 4.dp, end = 20.dp, bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             error?.let { item { ErrorNotice(it) { reload++ } } }
             if (current == null) { if (error == null) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }; return@LazyColumn }
             val startDate = current["start_date"].string()
@@ -213,7 +231,7 @@ fun parseTripDate(text: String, today: LocalDate = LocalDate.now()): String? {
             }
             // 关于整趟行程的投票（不属于某一天），每天都看得到
             polls.filter { it["day"] is JsonNull || it["day"] == null }.forEach { poll ->
-                item(key = "poll-" + poll["id"].string()) { PollCard(api, id, poll, pollBusy, { pollBusy = it }) { updated -> polls = polls.map { if (it["id"] == updated["id"]) updated else it } ; if (updated.isEmpty()) reload++ } }
+                item(key = "poll-" + poll["id"].string()) { PollCard(api, id, poll, pollBusy, { pollBusy = it }, focused = poll["id"].string() == focusPoll) { updated -> polls = polls.map { if (it["id"] == updated["id"]) updated else it } ; if (updated.isEmpty()) reload++ } }
             }
             item {
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -231,7 +249,7 @@ fun parseTripDate(text: String, today: LocalDate = LocalDate.now()): String? {
             if (stops.isEmpty()) item { Text("这一天还没有安排。点右下角「加地点」开始。", color = MaterialTheme.colorScheme.onSurfaceVariant) }
             // 这一天的投票紧跟在当天安排上面：住哪家、去哪个景点，在要决定的那天里决定
             polls.filter { (it["day"] as? JsonPrimitive)?.intOrNull == day }.forEach { poll ->
-                item(key = "poll-" + poll["id"].string()) { PollCard(api, id, poll, pollBusy, { pollBusy = it }) { updated -> polls = polls.map { if (it["id"] == updated["id"]) updated else it }; if (updated.isEmpty()) reload++ } }
+                item(key = "poll-" + poll["id"].string()) { PollCard(api, id, poll, pollBusy, { pollBusy = it }, focused = poll["id"].string() == focusPoll) { updated -> polls = polls.map { if (it["id"] == updated["id"]) updated else it }; if (updated.isEmpty()) reload++ } }
             }
             itemsIndexed(stops, key = { _, stop -> stop["id"].string() }) { index, stop ->
                 Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(MaterialTheme.colorScheme.surface.copy(alpha = .92f))
@@ -371,7 +389,7 @@ fun parseTripDate(text: String, today: LocalDate = LocalDate.now()): String? {
 }
 
 /** 一个投票：直接在行程里点选项投票，每人一票可以改；发起人可以结束或删除。update(空对象) 表示已删除。 */
-@Composable private fun PollCard(api: TravelService, tripId: String, poll: JsonObject, busy: Boolean, setBusy: (Boolean) -> Unit, update: (JsonObject) -> Unit) {
+@Composable private fun PollCard(api: TravelService, tripId: String, poll: JsonObject, busy: Boolean, setBusy: (Boolean) -> Unit, focused: Boolean = false, update: (JsonObject) -> Unit) {
     val scope = rememberCoroutineScope()
     var error by remember { mutableStateOf<String?>(null) }
     val pid = poll["id"].string(); val closed = poll["closed"].bool(); val total = poll["total"].int()
@@ -380,7 +398,7 @@ fun parseTripDate(text: String, today: LocalDate = LocalDate.now()): String? {
         call({ error = it }) { api.request(method, "trips/$tripId/polls/$pid$path", body).obj() }?.let { update(if (method == "DELETE") JsonObject(emptyMap()) else it) }
         setBusy(false)
     } }
-    GlassCard(Modifier.fillMaxWidth()) {
+    GlassCard(Modifier.fillMaxWidth().then(if (focused) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(20.dp)) else Modifier)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Icon(Icons.Outlined.HowToVote, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
             Text(poll["question"].string(), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)

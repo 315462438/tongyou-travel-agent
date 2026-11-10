@@ -156,7 +156,7 @@
   .trips-overlay .trip-workspace-clear .trip-map-toggle { display: none; }
 }
 
-/* ---------- 深色主题（系统深色 / 安卓 App 深色）：同一份规则生成两遍 ---------- */
+/* ---------- 深色主题（跟随浏览器系统配色） ---------- */
 @media (prefers-color-scheme: dark) {
 .app.journey-shell .trips-overlay,
 .app.journey-shell .trips-overlay .trip-workspace-clear,
@@ -193,39 +193,7 @@
 .trips-overlay .trip-workspace-clear .trip-btn.primary:hover:not(:disabled) { color: #fff; }
 .trips-overlay .trip-avatar { color: #fff; background: linear-gradient(135deg, #3b6fd8, #6d5fd6); }
 }
-html.native-android[data-android-appearance=dark] .app.journey-shell .trips-overlay,
-html.native-android[data-android-appearance=dark] .app.journey-shell .trips-overlay .trip-workspace-clear,
-html.native-android[data-android-appearance=dark] .app.journey-shell.journey-shell .trip-route-layout,
-html.native-android[data-android-appearance=dark] .trip-date-popover {
-  --tw-surface: #182030; --tw-canvas: #0f1521; --tw-soft: #1f2839; --tw-ink: #eef2f8; --tw-text: #c3ccd9; --tw-muted: #9aa6b8;
-  --tw-line: #ffffff17; --tw-line-strong: #ffffff29; --tw-accent: #2563eb; --tw-accent-strong: #1d4ed8; --tw-accent-ink: #9cc0ff;
-  --tw-accent-soft: #1c2b4a; --tw-accent-line: #2f4f86; --tw-stay: #2a2418; --tw-stay-line: #4a3d22;
-  --tw-danger: #ff8f8f; --tw-warn: #e2b65c; --tw-ai-ink: #b3cbff;
-  /* index.css 里的行程模块直接用中性色阶与 tx/trip 令牌：在行程板范围内整体换成深色值。
-     这些变量在 :root 已解析，必须在这里逐个重新给值，不能只改底层色阶。 */
-  --x-n100: #182030; --x-n96: #1f2839; --x-n88: #2c3648; --x-n78: #3a4558; --x-n68: #93a0b2; --x-n60: #9eabbd;
-  --x-n50: #aab5c6; --x-n41: #c0c9d6; --x-n30: #d5dce6; --x-n20: #e3e8ef; --x-n12: #eef2f8;
-  --x-pine-96: #1a2333; --x-pine-90: #2a3852; --x-pine-44: #9cc0ff; --x-sky-96: #1a2333; --x-sky-90: #2a3852;
-  --x-cinnabar-96: #3a1f24; --x-cinnabar-90: #5a2a31; --x-warn-96: #33291a; --x-warn-90: #4d3d22;
-  --x-glass: rgba(24, 32, 48, .92); --x-glass-strong: rgba(24, 32, 48, .96); --x-glass-line: #ffffff17;
-  --tx-bg: #0f1521; --tx-surface: #182030; --tx-surface-soft: #1f2839; --tx-ink: #eef2f8; --tx-muted: #a1acbd; --tx-line: #ffffff17;
-  --tx-brand: #8bb6ff; --tx-brand-strong: #a9c8ff; --tx-brand-soft: #1c2b4a;
-  --trip-bg: #0f1521; --trip-surface: #182030; --trip-surface-soft: #1f2839;
-  /* 强调色在深色下改浅蓝：作文字时可读，作底色时配深色字（--x-n100 已是深色）。 */
-  --trip-accent: #8bb6ff; --trip-accent-strong: #a9c8ff; --trip-accent-soft: #1c2b4a;
-  color-scheme: dark;
-}
-html.native-android[data-android-appearance=dark] .trips-overlay .trip-workspace-clear .trip-workspace-tabs { background: var(--tw-surface); }
-html.native-android[data-android-appearance=dark] .trips-overlay .trip-workspace-clear .trip-board-head { background: var(--tw-surface); }
-html.native-android[data-android-appearance=dark] .trips-overlay .trip-workspace-clear .trip-day-sidebar { background: var(--tw-surface); }
-html.native-android[data-android-appearance=dark] .trips-overlay .trip-panel { background: var(--tw-surface); }
-html.native-android[data-android-appearance=dark] .trips-overlay .trip-review { background: var(--tw-surface); }
-html.native-android[data-android-appearance=dark] .trips-overlay .trip-chat-trigger { background: var(--tw-soft); }
-html.native-android[data-android-appearance=dark] .trips-overlay .trip-actions-menu > summary { background: var(--tw-soft); }
-html.native-android[data-android-appearance=dark] .trips-overlay .trip-date-chip { background: var(--tw-accent-soft); color: var(--tw-accent-ink); }
-html.native-android[data-android-appearance=dark] .trips-overlay .trip-ai-status { background: var(--tw-accent-soft); color: var(--tw-ai-ink); }
-html.native-android[data-android-appearance=dark] .trips-overlay .trip-ctrip-title { color: var(--tw-warn); }
-html.native-android[data-android-appearance=dark] .trips-overlay .trip-workspace-clear .trip-btn.primary:hover:not(:disabled) { color: #fff; }
-html.native-android[data-android-appearance=dark] .trips-overlay .trip-avatar { color: #fff; background: linear-gradient(135deg, #3b6fd8, #6d5fd6); }
 .trips-overlay .trip-workspace-clear .trip-btn.primary:hover:not(:disabled) { color: #fff; }
 .trips-overlay .trip-avatar { color: #fff; background: linear-gradient(135deg, #3b6fd8, #6d5fd6); }
+
+.trip-poll.notification-target { outline: 2px solid var(--accent, #2563eb); outline-offset: 3px; scroll-margin: 12px; }

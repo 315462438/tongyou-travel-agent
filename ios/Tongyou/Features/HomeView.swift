@@ -19,6 +19,7 @@ final class AppRouter {
     var aiPrompt = ""
     var socialDestination: String?
     var openTripID: String?
+    var openTripNotification: TripNotificationTarget?
     var openLedgerID: String?
     var ledgerLinks = LedgerLinkInbox()
     var historyVersion = 0

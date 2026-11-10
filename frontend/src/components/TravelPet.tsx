@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { API, authFetch } from '../api'
-import { useAndroidBack } from '../nativeAndroid'
 import { addedPetMembers, nextPetAct, nextPetTip, petBubble, petActAllowed, petActDelay, petFlightFrames, readPetPreferences, petPreparation, PET_ACT_MS, type PetAct, type PetCheck, type PetTip, type PetPreferences, type PetTask, type PetTrip } from '../travelPet'
 import './TravelPet.css'
 
@@ -222,7 +221,7 @@ export function PetTools({ preferences, onChange, onClose, onAsk, onTrip }: {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [retry, setRetry] = useState(0)
-  useAndroidBack(() => { onClose(); return true }, 95)
+
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null
     const app = document.querySelector<HTMLElement>('.journey-shell')

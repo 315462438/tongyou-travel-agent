@@ -1,13 +1,12 @@
-// 按压反馈真机行为：波纹出现且不改按钮自身样式、松手恢复、disabled/reduced-motion 不触发、安卓 App 只对切换类控件发触感。
+// 按压反馈真机行为：波纹出现且不改按钮自身样式、松手恢复、disabled/reduced-motion 不触发，Android 浏览器降低模糊半径。
 // 先在 frontend/ 下启动：npm run dev -- --host 127.0.0.1 --port 4186
 import assert from 'node:assert/strict'
 const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||'playwright')
 const url=process.env.PRESS_QA_URL||'http://127.0.0.1:4186/travel/'
 const browser=await chromium.launch({headless:true,executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'})
-const android='Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36 17TongyouAndroid/0.9.0'
+const android='Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36'
 async function open(opts={}){
   const ctx=await browser.newContext({viewport:{width:390,height:844},reducedMotion:opts.reduce?'reduce':'no-preference',...(opts.android?{userAgent:android}:{})})
-  await ctx.addInitScript(()=>{window.nativeMessages=[];window.TongyouNative={postMessage:m=>window.nativeMessages.push(JSON.parse(m))}})
   await ctx.route('**/travel/api/**',r=>r.fulfill({status:401,contentType:'application/json',body:'{"detail":"未登录"}'}))
   const page=await ctx.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message))
   await page.goto(url);await page.waitForLoadState('networkidle')
@@ -40,7 +39,6 @@ try{
    const [dx,dy]=await center(page,'#off');await page.mouse.move(dx,dy);await page.mouse.down()
    assert.equal(await page.$eval('#off',el=>el.dataset.pressed??null),null,'disabled gets no feedback');await page.mouse.up()
    const [tx,ty]=await center(page,'#tab');await page.mouse.click(tx,ty)
-   assert.deepEqual(await page.evaluate(()=>window.nativeMessages),[],'browsers never post haptics')
    assert.equal(await page.evaluate(()=>document.documentElement.classList.contains('ua-android')),false,'desktop keeps full glass')
    assert.deepEqual(errors,[]);results.push('browser: ripple/scale/disabled/large ok');await ctx.close()}
   {const {ctx,page}=await open({reduce:true})
@@ -49,9 +47,8 @@ try{
    await page.mouse.up();results.push('reduced motion: no motion');await ctx.close()}
   {const {ctx,page}=await open({android:true})
    for(const sel of ['#plain','#tab','#card']){const [x,y]=await center(page,sel);await page.mouse.click(x,y)}
-   assert.deepEqual(await page.evaluate(()=>window.nativeMessages.filter(m=>m.type==='haptic')),[{type:'haptic',kind:'tick'}],'only the tab ticks')
    const blur=await page.evaluate(()=>{const d=document.createElement('div');d.style.backdropFilter='blur(calc(22px * var(--glass-k, 1)))';document.body.appendChild(d);return {ua:document.documentElement.classList.contains('ua-android'),bf:getComputedStyle(d).backdropFilter,glass:getComputedStyle(document.documentElement).getPropertyValue('--x-glass-blur').trim()}})
    assert.ok(blur.ua);assert.match(blur.bf,/blur\(9\.9px\)/,'Android blur radius scaled down');assert.equal(blur.glass,'11px')
-   results.push('android: tab tick only, blur scaled');await ctx.close()}
+   results.push('Android browser: blur scaled');await ctx.close()}
 }finally{await browser.close()}
 console.log(results.join('\n'))

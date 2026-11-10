@@ -154,7 +154,7 @@ private suspend fun <T> load(error: (String?) -> Unit, block: suspend () -> T): 
 }
 
 /** 通知 + 平台公告。点通知会标记已读并去到对应的地方。 */
-@Composable fun NotificationsScreen(api: TravelService, back: () -> Unit, go: (kind: String, id: String) -> Unit) {
+@Composable fun NotificationsScreen(api: TravelService, back: () -> Unit, go: (kind: String, id: String, poll: TripNotification?) -> Unit) {
     var notices by remember { mutableStateOf<List<JsonObject>?>(null) }
     var announcements by remember { mutableStateOf<List<JsonObject>>(emptyList()) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -176,7 +176,7 @@ private suspend fun <T> load(error: (String?) -> Unit, block: suspend () -> T): 
                 .clickable {
                     scope.launch { load({}) { api.request("POST", "notifications/${notice["id"].string()}/read") }; reload++ }
                     val meta = notice["meta"]?.obj().orEmpty()
-                    go(if (notice["type"].string().startsWith("friend")) "friends" else notice["target_kind"].string(), meta["trip_id"].string().ifBlank { notice["target_id"].string() })
+                    go(if (notice["type"].string().startsWith("friend")) "friends" else notice["target_kind"].string(), meta["trip_id"].string().ifBlank { notice["target_id"].string() }, TripNotification.from(notice))
                 }.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Avatar(notice["actor"]?.obj() ?: JsonObject(emptyMap()), 36)
                 Column(Modifier.weight(1f)) {

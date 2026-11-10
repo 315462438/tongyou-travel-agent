@@ -13,8 +13,8 @@ for (const [name,width,height,dark,android,motion] of [
  ['desktop-dark',1280,900,true,false,'no-preference'], ['landscape',844,390,false,true,'reduce']
 ]) {
  if (process.env.QA_CASE && process.env.QA_CASE!==name) continue
- const ctx=await browser.newContext({viewport:{width,height},colorScheme:dark?'dark':'light',reducedMotion:motion,hasTouch:width<600,isMobile:width<600,...(android?{userAgent:'Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36 17TongyouAndroid/0.6.0'}:{})})
- await ctx.addInitScript(({android})=>{localStorage.setItem('travel_token','fixture');if(android)window.TongyouNative={postMessage:()=>{}}},{android})
+ const ctx=await browser.newContext({viewport:{width,height},colorScheme:dark?'dark':'light',reducedMotion:motion,hasTouch:width<600,isMobile:width<600,...(android?{hasTouch:true,isMobile:true,userAgent:'Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36'}:{})})
+ await ctx.addInitScript(()=>{localStorage.setItem('travel_token','fixture');})
  const calls=[], errors=[]
  let failTrips=false, emptyTrips=false
  const trips=Array.from({length:6},(_,i)=>({id:`t${i}`,title:i===0?'杭州的慢周末':'吉隆坡与仙本那八天海岛旅行 '+i,destination:i===0?'杭州':'吉隆坡、仙本那',days:i===0?3:8,role:i===1?'editor':'owner'}))
@@ -82,11 +82,11 @@ for (const [name,width,height,dark,android,motion] of [
  await page.getByLabel('行程名称',{exact:true}).fill('杭州的慢周末')
  await page.getByLabel('目的地',{exact:true}).fill('杭州');await shot('create')
  await page.getByRole('button',{name:'＋ 创建空白行程',exact:true}).click()
- await page.locator('.android-trip-board,.trip-board').waitFor()
+ await page.locator('.compact-trip-board,.trip-board').waitFor()
  assert.ok(calls.some(x=>x.p==='/trips'&&x.method==='POST'&&JSON.parse(x.body).title==='杭州的慢周末'),'create trip request')
  if(await page.getByLabel('返回行程列表').isVisible())await page.getByLabel('返回行程列表').click()
  await nav.getByRole('button',{name:'旅行',exact:true}).click();await page.locator('.travel-book').first().waitFor()
- await page.getByLabel('打开行程 杭州的慢周末').click();await page.locator('.android-trip-board,.trip-board').waitFor();await shot('trip-detail');assert.ok(calls.some(x=>x.p==='/trips/t0'),'opens selected trip')
+ await page.getByLabel('打开行程 杭州的慢周末').click();await page.locator('.compact-trip-board,.trip-board').waitFor();await shot('trip-detail');assert.ok(calls.some(x=>x.p==='/trips/t0'),'opens selected trip')
  if(await page.getByLabel('返回行程列表').isVisible())await page.getByLabel('返回行程列表').click()
  await nav.getByRole('button',{name:'旅行',exact:true}).click()
  failTrips=true;await page.reload();await page.getByRole('button',{name:'重新加载',exact:true}).waitFor();await shot('error')

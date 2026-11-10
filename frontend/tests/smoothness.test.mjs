@@ -34,7 +34,7 @@ test('chat poll only swaps the array when a message was added or edited', () => 
 
 test('every large backdrop blur scales with --glass-k; Android halves it but reduced transparency still wins', () => {
   const dir = new URL('../src/', import.meta.url)
-  const files = ['index.css', 'nativeAndroid.css', ...readdirSync(new URL('pages/', dir)).filter(f => f.endsWith('.css')).map(f => 'pages/' + f),
+  const files = ['index.css', ...readdirSync(new URL('pages/', dir)).filter(f => f.endsWith('.css')).map(f => 'pages/' + f),
     ...readdirSync(new URL('components/', dir)).filter(f => f.endsWith('.css')).map(f => 'components/' + f)]
   for (const f of files) {
     for (const line of readFileSync(new URL(f, dir), 'utf8').split('\n')) {

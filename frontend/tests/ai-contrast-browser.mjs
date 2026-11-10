@@ -7,8 +7,8 @@ await fs.mkdir(out,{recursive:true})
 const results=[]
 try {
  for(const [name,width,height,android] of [['desktop',1559,900,false],['mobile',390,844,false],['android',390,844,true]]) {
-  const ctx=await browser.newContext({viewport:{width,height},colorScheme:'light',reducedMotion:'reduce',...(android?{userAgent:'Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36 17TongyouAndroid/0.8.2'}:{})})
-  await ctx.addInitScript(android=>{localStorage.setItem('travel_token','fixture');if(android)window.TongyouNative={postMessage:()=>{}}},android)
+  const ctx=await browser.newContext({viewport:{width,height},colorScheme:'light',reducedMotion:'reduce',...(android?{hasTouch:true,isMobile:true,userAgent:'Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36'}:{})})
+  await ctx.addInitScript(()=>{localStorage.setItem('travel_token','fixture');})
   await ctx.route('**/travel/api/**',route=>{
    const p=new URL(route.request().url()).pathname
    let data=[]
@@ -26,7 +26,6 @@ try {
   const geometry=await prompt.boundingBox()
   for(const theme of ['light','dark','light']) {
    await page.emulateMedia({colorScheme:theme})
-   if(android)await page.evaluate(theme=>document.documentElement.dataset.androidAppearance=theme,theme)
    assert.equal(await page.locator('.inspiration-launchpad.simple').evaluate(e=>getComputedStyle(e).backgroundImage),'none','input card must not retain a light glass gradient')
    const checks=await page.evaluate(()=>{
     const canvas=document.createElement('canvas'),context=canvas.getContext('2d')

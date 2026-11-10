@@ -1,4 +1,4 @@
-import { isAndroidApp, useAndroidBack } from '../nativeAndroid'
+import { resolvePollNotification, type TripNotificationTarget } from '../tripNotification'
 /** 协同行程规划板（Phase 35-63）：三栏 = Timeline | 每日地图 | AI Copilot。
  * 协同 = 2.5s 轮询（顺带上报 presence）+ 行程群聊；AI 一律提案制（Preview→采纳/拒绝/恢复）。 */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
@@ -12,7 +12,7 @@ import TripInvitationPanel from '../components/TripInvitationPanel'
 import { PetMemberWelcome } from '../components/TravelPet'
 import { summaryFromTrip } from '../shareSummary'
 import './TripRouteLayout.css'
-import { AndroidTripToolbar, AndroidTripOverview, AndroidTripTimeline, AndroidTripSheet } from './AndroidTripWorkspace'
+import { MobileTripToolbar, MobileTripOverview, MobileTripTimeline, MobileTripSheet } from './MobileTripWorkspace'
 import { ChatBody, ChatInput } from '../components/ChatInput'
 import Iridescence from '../components/Iridescence'
 import TripMap from '../components/TripMap'
@@ -1273,7 +1273,7 @@ function buildTripDocxBlob(
 }
 
 export default function TripsOverlay({
-  username, layoutMode = 'desktop', initialBoardId = null, initialCreate = false, openChatSignal = 0, onChatRead,
+  username, layoutMode = 'desktop', initialBoardId = null, initialCreate = false, openChatSignal = 0, onChatRead, notificationTarget, onNotificationHandled,
   onBoardChange, onClose, onOpenConversation, onAskInChat, onOpenLedger,
 }: {
   username: string
@@ -1281,6 +1281,8 @@ export default function TripsOverlay({
   initialBoardId?: string | null
   initialCreate?: boolean
   /** 自增序号：变化即请求展开群聊抽屉（从主页群聊通知点进来时用） */
+  notificationTarget?: TripNotificationTarget | null
+  onNotificationHandled?: () => void
   openChatSignal?: number
   /** 群聊已读上报后回调，让主页铃铛立刻掉未读 */
   onChatRead?: () => void
@@ -1291,7 +1293,8 @@ export default function TripsOverlay({
   onAskInChat?: (text: string) => void
 }) {
   const [boardId, setBoardId] = useState<string | null>(initialBoardId)
-  useAndroidBack(() => { if (boardId) setBoardId(null); else onClose(); return true }, 20)
+  useEffect(() => { if (notificationTarget) setBoardId(notificationTarget.tripId) }, [notificationTarget])
+
   // 把当前 board 同步给父组件（写进 URL hash），刷新后可恢复到具体这块板
   useEffect(() => {
     onBoardChange?.(boardId)
@@ -1309,7 +1312,7 @@ export default function TripsOverlay({
   }, [onClose])
   return (
     <div className={`trips-overlay${boardId === null ? ' trip-list-page' : ''}${layoutMode === 'mobile' ? ' mobile-layout' : ''}`}>
-      {!isAndroidApp() && <div className="trips-backdrop">
+      {<div className="trips-backdrop">
         <Iridescence color={[0.62, 0.78, 0.98]} speed={0.35} amplitude={0.04} />
       </div>}
       <div className="trips-head">
@@ -1321,7 +1324,10 @@ export default function TripsOverlay({
         <TripList onOpen={setBoardId} mobile={layoutMode === 'mobile'} initialCreate={initialCreate} />
       ) : (
         <TripBoard
+          key={boardId}
           tripId={boardId}
+          notificationTarget={notificationTarget}
+          onNotificationHandled={onNotificationHandled}
           mobile={layoutMode === 'mobile'}
           onOpenLedger={onOpenLedger}
           username={username}
@@ -1338,7 +1344,7 @@ export default function TripsOverlay({
 
 function TripList({ onOpen, mobile, initialCreate }: { onOpen: (id: string) => void; mobile: boolean; initialCreate: boolean }) {
   const [showCreate, setShowCreate] = useState(initialCreate)
-  useAndroidBack(() => { if (!showCreate) return false; setShowCreate(false); return true }, 25)
+
   const [trips, setTrips] = useState<TripSummary[] | null>(null)
   const [title, setTitle] = useState('')
   const [dest, setDest] = useState('')
@@ -1447,7 +1453,7 @@ function TripList({ onOpen, mobile, initialCreate }: { onOpen: (id: string) => v
             <button className={`trip-card-del ${t.role === 'owner' ? 'is-delete' : 'is-leave'}`} title={t.role === 'owner' ? '删除行程' : '退出行程'}
               aria-label={`${t.role === 'owner' ? '删除行程' : '退出行程'} ${t.title}`}
               onKeyDown={(e) => e.stopPropagation()}
-              onClick={(e) => { e.stopPropagation(); removeTrip(t) }}>{isAndroidApp() ? <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>{t.role === 'owner' ? <path d="M3 6h18M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7m4-7v7" /> : <path d="M14 5V3H4v18h10v-2M10 12h12m-4-4 4 4-4 4" />}</svg> : t.role === 'owner' ? '删除' : '退出'}</button>
+              onClick={(e) => { e.stopPropagation(); removeTrip(t) }}>{t.role === 'owner' ? '删除' : '退出'}</button>
           </div>
         ))}
       </div>
@@ -1460,6 +1466,7 @@ function TripChat({
   tripTitle,
   members,
   openSignal = 0,
+  closeSignal = 0,
   onRead,
 }: {
   tripId: string
@@ -1467,6 +1474,7 @@ function TripChat({
   members: TripMember[]
   /** 自增序号：变化即展开抽屉（从主页群聊通知点进来） */
   openSignal?: number
+  closeSignal?: number
   /** 已读上报后回调，让主页铃铛立刻掉未读，而不用等下一轮 30s 轮询 */
   onRead?: () => void
 }) {
@@ -1570,6 +1578,7 @@ function TripChat({
   useEffect(() => {
     if (openSignal > 0) openChat()
   }, [openSignal, openChat])
+  useEffect(() => { if (closeSignal > 0) setOpen(false) }, [closeSignal])
 
   const send = async (raw?: string) => {
     const content = (raw ?? input).trim()
@@ -1864,7 +1873,7 @@ function TripDatePopover({ anchor, onClose, children }: { anchor: RefObject<HTML
 }
 
 function TripBoard({
-  tripId, username, onBack, onOpenConversation, onAskInChat, openChatSignal = 0, onChatRead, onOpenLedger, mobile,
+  tripId, username, onBack, onOpenConversation, onAskInChat, openChatSignal = 0, onChatRead, onOpenLedger, mobile, notificationTarget, onNotificationHandled,
 }: {
   tripId: string
   mobile: boolean
@@ -1873,12 +1882,14 @@ function TripBoard({
   onOpenLedger?: (trip: {id: string; title: string}) => void
   onOpenConversation?: (cid: string) => void
   onAskInChat?: (text: string) => void
+  notificationTarget?: TripNotificationTarget | null
+  onNotificationHandled?: () => void
   openChatSignal?: number
   onChatRead?: () => void
 }) {
-  const compact = isAndroidApp() || mobile
+  const compact = mobile
   const [sharePreview, setSharePreview] = useState(false)
-  const [androidMenu, setAndroidMenu] = useState<'more' | 'members' | 'export' | null>(null)
+  const [mobileMenu, setMobileMenu] = useState<'more' | 'members' | 'export' | null>(null)
   const [trip, setTrip] = useState<TripDetail | null>(null)
   const [issues, setIssues] = useState<TripIssue[]>([])
   const [, setTicketTotal] = useState(0)
@@ -1933,6 +1944,28 @@ function TripBoard({
   const [confirmAction, setConfirmAction] = useState<TripConfirmAction | null>(null)
   // Phase 47：右栏从「6 面板堆叠」改标签页，按用户心智分四块（一次只显一块）
   const [aiTab, setAiTab] = useState<TripToolTab>('assistant')
+  const [pollFocus, setPollFocus] = useState<{pollId: string | null; requestId: number} | null>(null)
+  const notificationDayCount = trip?.days
+  useEffect(() => {
+    if (!notificationTarget || notificationTarget.tripId !== tripId || notificationDayCount == null) return
+    if (notificationTarget.kind !== 'poll') { onNotificationHandled?.(); return }
+    const controller = new AbortController()
+    void (async () => {
+      let polls: PollItem[] = []
+      try {
+        const response = await authFetch(`${API}/trips/${tripId}/polls`, {signal: controller.signal})
+        if (response.ok) polls = await response.json()
+      } catch { /* Open the known day even if polls are temporarily unavailable. */ }
+      if (controller.signal.aborted) return
+      const resolved = resolvePollNotification(notificationTarget, notificationDayCount, polls, dayRef.current)
+      setSelectedDay(resolved.day)
+      setAiTab('polls'); setWorkspaceView('tool'); setMobilePane('assistant')
+      setPollFocus({pollId: resolved.pollId ?? notificationTarget.pollId, requestId: notificationTarget.requestId})
+      onNotificationHandled?.()
+    })()
+    return () => controller.abort()
+  }, [notificationTarget, tripId, notificationDayCount, onNotificationHandled])
+
   // Phase 48：每天过夜城市（逆地理编码）+ 受控酒店搜索城市
   const [dayCities, setDayCities] = useState<Record<string, string>>({})
   const [dayOvernight, setDayOvernight] = useState<Record<string, boolean>>({})
@@ -1947,11 +1980,7 @@ function TripBoard({
   dayRef.current = selectedDay
 
   const askConfirm = (action: TripConfirmAction) => setConfirmAction(action)
-  useAndroidBack(() => {
-    if (!compact) return false
-    if (workspaceView === 'tool') { setWorkspaceView('day'); setMobilePane('timeline'); return true }
-    return false
-  }, 26)
+
 
   const load = useCallback(async () => {
     const res = await authFetch(`${API}/trips/${tripId}?editing_day=${dayRef.current}`)
@@ -2062,7 +2091,7 @@ function TripBoard({
 
   const exportToImage = async () => {
     if (!trip) return
-    if (compact) { setAndroidMenu(null); setSharePreview(true); return }
+    if (compact) { setMobileMenu(null); setSharePreview(true); return }
     notify('正在生成长图，请稍候...')
 
     try {
@@ -3008,11 +3037,11 @@ function TripBoard({
           {trip.stops.some(s=>s.nav?.domestic===false) && <small className="trip-geocode-credit">海外坐标数据 © OpenStreetMap contributors</small>}
         </section>)
   return (
-    <div className={`trip-board trip-workspace-clear trip-route-layout trip-map-canvas${compact ? ' android-trip-board' : ''}`}>
-      {compact && <AndroidTripToolbar title={workspaceView === 'tool' ? TRIP_TOOL_TABS.find(t => t.id === aiTab)?.label || '旅行工具' : trip.title}
+    <div className={`trip-board trip-workspace-clear trip-route-layout trip-map-canvas${compact ? ' compact-trip-board' : ''}`}>
+      {compact && <MobileTripToolbar title={workspaceView === 'tool' ? TRIP_TOOL_TABS.find(t => t.id === aiTab)?.label || '旅行工具' : trip.title}
         onBack={() => { if (workspaceView === 'tool') { setWorkspaceView('day'); setMobilePane('timeline') } else onBack() }}
-        onMore={() => setAndroidMenu('more')}
-        chat={<TripChat tripId={tripId} tripTitle={trip.title} members={trip.members} openSignal={openChatSignal} onRead={onChatRead} />} />}
+        onMore={() => setMobileMenu('more')}
+        chat={<TripChat tripId={tripId} tripTitle={trip.title} members={trip.members} openSignal={openChatSignal} closeSignal={pollFocus?.requestId ?? 0} onRead={onChatRead} />} />}
       {compact && workspaceView === 'day' && routeMap}
       <div className="trip-workspace-scroll" data-panel-level={panelLevel} data-workspace={workspaceView}>
       <PetMemberWelcome tripId={trip.id} members={trip.members} username={username} />
@@ -3052,17 +3081,17 @@ function TripBoard({
           tripId={tripId}
           tripTitle={trip.title}
           members={trip.members}
-          openSignal={openChatSignal}
+          openSignal={openChatSignal} closeSignal={pollFocus?.requestId ?? 0}
           onRead={onChatRead}
         />
         {invitationControls}
       </div>}
-      {compact && workspaceView === 'day' && <AndroidTripOverview trip={trip} days={days} day={selectedDay} dateControl={dateControl} status={importStatus}
+      {compact && workspaceView === 'day' && <MobileTripOverview trip={trip} days={days} day={selectedDay} dateControl={dateControl} status={importStatus}
         title={getDayTitle(selectedDay) || `第 ${selectedDay} 天`} date={displayTripDayDate(trip,selectedDay)} count={timelineStopsOf(selectedDay).length} located={mapStops.length} aiBusy={aiBusy}
         onDay={d => { setSelectedDay(d); setFocusStop(null) }} onAdd={() => setAddingStopDay(selectedDay)}
         onAI={() => { setAiTab('assistant'); setWorkspaceView('tool'); setMobilePane('assistant') }}
         onTitle={() => { setEditingDayTitle(selectedDay); setDayTitleInput(getDayTitle(selectedDay)) }}
-        onMembers={() => setAndroidMenu('members')} />}
+        onMembers={() => setMobileMenu('members')} />}
       {!compact && <>
       <nav className="trip-workspace-tabs" aria-label="行程日期与工具导航">
         <div className="trip-day-nav" role="tablist" aria-label="行程主视图">
@@ -3139,7 +3168,7 @@ function TripBoard({
       </div>
 
       </>}
-      {compact && workspaceView === 'tool' && <div className="android-trip-tools-header">
+      {compact && workspaceView === 'tool' && <div className="compact-trip-tools-header">
         <button onClick={() => { setWorkspaceView('day'); setMobilePane('timeline') }}>‹ 返回当天行程</button>
         <label>选择工具<select aria-label="选择工具" value={aiTab} onChange={e => setAiTab(e.target.value as TripToolTab)}>{TRIP_TOOL_TABS.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}</select></label>
         {importStatus}
@@ -3193,7 +3222,7 @@ function TripBoard({
         {!compact && routeMap}
         {/* 中：当前日事件时间线 */}
         <div className={`trip-col-timeline${mobilePane === 'timeline' ? ' mobile-active' : ''}`}>
-          {compact ? <AndroidTripTimeline tripId={tripId} onOpen={stop=>{setFocusStop(stop.id);setDetailStop(stop)}} selectedId={focusStop} stops={timelineStopsOf(selectedDay)} locating={trip.ai_status === 'locating'}
+          {compact ? <MobileTripTimeline tripId={tripId} onOpen={stop=>{setFocusStop(stop.id);setDetailStop(stop)}} selectedId={focusStop} stops={timelineStopsOf(selectedDay)} locating={trip.ai_status === 'locating'}
             onEdit={setEditing} onMove={(stop,direction) => void moveStop(stop,direction)}
             onMap={stop => { setFocusStop(stop.id) }} onAdd={() => setAddingStopDay(selectedDay)}
             stopRef={(id,el) => { if (el) stopRefs.current.set(id,el); else stopRefs.current.delete(id) }}
@@ -3443,7 +3472,7 @@ function TripBoard({
               onInvite={(n) => call('/invite', 'POST', { username: n }).then((r) => !!r)} />
           )}
           {aiTab === 'tips' && <TipsPanel tripId={tripId} active />}
-          {aiTab === 'polls' && <PollsPanel tripId={tripId} active day={selectedDay} days={trip.days} onPickDay={setSelectedDay} onWaiting={setPollsWaiting} />}
+          {aiTab === 'polls' && <PollsPanel tripId={tripId} active focus={pollFocus} day={selectedDay} days={trip.days} onPickDay={setSelectedDay} onWaiting={setPollsWaiting} />}
 
           {/* ---- 住宿 tab：每晚住哪汇总 + 酒店推荐 ---- */}
           {aiTab === 'stay' && (
@@ -3648,21 +3677,21 @@ function TripBoard({
 
       </div>
       {detailStop && <PlaceDetails tripId={tripId} stop={detailStop} onClose={()=>setDetailStop(null)} onEdit={()=>{setEditing(detailStop);setDetailStop(null)}} />}
-      {compact && androidMenu && <AndroidTripSheet title={androidMenu === 'more' ? '行程操作' : androidMenu === 'members' ? '成员与邀请' : '导出攻略'} onClose={() => setAndroidMenu(null)}>
-        {androidMenu === 'more' ? <div className="android-trip-menu">
-          <button onClick={() => { setAndroidMenu(null); setAddingStopDay(selectedDay) }}>添加地点</button>
-          <button disabled={optimizingRoute} onClick={() => { setAndroidMenu(null); void optimizeRoute() }}>整理当天顺序</button>
-          <button disabled={repairingLocations} onClick={() => { setAndroidMenu(null); void repairLocations() }}>重新定位地图</button>
-          {onOpenLedger && <button onClick={() => { setAndroidMenu(null); onOpenLedger({id:trip.id,title:trip.title}) }}>旅行账本</button>}
-          <button onClick={() => setAndroidMenu('members')}>成员与邀请</button>
-          <button onClick={() => setAndroidMenu('export')}>导出攻略</button>
-          {trip.source_conversation_id && <button onClick={() => { setAndroidMenu(null); setSourceGuideOpen(true) }}>查看原攻略</button>}
-          <h3>旅行工具</h3><div className="android-trip-tool-grid">{TRIP_TOOL_TABS.map(t => <button key={t.id} onClick={() => {setAiTab(t.id);setWorkspaceView('tool');setMobilePane('assistant');setAndroidMenu(null)}}>{t.label}</button>)}</div>
-          <h3>行程天数</h3><div className="android-trip-stepper"><button disabled={trip.days<=1} onClick={() => void changeDays(trip.days-1)} aria-label="减少一天">−</button><span>{trip.days} 天</span><button disabled={trip.days>=30} onClick={() => void changeDays(trip.days+1)} aria-label="增加一天">＋</button></div>
-        </div> : androidMenu === 'export' ? exportControls : <TripInvitationPanel tripId={tripId} title={trip.title} destination={trip.destination} days={trip.days} stopCount={trip.stops.length} members={trip.members} isOwner={isOwner} username={username} onChanged={() => { void load() }} />}
-      </AndroidTripSheet>}
+      {compact && mobileMenu && <MobileTripSheet title={mobileMenu === 'more' ? '行程操作' : mobileMenu === 'members' ? '成员与邀请' : '导出攻略'} onClose={() => setMobileMenu(null)}>
+        {mobileMenu === 'more' ? <div className="compact-trip-menu">
+          <button onClick={() => { setMobileMenu(null); setAddingStopDay(selectedDay) }}>添加地点</button>
+          <button disabled={optimizingRoute} onClick={() => { setMobileMenu(null); void optimizeRoute() }}>整理当天顺序</button>
+          <button disabled={repairingLocations} onClick={() => { setMobileMenu(null); void repairLocations() }}>重新定位地图</button>
+          {onOpenLedger && <button onClick={() => { setMobileMenu(null); onOpenLedger({id:trip.id,title:trip.title}) }}>旅行账本</button>}
+          <button onClick={() => setMobileMenu('members')}>成员与邀请</button>
+          <button onClick={() => setMobileMenu('export')}>导出攻略</button>
+          {trip.source_conversation_id && <button onClick={() => { setMobileMenu(null); setSourceGuideOpen(true) }}>查看原攻略</button>}
+          <h3>旅行工具</h3><div className="compact-trip-tool-grid">{TRIP_TOOL_TABS.map(t => <button key={t.id} onClick={() => {setAiTab(t.id);setWorkspaceView('tool');setMobilePane('assistant');setMobileMenu(null)}}>{t.label}</button>)}</div>
+          <h3>行程天数</h3><div className="compact-trip-stepper"><button disabled={trip.days<=1} onClick={() => void changeDays(trip.days-1)} aria-label="减少一天">−</button><span>{trip.days} 天</span><button disabled={trip.days>=30} onClick={() => void changeDays(trip.days+1)} aria-label="增加一天">＋</button></div>
+        </div> : mobileMenu === 'export' ? exportControls : <TripInvitationPanel tripId={tripId} title={trip.title} destination={trip.destination} days={trip.days} stopCount={trip.stops.length} members={trip.members} isOwner={isOwner} username={username} onChanged={() => { void load() }} />}
+      </MobileTripSheet>}
       {sharePreview && <GuideSharePreview summary={summaryFromTrip(trip)} onClose={() => setSharePreview(false)} />}
-      {compact && editingDayTitle != null && <AndroidTripSheet title="修改当天标题" onClose={() => setEditingDayTitle(null)}><form className="android-trip-title-form" onSubmit={e => {e.preventDefault();void saveDayTitle(selectedDay,dayTitleInput)}}><label>当天标题<input autoFocus value={dayTitleInput} onChange={e => setDayTitleInput(e.target.value)} /></label><button disabled={!dayTitleInput.trim()} className="primary">保存</button></form></AndroidTripSheet>}
+      {compact && editingDayTitle != null && <MobileTripSheet title="修改当天标题" onClose={() => setEditingDayTitle(null)}><form className="compact-trip-title-form" onSubmit={e => {e.preventDefault();void saveDayTitle(selectedDay,dayTitleInput)}}><label>当天标题<input autoFocus value={dayTitleInput} onChange={e => setDayTitleInput(e.target.value)} /></label><button disabled={!dayTitleInput.trim()} className="primary">保存</button></form></MobileTripSheet>}
       {/* PRD 4.5 情境化悬浮按钮：不重复实现新增逻辑，只把当前面板的输入框聚焦过去，
           这样各面板的校验/提示仍然只有一处。找不到输入框（如动态、助手）就不显示。 */}
       {fabLabel && (
@@ -5605,10 +5634,23 @@ interface PollItem {
 }
 
 /** 同行人投票：住哪家、哪天走这类事，发个投票比在群里来回问快。每人一票，可以改。 */
-function PollsPanel({ tripId, active, day, days, onPickDay, onWaiting }: {
+function PollsPanel({ tripId, active, day, days, onPickDay, onWaiting, focus }: {
+  focus?: {pollId: string | null; requestId: number} | null
   tripId: string; active: boolean; day: number; days: number; onPickDay: (day: number) => void; onWaiting: (count: number) => void
 }) {
   const { data, setData, reload } = useModuleData<PollItem[]>(tripId, 'polls', active, [])
+  const focusedCard = useRef<HTMLElement | null>(null)
+  const scrolledRequest = useRef<number | null>(null)
+  useEffect(() => {
+    if (!focus || scrolledRequest.current === focus.requestId || !focusedCard.current) return
+    const frame = requestAnimationFrame(() => {
+      focusedCard.current?.scrollIntoView({block: 'nearest', behavior: 'instant'})
+      focusedCard.current?.focus({preventScroll: true})
+      scrolledRequest.current = focus.requestId
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [data, focus])
+
   useEffect(() => { onWaiting(data.filter((p) => !p.closed && p.my_vote === null).length) }, [data, onWaiting])
   const [pollDay, setPollDay] = useState(day)   // 0 = 整趟行程
   useEffect(() => { setPollDay(day) }, [day])
@@ -5639,7 +5681,7 @@ function PollsPanel({ tripId, active, day, days, onPickDay, onWaiting }: {
       {[...data].sort((a, b) => (a.day === day ? 0 : a.day === null ? 1 : 2) - (b.day === day ? 0 : b.day === null ? 1 : 2)).map(poll => {
         const top = Math.max(0, ...poll.options.map(o => o.votes))
         return (
-          <section key={poll.id} className={`trip-poll${poll.closed ? ' closed' : ''}`}>
+          <section key={poll.id} ref={poll.id === focus?.pollId ? focusedCard : undefined} tabIndex={-1} data-poll-id={poll.id} className={`trip-poll${poll.closed ? ' closed' : ''}${poll.id === focus?.pollId ? ' notification-target' : ''}`}>
             <header><b>{poll.question}{!poll.closed && poll.my_vote === null && <em className="trip-poll-waiting">等你投票</em>}</b>
               <button type="button" className="trip-poll-day" onClick={() => poll.day && onPickDay(poll.day)} disabled={!poll.day}>{poll.day ? `第 ${poll.day} 天` : '整趟行程'}</button><small>{poll.closed ? '已结束' : `${poll.total}/${poll.members} 人已投`}{poll.created_by ? ` · ${poll.created_by} 发起` : ''}</small></header>
             {poll.options.map((option, index) => (

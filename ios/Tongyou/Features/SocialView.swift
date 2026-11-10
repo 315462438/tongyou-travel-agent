@@ -374,7 +374,12 @@ struct NotificationsView: View {
             router.tab = .me
             dismiss()
         case "trip":
-            router.openTripID = item.meta?["trip_id"]?.string ?? item.targetId
+            if item.type == "trip_poll" {
+                router.openTripNotification = TripNotificationTarget(tripID: item.meta?["trip_id"]?.string,
+                    fallbackID: item.targetId, day: item.meta?["day"]?.double, pollID: item.meta?["poll_id"]?.string)
+            } else {
+                router.openTripID = item.meta?["trip_id"]?.string ?? item.targetId
+            }
             router.tab = .home
             dismiss()
         default:

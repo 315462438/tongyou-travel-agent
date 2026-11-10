@@ -13,11 +13,12 @@ try {
   ]) {
     if (process.env.QA_CASE && process.env.QA_CASE !== name) continue
     const context = await browser.newContext({ viewport: { width, height }, colorScheme: dark ? 'dark' : 'light', reducedMotion: motion, hasTouch: width < 600,
-      ...(android ? { userAgent: 'Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36 17TongyouAndroid/0.9.3' } : {}) })
-    await context.addInitScript(({ android }) => { localStorage.setItem('travel_token', 'fixture'); if (android) window.TongyouNative = { postMessage: () => {} } }, { android })
+      ...(android ? { hasTouch:true, isMobile:true, userAgent: 'Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36' } : {}) })
+    await context.addInitScript(() => { localStorage.setItem('travel_token', 'fixture');  }, { android })
     let running = false, stopped = false, started = false, joined = false, failCheck = false, noTrips = false
     const calls = [], errors = []
     const trip = { id: 't1', title: '杭州的慢周末', destination: '杭州', days: 2, role: 'owner' }
+    await context.route('https://webapi.amap.com/**', route => route.abort())
     await context.route('**/travel/api/**', async route => {
       const req = route.request(), p = new URL(req.url()).pathname.replace('/travel/api', '')
       calls.push({ p, method: req.method() })

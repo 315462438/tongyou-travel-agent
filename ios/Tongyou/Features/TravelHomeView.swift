@@ -86,12 +86,18 @@ struct HomeView: View {
                 ToolbarItem(placement: .topBarTrailing) { Button { showNotifications = true } label: { Image(systemName: unread > 0 ? "bell.badge" : "bell") }.accessibilityLabel(unread > 0 ? "通知，\(unread) 条未读" : "通知") }
             }
             .navigationDestination(for: TripRef.self) { ref in
-                TripDetailView(tripID: ref.id).navigationTransition(.zoom(sourceID: ref.id, in: transition))
+                TripDetailView(tripID: ref.id, notification: ref.notification).navigationTransition(.zoom(sourceID: ref.id, in: transition))
                     .onDisappear { Task { await load() } }
             }
             .sheet(isPresented: $showAll, onDismiss: { Task { await load() } }) { TripsView() }
             .sheet(isPresented: $showNotifications, onDismiss: { Task { await loadUnread() } }) { NotificationsView() }
             .sheet(isPresented: $creating) { createSheet }
+            .onChange(of: router.openTripNotification, initial: true) { _, target in
+                if let target {
+                    path.append(TripRef(id: target.tripID, notification: target))
+                    router.openTripNotification = nil
+                }
+            }
             .onChange(of: router.openTripID, initial: true) { _, id in
                 if let id { path.append(TripRef(id: id)); router.openTripID = nil }
             }

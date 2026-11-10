@@ -4,7 +4,6 @@ import '@fontsource/space-grotesk/500.css'
 import '@fontsource/space-grotesk/600.css'
 import '@fontsource/space-grotesk/700.css'
 import './index.css'
-import './nativeAndroid'
 import { installPressFeedback } from './pressFeedback'
 import App from './App.tsx'
 import { ToastProvider } from './components/Toast.tsx'
@@ -17,6 +16,9 @@ window.addEventListener('vite:preloadError', () => {
     window.location.reload()
   }
 })
+
+// Android browsers use a smaller blur radius to keep scrolling smooth.
+if (/Android/i.test(navigator.userAgent)) document.documentElement.classList.add('ua-android')
 
 installPressFeedback()
 

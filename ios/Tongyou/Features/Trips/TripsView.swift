@@ -43,7 +43,7 @@ struct TripsView: View {
                 }
             }
             .navigationTitle("行程")
-            .navigationDestination(for: TripRef.self) { TripDetailView(tripID: $0.id).onDisappear { Task { await load() } } }
+            .navigationDestination(for: TripRef.self) { TripDetailView(tripID: $0.id, notification: $0.notification).onDisappear { Task { await load() } } }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { newTitle = ""; creating = true } label: { Image(systemName: "plus") }.accessibilityLabel("新建行程")
@@ -134,6 +134,9 @@ private struct TripRow: View {
 
 struct TripDetailView: View {
     let tripID: String
+    var notification: TripNotificationTarget? = nil
+    @State private var notificationConsumed = false
+    @State private var focusPollID: String?
     @State private var trip: TripDetail?
     @State private var expenses: ExpenseSummary?
     @State private var day = 1
@@ -222,6 +225,11 @@ struct TripDetailView: View {
                         }.padding(.bottom, 18)
                     }
                     .accessibilityIdentifier("tripTimeline")
+                    .task(id: focusPollID) {
+                        guard let id = focusPollID else { return }
+                        await Task.yield()
+                        proxy.scrollTo("poll-" + id, anchor: .top)
+                    }
                     .onChange(of: selectedStop) { _, id in
                         guard let id else { return }
                         if reduceMotion { proxy.scrollTo(id, anchor: .top) }
@@ -355,6 +363,8 @@ struct TripDetailView: View {
                 if let updated, let index = polls.firstIndex(where: { $0.id == updated.id }) { polls[index] = updated }
                 else { polls.removeAll { $0.id == poll.id } }
             }
+            .id("poll-" + poll.id)
+            .overlay(RoundedRectangle(cornerRadius: 20).stroke(poll.id == focusPollID ? Palette.sky : .clear, lineWidth: 2))
         }
     }
 
@@ -505,9 +515,14 @@ struct TripDetailView: View {
             petMemberBaseline = names; petBaselineTrip = tripID
             if !added.isEmpty { petWelcome = added.prefix(2).joined(separator: "、") + (added.count > 2 ? "等搭子" : "") + " 加入啦，一起出发！" }
             trip = detail
+            if let notification, !notificationConsumed {
+                let target = notification.resolve(days: detail.dayCount, polls: polls.map { (id: $0.id, day: $0.day) }, currentDay: day)
+                day = target.day; focusPollID = target.pollID
+                notificationConsumed = true
+            }
             // 没定出发日期的行程（导入的、早先建的）主动问一次；点「还没定」后不再问
             let asked = "tripDateAsked-\(tripID)"
-            if (detail.startDate ?? "").isEmpty, !UserDefaults.standard.bool(forKey: asked) {
+            if notification == nil, (detail.startDate ?? "").isEmpty, !UserDefaults.standard.bool(forKey: asked) {
                 UserDefaults.standard.set(true, forKey: asked)
                 askingDate = true
             }

@@ -199,8 +199,8 @@ textarea { font-family: inherit; }
 }
 :where(button, [role="button"]):active:not(:disabled) { filter: brightness(0.96); }
 
-/* 毛玻璃模糊半径统一乘 --glass-k。安卓 WebView/Chrome 没有系统级材质优化，大半径模糊在滚动时逐帧重算是掉帧主因，
-   缩到约一半：模糊开销随半径近似平方增长，视觉上仍是玻璃。ua-android 由 nativeAndroid.ts 按 UA 标记。 */
+/* 毛玻璃模糊半径统一乘 --glass-k。Android 浏览器 没有系统级材质优化，大半径模糊在滚动时逐帧重算是掉帧主因，
+   缩到约一半：模糊开销随半径近似平方增长，视觉上仍是玻璃。ua-android 由 main.tsx 按 UA 标记。 */
 html.ua-android { --glass-k: .45; --x-glass-blur: 11px; }
 
 /* 按压反馈（pressFeedback.ts 设 data-pressed）：独立 scale 属性不覆盖已有 transform；:where 零特异性，组件自定义优先。 */
@@ -8817,10 +8817,6 @@ body { color: var(--tx-ink); background: var(--x-n96); }
 
 /* ---------- 双主题：现代皇家蓝 / 水墨山行 ---------- */
 .layout-switch { margin-left: 0; }
-
-
-@media (max-width: 720px) {
-}
 
 /* Collaborative trip editor V2: keep the interactive page intact, but make
    add/edit itinerary use a right-side drawer so the form has room to breathe. */

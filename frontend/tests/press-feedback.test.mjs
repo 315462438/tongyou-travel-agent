@@ -1,10 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { rippleGeometry, pressSize, pressHaptic, LARGE_PRESS_AREA } from '../src/pressFeedback.ts'
+import { rippleGeometry, pressSize, LARGE_PRESS_AREA } from '../src/pressFeedback.ts'
 
 const css = readFileSync(new URL('../src/index.css', import.meta.url), 'utf8')
-const fake = (attrs) => ({ getAttribute: k => attrs[k] ?? null, hasAttribute: k => k in attrs })
 
 test('ripple circle covers the farthest corner from the press point', () => {
   const rect = { left: 10, top: 20, width: 100, height: 40 }
@@ -22,14 +21,6 @@ test('large cards dip less than small buttons', () => {
   assert.ok(360 * 120 > LARGE_PRESS_AREA && 80 * 40 < LARGE_PRESS_AREA)
 })
 
-test('only toggles tick on press; ordinary buttons stay silent', () => {
-  assert.equal(pressHaptic(fake({})), null)
-  assert.equal(pressHaptic(fake({ role: 'tab' })), 'tick')
-  assert.equal(pressHaptic(fake({ 'aria-pressed': 'false' })), 'tick')
-  assert.equal(pressHaptic(fake({ 'aria-checked': 'true' })), 'tick')
-  assert.equal(pressHaptic(fake({ 'data-haptic': 'confirm' })), 'confirm')
-  assert.equal(pressHaptic(fake({ 'data-haptic': 'boom' })), null)
-})
 
 test('press styles never override component transforms and respect reduced motion', () => {
   const block = css.slice(css.indexOf('/* 按压反馈'), css.indexOf('/* 全局轻提示'))
@@ -40,12 +31,11 @@ test('press styles never override component transforms and respect reduced motio
   assert.match(block, /pointer-events: none/)
 })
 
-test('success and error toasts double as native result haptics', () => {
-  const toast = readFileSync(new URL('../src/components/Toast.tsx', import.meta.url), 'utf8')
-  assert.match(toast, /if \(kind !== 'info'\) nativeHaptic\(kind === 'success' \? 'confirm' : 'reject'\)/)
+test('feedback is installed once without requiring a native bridge', () => {
   const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8')
-  assert.match(main, /installPressFeedback\(\)\s*\n\s*createRoot\(/, 'installed once before the app renders')
-  // 安卓已改为原生界面（2026-11-10），不再由网页壳接收这条震动消息；网页侧只保证调用点还在。
+  assert.match(main, /installPressFeedback\(\)\s*\n\s*createRoot\(/)
+  const feedback = readFileSync(new URL('../src/pressFeedback.ts', import.meta.url), 'utf8')
+  assert.doesNotMatch(feedback, /TongyouNative|nativeHaptic|isAndroidApp/)
 })
 
 test('answer action row keeps only what users act on', () => {

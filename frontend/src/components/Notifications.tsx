@@ -10,7 +10,7 @@ export interface ProductNotification {
   body: string
   target_kind: 'friends' | 'relay' | 'trip' | string
   target_id: string
-  meta: { destination?: string; reaction?: string; tab?: string; trip_id?: string; trip_title?: string; count?: number }
+  meta: { destination?: string; reaction?: string; tab?: string; trip_id?: string; trip_title?: string; count?: number; day?: number | null; poll_id?: string }
   read: boolean
   created_at: string | null
   actor: { id: string; username: string; display_name: string; avatar_url: string }

@@ -496,9 +496,9 @@ test('接力站先展示真实热门目的地，再提供无原生黑框的任�
   assert.doesNotMatch(home, /<ImmersivePreview/)
   assert.doesNotMatch(home, />同游圈</)
   assert.match(home, /onProfileChanged=\{onProfileChanged\}/)
-  // Android is a full-page tab with native Back handling; Web remains a modal.
-  assert.match(social, /role=\{android \? 'region' : 'dialog'\}/)
-  assert.match(social, /aria-modal=\{android \? undefined : true\}/)
+  // The browser social view remains an accessible modal.
+  assert.match(social, /role=\{'dialog'\}/)
+  assert.match(social, /aria-modal=\{true\}/)
   assert.match(social, /'station' \| 'friends' \| 'profile'/)
   assert.match(social, /\/social\/station\?/)
   assert.match(social, /\/social\/friends\/request\//)

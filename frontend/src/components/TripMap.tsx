@@ -65,7 +65,7 @@ export default function TripMap({
 
   function padding() {
     const el = divRef.current, section = el?.parentElement
-    const board = el?.closest('.trip-map-canvas.android-trip-board')
+    const board = el?.closest('.trip-map-canvas.compact-trip-board')
     if (!el || !board || !section || innerHeight <= 500) return [60, 60, 60, 60]
     const panel = board.querySelector('.trip-workspace-scroll[data-workspace="day"]')
     // AMap uses top, bottom, left, right (not CSS clockwise order).
@@ -77,7 +77,7 @@ export default function TripMap({
     if(overlays.length)mapRef.current?.setFitView(overlays,true,padding(),id?15:17)
   }
   useEffect(() => {
-    const board = divRef.current?.closest('.trip-map-canvas.android-trip-board')
+    const board = divRef.current?.closest('.trip-map-canvas.compact-trip-board')
     const panel = board?.querySelector('.trip-workspace-scroll[data-workspace="day"]')
     if (!panel) return
     const observer = new ResizeObserver(() => {

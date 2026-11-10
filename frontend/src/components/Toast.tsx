@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { ToastContext, type ToastKind } from './toast-context'
-import { nativeHaptic } from '../pressFeedback'
 
 interface ToastItem {
   id: number
@@ -22,7 +21,6 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
   const notify = useCallback((message: string, kind: ToastKind = 'info') => {
     const id = nextId.current++
-    if (kind !== 'info') nativeHaptic(kind === 'success' ? 'confirm' : 'reject')
     setItems((list) => [...list.slice(-2), { id, message, kind }])
     timers.current.set(id, window.setTimeout(() => dismiss(id), kind === 'error' ? 4500 : 2800))
   }, [dismiss])

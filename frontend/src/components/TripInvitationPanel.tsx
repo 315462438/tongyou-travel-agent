@@ -1,6 +1,5 @@
 import { useRef, useState, type CSSProperties } from 'react'
 import { API, authFetch } from '../api'
-import { shareAndroidLink } from '../nativeAndroid'
 import './TripInvitationPanel.css'
 
 export default function TripInvitationPanel({tripId,title,destination,days,stopCount,members,isOwner,username,onChanged}: {
@@ -23,7 +22,6 @@ export default function TripInvitationPanel({tripId,title,destination,days,stopC
     const url=`https://17tongyou.com/t/${data.short_code}`;setLink(url)
     const text=`${username} 邀请你一起规划「${title}」 ${url}`
     if(share){
-      if(shareAndroidLink('邀请加入协同行程',text))return
       if(navigator.share){try{await navigator.share({title:'邀请一起旅行',text});return}catch(e){if(e instanceof Error&&e.name==='AbortError')return;throw e}}
     }
     try{await navigator.clipboard.writeText(text)}catch{throw new Error('请长按下方链接复制')}

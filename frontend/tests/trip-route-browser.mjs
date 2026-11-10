@@ -12,7 +12,7 @@ const real=process.env.REAL_MAP==='1'
 const results=[]
 try {for(const [name,w,h,android,dark,fail] of [['android-small',320,780,true,false,false],['android-dark',390,844,true,true,false],['web-mobile',430,932,false,false,false],['desktop',1280,900,false,false,false],['desktop-dark',1280,900,false,true,false],['map-failure',390,844,true,false,true],['landscape',844,390,true,false,false]]) {
  if(process.env.QA_CASE&&process.env.QA_CASE!==name)continue
- const ctx=await browser.newContext({viewport:{width:w,height:h},colorScheme:dark?'dark':'light',reducedMotion:'reduce',...(android?{userAgent:'Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36 17TongyouAndroid/0.7.0'}:{})})
+ const ctx=await browser.newContext({viewport:{width:w,height:h},colorScheme:dark?'dark':'light',reducedMotion:'reduce',...(android?{hasTouch:true,isMobile:true,userAgent:'Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36'}:{})})
  if(process.env.TRIP_QA_DIST)await ctx.route('https://17tongyou.com/travel/**',async r=>{
   const path=new URL(r.request().url()).pathname;
   if(path.includes('/api/'))return r.fallback();
@@ -20,11 +20,11 @@ try {for(const [name,w,h,android,dark,fail] of [['android-small',320,780,true,fa
   if(relative.includes('..'))return r.abort();
   try{const body=await fs.readFile(new URL('../dist/'+relative,import.meta.url));const ext=relative.split('.').pop();await r.fulfill({body,contentType:({html:'text/html',js:'application/javascript',css:'text/css',svg:'image/svg+xml',png:'image/png',webp:'image/webp'})[ext]||'application/octet-stream'})}catch{await r.fallback()}
  })
- await ctx.addInitScript(android=>{localStorage.setItem('travel_token','fixture');if(android)window.TongyouNative={postMessage:()=>{}}},android)
+ await ctx.addInitScript(()=>{localStorage.setItem('travel_token','fixture');})
  if(!real)await ctx.route('https://webapi.amap.com/maps**',r=>fail?r.abort():r.fulfill({contentType:'application/javascript',body:sdk}))
  const stops=[{id:'s1',day:1,order_no:0,name:'西湖',location:'120.15,30.25',start_time:'09:00',note:'沿湖慢慢走',stay_min:90},{id:'s2',day:1,order_no:1,name:'午餐待定',location:''},{id:'s3',day:1,order_no:2,name:'灵隐寺',location:'120.1,30.24'},{id:'s4',day:2,order_no:0,name:'河坊街',location:'120.17,30.23'}]
  stops.forEach(s=>{for(const [k,v] of Object.entries({note:'',start_time:'',stay_min:null,transport:'',ticket_price:null,tags:[],nav:null}))if(!(k in s))s[k]=v})
- const trip={start_date:'',budget:null,source_conversation_id:'',ai_status:null,ai_review:'',updated_at:'fixture',id:'t0',title:'杭州的慢周末',destination:'杭州',days:3,role:'owner',members:[{username:'demo',role:'owner'}],stops,day_plans:[],day_titles:{'1':'沿湖慢慢走','2':'老街散步'}}
+ const trip={start_date:'2026-11-20',budget:null,source_conversation_id:'',ai_status:null,ai_review:'',updated_at:'fixture',id:'t0',title:'杭州的慢周末',destination:'杭州',days:3,role:'owner',members:[{username:'demo',role:'owner'}],stops,day_plans:[],day_titles:{'1':'沿湖慢慢走','2':'老街散步'}}
  let detailsUnavailable=fail;const calls=[]
  await ctx.route('**/travel/api/**',async r=>{const p=new URL(r.request().url()).pathname.replace('/travel/api','');calls.push(p);let data=[]
  if(p==='/auth/me')data={username:'demo',display_name:'小旅',is_admin:false}
@@ -48,7 +48,7 @@ try {for(const [name,w,h,android,dark,fail] of [['android-small',320,780,true,fa
 
  await page.goto(process.env.TRIP_QA_URL||'http://127.0.0.1:4185/travel/')
  await page.getByLabel('打开行程 杭州的慢周末').click();await page.locator('.trip-route-layout').waitFor().catch(async e=>{await page.screenshot({path:out+'/'+name+'-failure.png'});console.log(errors,await page.locator('body').innerText());throw e})
- const compact=await page.locator('.android-trip-toolbar').isVisible()
+ const compact=await page.locator('.compact-trip-toolbar').isVisible()
  const map=page.getByRole('region',{name:'当天路线地图'})
  await map.waitFor({state:'visible'})
  const first=compact?page.locator('[data-stop-id=s1]'):page.locator('.trip-table-row').first()
@@ -81,7 +81,7 @@ try {for(const [name,w,h,android,dark,fail] of [['android-small',320,780,true,fa
  if(compact)await page.locator('.trip-workspace-scroll').evaluate(e=>e.scrollTop=0)
  await page.screenshot({path:`${out}/${name}.png`,animations:'disabled'})
  if(compact&&h>500){await page.getByLabel('展开行程面板').click();assert.equal(await page.locator('.trip-workspace-scroll').getAttribute('data-panel-level'),'2');await page.getByLabel('收起行程面板').click();assert.equal(await page.locator('.trip-workspace-scroll').getAttribute('data-panel-level'),'0');await page.getByLabel('展开行程面板').click();const handle=await page.locator('.trip-panel-handle').boundingBox();await page.mouse.move(handle.x+handle.width/2,handle.y+12);await page.mouse.down();await page.mouse.move(handle.x+handle.width/2,handle.y-65,{steps:5});await page.mouse.up();await page.waitForFunction(()=>document.querySelector('.trip-workspace-scroll').dataset.panelLevel==='2');await page.getByLabel('收起行程面板').click();await page.getByLabel('展开行程面板').click()}
- const day=d=>compact?page.locator('.android-trip-days button').nth(d-1):page.locator('.trip-sidebar-days button').nth(d-1)
+ const day=d=>compact?page.locator('.compact-trip-days button').nth(d-1):page.locator('.trip-sidebar-days button').nth(d-1)
  await day(2).click();await page.getByText('河坊街',{exact:true}).first().waitFor()
  if(!fail){assert.deepEqual(await page.locator('.trip-jsmarker').allTextContents(),['1'])}
  await day(3).click();assert.ok(await page.getByText(/这一天还没有安排|还没有行程点|这天还没有安排|还没有安排/).count() || await first.count()===0)

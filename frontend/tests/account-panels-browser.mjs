@@ -6,8 +6,8 @@ const out='/tmp/tongyou-account-panels';await fs.mkdir(out,{recursive:true})
 try {
  for(const [name,width,height,android,dark,admin] of [['android',390,844,true,false,true],['android-dark',320,780,true,true,true],['web',430,932,false,false,true],['desktop',1280,900,false,false,true],['desktop-dark',1280,900,false,true,true],['member',390,844,false,false,false]]) {
   if(process.env.QA_CASE&&process.env.QA_CASE!==name)continue
-  const ctx=await browser.newContext({viewport:{width,height},colorScheme:dark?'dark':'light',reducedMotion:'reduce',...(android?{userAgent:'Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36 17TongyouAndroid/0.8.2'}:{})})
-  await ctx.addInitScript(android=>{localStorage.setItem('travel_token','fixture');if(android)window.TongyouNative={postMessage:()=>{}}},android)
+  const ctx=await browser.newContext({viewport:{width,height},colorScheme:dark?'dark':'light',reducedMotion:'reduce',...(android?{hasTouch:true,isMobile:true,userAgent:'Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36'}:{})})
+  await ctx.addInitScript(()=>{localStorage.setItem('travel_token','fixture');})
   await ctx.route('**/travel/api/**',async r=>{
    const p=new URL(r.request().url()).pathname.replace('/travel/api','');let data=[]
    if(p==='/auth/me')data={username:'tester',display_name:'测试用户',is_admin:admin}
@@ -38,8 +38,7 @@ try {
    assert.ok(await account.isVisible());assert.ok(await account.locator('details').evaluate(e=>e.open))
    await account.getByRole('button',{name:label,exact:true}).click()
    await panel.waitFor()
-   if(android)assert.equal(await page.evaluate(()=>window.tongyouAndroidBack()),true)
-   else await page.keyboard.press('Escape')
+   await page.keyboard.press('Escape')
    await panel.waitFor({state:'detached'});assert.ok(await account.isVisible())
   }
   if(!admin)assert.equal(await account.getByRole('button',{name:'用户管理',exact:true}).count(),0)

@@ -1,10 +1,8 @@
-import { isAndroidApp, useAndroidBack } from '../nativeAndroid'
+import { tripNotificationTarget, type TripNotificationTarget } from '../tripNotification'
 import { isValidElement, lazy, memo, Suspense, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import './Mobile.css'
 import './MobileGlass.css'
-import './AndroidHome.css'
-import './AndroidModules.css'
 import './JourneyShell.css'
 import TravelHome from './TravelHome'
 import TravelPet, { flyPetToAI, PetTaskBadge, PetTools, usePetPreferences } from '../components/TravelPet'
@@ -469,15 +467,18 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
   // 等于把「有人说话了」的提示又还回去了一半。用一个自增序号触发，而不是布尔值：
   // 连续点两条不同行程的群聊通知时，布尔值第二次不会变化，抽屉就打不开。
   const [openChatSignal, setOpenChatSignal] = useState(0)
+  const [tripTarget, setTripTarget] = useState<TripNotificationTarget | null>(null)
+  const notificationSequence = useRef(0)
+  const notificationHandled = useCallback(() => setTripTarget(null), [])
+  useEffect(() => { if (!showTrips) { setTripTarget(null); setOpenChatSignal(0) } }, [showTrips])
   const openNotificationTarget = useCallback((item: ProductNotification) => {
-    if (item.target_kind === 'trip') {
-      const tripId = item.meta.trip_id || item.target_id
-      if (tripId) {
-        setTripsBoard(tripId)
-        setShowTrips(true)
-        if (item.type === 'trip_chat') setOpenChatSignal((n) => n + 1)  // 投票通知只打开行程，不展开群聊
-        return
-      }
+    const target = tripNotificationTarget(item, ++notificationSequence.current)
+    if (target) {
+      setTripTarget(target)
+      setTripsBoard(target.tripId)
+      setShowTrips(true)
+      setOpenChatSignal(target.kind === 'chat' ? target.requestId : 0)
+      return
     }
     if (item.target_kind === 'relay') {
       openSocial('station', item.meta.destination || '天堂寨')
@@ -549,26 +550,8 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
       document.removeEventListener('focusout', update)
     }
   }, [layoutMode])
-  useAndroidBack(() => {
-    if (showNotifications) setShowNotifications(false)
-    else if (traceFor) setTraceFor(null)
-    else if (showAnn) setShowAnn(false)
-    else if (showSupport) setShowSupport(false)
-    else if (showAdmin) setShowAdmin(false)
-    else if (showSkills) setShowSkills(false)
-    else if (showConnectors) setShowConnectors(false)
-    else if (showMemories) setShowMemories(false)
-    else return false
-    return true
-  }, 50)
-  useAndroidBack(() => {
-    if (showSocial) setShowSocial(false)
-    else if (mobilePanel) setMobilePanel(null)
-    else if (!collapsed) setCollapsed(true)
-    else if (cid) { newChat() }
-    else return false
-    return true
-  }, 10)
+
+
   const trackChange = useCallback((msgs: Msg[]) => {
     const last = msgs[msgs.length - 1]
     const sig = `${msgs.length}:${last ? (last.content?.length ?? 0) + (last.reasoning?.length ?? 0) : 0}`
@@ -792,11 +775,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
     if (prompt) setInput(prompt)
     setAiOpen(true)
   }
-  useAndroidBack(() => {
-    if (!aiOpen || mobilePanel === 'history') return false
-    setAiOpen(false)
-    return true
-  }, 45)
+
 
   const changeLayoutMode = useCallback((mode: LayoutMode) => {
     localStorage.setItem('travel_layout_mode', mode)
@@ -1057,6 +1036,8 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
             initialBoardId={tripsBoard}
             initialCreate={createTrip}
             openChatSignal={openChatSignal}
+            notificationTarget={tripTarget}
+            onNotificationHandled={notificationHandled}
             onChatRead={refreshSocialUnread}
             onOpenLedger={(trip) => { openLedger(); setLedgerTrip(trip) }}
             onBoardChange={setTripsBoard}
@@ -1168,7 +1149,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
             <div className="hero-content">
               <div className="hero-eyebrow">旅行里的小事，交给我</div>
               <h1 className="hero-title">想去哪儿，<br className="mobile-title-break" />一起想想。</h1>
-              <p className="hero-sub">{isAndroidApp() ? '说个目的地，或贴一篇攻略。' : '说一个目的地、贴一篇攻略，或者直接问我旅行问题。'}</p>
+              <p className="hero-sub">{'说一个目的地、贴一篇攻略，或者直接问我旅行问题。'}</p>
               {aiOpen && <InspirationLaunchpad
                 running={running}
                 idea={input}
@@ -1278,12 +1259,12 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
       {mobilePanel && <section inert={showAnn || showSupport || showAdmin || showSkills || showConnectors || showMemories} className={`mobile-page${mobilePanel === 'history' ? ' history-page' : ''}`} aria-label={mobilePanel === 'history' ? '历史记录' : '我的账户'}>
         <header className="mobile-page-header"><h1>{mobilePanel === 'history' ? '历史' : '我的'}</h1><button onClick={() => setMobilePanel(aiOpen ? null : mobilePanel === 'history' ? 'account' : null)} aria-label="关闭页面">完成</button></header>
         {mobilePanel === 'history' ? <>
-          <label className="mobile-history-search">{isAndroidApp() ? <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 5 5" /></svg> : <NavIcon name="history" />}<input aria-label="搜索历史对话" placeholder="搜索对话" value={search} onChange={e => setSearch(e.target.value)} /></label>
+          <label className="mobile-history-search">{<NavIcon name="history" />}<input aria-label="搜索历史对话" placeholder="搜索对话" value={search} onChange={e => setSearch(e.target.value)} /></label>
           <div className="mobile-history-list">
             {!filteredConvs.length && <p className="mobile-empty">{search ? '没有找到相关对话，换个关键词试试。' : '还没有对话，点「问 AI」说一个目的地开始吧。'}</p>}
             {groupConvs(filteredConvs).map(g => <section key={g.label}><h2>{g.label}</h2>{g.items.map(c => <article className="mobile-history-row" key={c.id}>
               <button onClick={() => selectConv(c.id)}><strong>{c.title}</strong><small>{g.label}</small></button>
-              <button className="mobile-delete" aria-label={`删除对话 ${c.title}`} onClick={() => void deleteConv(c.id)}>{isAndroidApp() ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden><path d="M3 6h18M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7m4-7v7" /></svg> : '删除'}</button>
+              <button className="mobile-delete" aria-label={`删除对话 ${c.title}`} onClick={() => void deleteConv(c.id)}>{'删除'}</button>
             </article>)}</section>)}
           </div>
         </> : <>
@@ -1294,7 +1275,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
             <button onClick={() => setShowPetTools(true)}>游游 · 旅行搭子<span aria-hidden>›</span></button>
             <button onClick={() => setShowAnn(true)}>公告<span aria-hidden>›</span></button>
             <button onClick={() => setShowSupport(true)}>帮助与反馈{supportUnread > 0 ? ` · ${supportUnread}` : ''}<span aria-hidden>›</span></button>
-            {!isAndroidApp() && <button onClick={() => changeLayoutMode(layoutMode === 'desktop' ? 'mobile' : 'desktop')}>切换{layoutMode === 'desktop' ? '移动端' : '桌面'}布局<span aria-hidden>›</span></button>}
+            {<button onClick={() => changeLayoutMode(layoutMode === 'desktop' ? 'mobile' : 'desktop')}>切换{layoutMode === 'desktop' ? '移动端' : '桌面'}布局<span aria-hidden>›</span></button>}
           </div>
           <details className="journey-advanced"><summary>更多工具与设置</summary><div className="mobile-account-links">
             <button onClick={() => setShowMemories(true)}>旅行偏好与记忆<span aria-hidden>›</span></button>
@@ -1303,7 +1284,6 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
             {user.is_admin && <button onClick={() => setShowAdmin(true)}>用户管理<span aria-hidden>›</span></button>}
           </div></details>
           <button className="mobile-signout" onClick={onLogout}>退出登录</button>
-          {isAndroidApp() && <p className="android-version">17同游 Android {navigator.userAgent.match(/17TongyouAndroid\/([^\s]+)/)?.[1]} · 好友测试版</p>}
         </>}
       </section>}
       {!aiOpen && <><nav className="mobile-bottom-nav" data-active={mobileActive} aria-label="主导航">
@@ -1452,9 +1432,9 @@ function InspirationLaunchpad({
             ref={ideaRef}
             value={idea}
             onChange={(event) => { setIdea(event.target.value); setError('') }}
-            placeholder={isAndroidApp() ? '输入目的地、攻略链接，或者问“第一次去日本怎么准备？”' : '输入目的地、粘贴攻略链接\n或直接问“第一次去日本怎么准备？”'}
+            placeholder={'输入目的地、粘贴攻略链接\n或直接问“第一次去日本怎么准备？”'}
             rows={2}
-            autoFocus={!isAndroidApp()}
+            autoFocus={true}
             aria-label="旅行需求"
             onPaste={(e) => {
               if (!onAddImages) return
@@ -1496,7 +1476,7 @@ function InspirationLaunchpad({
                 <circle cx="8.5" cy="8.5" r="1.6" />
                 <path d="M21 15l-5-5L5 21" />
               </svg>
-              <span className="unified-attach-text">{images.length ? `已选 ${images.length} 张图` : '上传图片'}</span>{isAndroidApp() && images.length > 0 && <b className="android-attach-count">{images.length}</b>}
+              <span className="unified-attach-text">{images.length ? `已选 ${images.length} 张图` : '上传图片'}</span>
             </button>
             <small>行程截图、机票订单、别人发的攻略图都行——也可以直接粘贴或拖进来</small>
             {images.length > 0 && (
@@ -1536,7 +1516,7 @@ function InspirationLaunchpad({
                     : '说什么都行，我来判断怎么帮你')}
             </p>
           </div>
-          <button className="unified-submit" type="submit" aria-label={actionLabel} disabled={running || uploading || (isAndroidApp() && !idea.trim() && !images.length)}><span className="unified-submit-label">{actionLabel}</span><span aria-hidden>{isAndroidApp() ? '↑' : '→'}</span></button>
+          <button className="unified-submit" type="submit" aria-label={actionLabel} disabled={running || uploading || (false)}><span className="unified-submit-label">{actionLabel}</span><span aria-hidden>{'→'}</span></button>
         </div>
         </form>
       </section>
@@ -3142,6 +3122,7 @@ function Message({
   // 放在所有 early return 之前，保证 hooks 调用顺序稳定。
   const streaming = !!msg.meta?.streaming
   const animatedContent = useTypewriter(msg.content, streaming)
+  const [sharing, setSharing] = useState(false)
   if (msg.role === 'progress') {
     if (msg.meta?.hint === 'deep_reasoning') {
       return (
@@ -3246,7 +3227,6 @@ function Message({
   const saved = msg.meta?.memories_saved?.filter((s) => s.op !== 'delete') ?? []
   // 是行程攻略（有来源且含标题）→ 提供生成手账海报入口
   const isGuide = !streaming && !msg.meta?.direct && !!msg.meta?.sources?.length && msg.content.includes('##')
-  const [sharing, setSharing] = useState(false)
   return (
     <div className={`msg-assistant${preliminary ? ' is-preliminary' : ''}`}>
       {preliminary && (

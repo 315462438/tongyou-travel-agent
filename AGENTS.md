@@ -80,7 +80,7 @@ ssh "$DEPLOY_HOST" 'sudo journalctl -u travel-backend -n 50 --no-pager'
 
 ## Environment
 
-- Android 好友测试版（2026-10-19）：独立 `android/` 工程，包名 `com.tongyou.travel`，版本源为 `android/app/build.gradle`。复用 `frontend/` UI，但固定资源快照打进 APK，构建不改 `frontend/dist`/`backend/static`、不部署 Web、不更新 iOS。Android 适配由 `nativeAndroid.ts` 在指定 UA 与受限原生桥存在时启用。签名密钥存仓库外 `~/.config/17tongyou/android/`，发布产物在忽略的 `android/releases/`；详见 `android/README.txt` 与 `docs/dev_docs/mobile-release-management.txt`。后端接口须兼容已发出的三端版本。
+- Android 好友测试版（2026-10-19）：独立 `android/` 工程，包名 `com.tongyou.travel`，版本源为 `android/app/build.gradle`。2026-11-10 起全部界面使用 Kotlin / Compose，已移除 WebView 兜底和网页快照；frontend 已清理旧壳桥接，仍支持 Android 手机浏览器。Android 构建不改 `frontend/dist`/`backend/static`，三端独立发布。签名密钥存仓库外 `~/.config/17tongyou/android/`，发布产物在忽略的 `android/releases/`；详见 `android/README.txt` 与 `docs/dev_docs/mobile-release-management.txt`。后端接口须兼容已发出的三端版本。
 
 - Backend: Python 3.12 venv at `backend/.venv`（本机 `python3.12`；PyCharm 里显示的 3.9 已过时）
 - Frontend: Node 23 + Vite + React-TS（`frontend/`）
