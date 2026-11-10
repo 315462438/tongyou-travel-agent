@@ -139,3 +139,14 @@ Android 0.6.0 (9) / 2026-10-20
   投票按天：后端 travel_trip_poll 加 day 列（migrate.py 显式加列），行程当天内联投票卡、顶部「有 N 个投票等你选」、日期标签红点。
 - 同日：iOS 1.0.24 (25) 已装到 iPhone 17 Pro Max：「我的」新增外观切换；投票按天内联、等你投票提示与日期红点；发起投票可选第几天或整趟行程。
 - Web（已部署）：投票标签显示待投数，投票标注第几天、可点跳到那天，发起时可选天。
+
+2026-11-10 收尾：投票通知直达与旧 Android 网页适配清理
+- 功能提交 a77334c。Web 已部署：删除退役容器的桥接、启动就绪回调、下载/分享劫持、震动及专属主题；手机网页共用行程组件改为 MobileTripWorkspace，保留普通浏览器分享、下载、主题与性能适配。
+- Web / Android / iOS 投票通知携带 trip_id、poll_id、day；详情加载后使用当前投票校准日期，定位卡片。旧通知、整趟投票、删除目标、越界日期安全回退；定位只消费一次，不覆盖手动选日。
+- Web 支持已打开行程时换通知目标、重复打开同一已读通知，并保持群聊通知行为。线上 39 个资源全部与本地 SHA256 一致，入口和入口资源 HTTPS 内容一致，/travel/api/health 正常；本次没有后端业务或数据库变更。
+- Android 0.15.1 (36) 已发布：1957526 bytes，SHA256 f1415be0931ea17c8143951189ccd8aef5d242f6d990924f0acbf7309798d15c。
+  下载：https://17tongyou.com/downloads/android/0.15.1-36/17tongyou-android-0.15.1-36.apk
+  正式签名和 App Links 证书一致，打包检查确认没有 assets/web；已原子更新公开 latest.json。
+- iOS 1.0.25 (26) 已完成 Release 签名构建并覆盖安装到 Yucheng 的 iPhone，设备应用清单确认版本。
+- 验证：前端 134 单测及构建、lint（无 error）；后端相关 47 测试；Android 44 JVM 测试 / lintRelease / Release；Swift Foundation 路由测试；网页通知、行程、分享、账户、主流程、主题、游游、搜索与按压回归均通过。
+- 遵照用户要求未启动任何模拟器；没有在 Android/iOS 真机上点击新通知界面。测试详情见 docs/test_cases/旧安卓适配清理与投票通知直达-2026-11-10.md。
