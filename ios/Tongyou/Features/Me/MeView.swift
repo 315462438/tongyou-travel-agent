@@ -10,6 +10,7 @@ struct MeView: View {
     @State private var showHistory = false
     @State private var supportUnread = 0
     @State private var adminSupportUnread = 0
+    @State private var friendRequests = 0
 
     var body: some View {
         NavigationStack {
@@ -29,6 +30,7 @@ struct MeView: View {
                 }
 
                 Section("我的") {
+                    NavigationLink { FriendsView() } label: { Label("好友", systemImage: "person.2").badge(friendRequests) }
                     Button { showHistory = true } label: { Label("历史对话", systemImage: "clock.arrow.circlepath") }
                     Button { router.petToolsOpen = true } label: { Label("游游 · 旅行搭子", systemImage: "pawprint") }.accessibilityIdentifier("petTools")
                     DisclosureGroup("更多工具与设置") {
@@ -78,6 +80,7 @@ struct MeView: View {
     private func loadBadges() async {
         struct Count: Decodable { var unread: Int }
         supportUnread = (try? await API.shared.get("support/unread", as: Count.self))?.unread ?? 0
+        friendRequests = (try? await API.shared.get("social/friends", as: FriendGroups.self))?.received.count ?? 0
         if session.account?.isAdmin == true {
             struct Threads: Decodable { var unreadTotal: Int }
             adminSupportUnread = (try? await API.shared.get("admin/support/threads", as: Threads.self))?.unreadTotal ?? 0

@@ -22,7 +22,7 @@ function NotificationAvatar({ item }: { item: ProductNotification }) {
       {item.actor.avatar_url
         ? <img src={item.actor.avatar_url} alt="" onError={(event) => { event.currentTarget.hidden = true }} />
         : <b>{(item.actor.display_name || item.actor.username || '旅')[0].toUpperCase()}</b>}
-      <i>{item.type === 'trip_chat' ? '💬'
+      <i>{item.type === 'trip_poll' ? '🗳️' : item.type === 'trip_chat' ? '💬'
         : item.type === 'relay_reaction' ? '♥'
         : item.type === 'friend_accepted' ? '✓' : '+'}</i>
     </span>

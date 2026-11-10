@@ -40,6 +40,8 @@ class SendMessageRequest(BaseModel):
     web_search: bool = False  # 联网搜索开关（2026-10-16）：开则直答/闲聊先联网搜再回答
     # （最终是否生效还要看服务器 docker_sandbox_enabled 是否开启，见 _build_backend）
     image_ids: list[str] = Field(default_factory=list)  # Phase 105：随消息带的图（复用 Phase 74 上传）
+    # 2026-11-10：设备定位 "lng,lat"（WGS-84）。客户端只在用户问「附近/周边」时才带，不存库。
+    location: str = Field(default="", max_length=40)
 
 
 class ConfirmRequest(BaseModel):
@@ -179,6 +181,7 @@ def send_message(
     background.add_task(
         run_conversation_turn, cid, req.content, user.id, user_msg.id,
         req.deep_reasoning, req.sandbox_enabled, image_ids, web_search=req.web_search,
+        location=req.location,
     )
     return {"status": "running", "user_message_id": user_msg.id}
 

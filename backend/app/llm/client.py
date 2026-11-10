@@ -165,12 +165,12 @@ def _abort_of(cid: str | None):
 
 
 class LLMClient:
-    def __init__(self, api_key: str | None = None, base_url: str | None = None):
+    def __init__(self, api_key: str | None = None, base_url: str | None = None, *, trace_content: bool = True):
         # Langfuse 埋点（Phase 24）：启用时换 drop-in 包装类，自动记录每次调用的
         # 完整 prompt/补全/用量（含流式）；未启用/失败回退裸 OpenAI，行为不变。
         from app.observability import wrap_openai_client_cls
 
-        client_cls = wrap_openai_client_cls() or OpenAI
+        client_cls = (wrap_openai_client_cls() or OpenAI) if trace_content else OpenAI
         self._client = client_cls(
             api_key=api_key or settings.deepseek_api_key,
             base_url=base_url or settings.deepseek_base_url,

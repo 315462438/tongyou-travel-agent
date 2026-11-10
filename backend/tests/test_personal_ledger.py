@@ -81,6 +81,43 @@ def test_conversion_saved_preference_and_unchanged_originals(ctx,monkeypatch):
     assert c.get(f'/api/ledger/{b}/conversion?refresh=true').json()['total_minor']==300
     assert c.get(f'/api/ledger/{b}').json()['totals']=={'MYR':1234}
 
+
+@pytest.mark.parametrize('original,target,rate,expected', [
+    ('CNY', 'SGD', '5.219', 1916),
+    ('SGD', 'CNY', '0.2', 50000),
+])
+def test_conversion_http_accepts_prepublished_rate(ctx, monkeypatch, original, target, rate, expected):
+    from datetime import datetime, timezone, timedelta
+    import httpx
+    from app.tools import ledger_fx
+
+    monkeypatch.setattr(ledger_fx, '_CACHE', {})
+    day = (datetime.now(timezone.utc).date() + timedelta(days=1)).isoformat()
+    requests = []
+
+    def upstream(request):
+        requests.append(request)
+        assert request.url.params['base'] == target
+        assert request.url.params['quotes'] == original
+        return httpx.Response(200, json=[{'base': target, 'quote': original, 'rate': rate, 'date': day}])
+
+    client_type = httpx.AsyncClient
+    monkeypatch.setattr(ledger_fx.httpx, 'AsyncClient', lambda **kwargs: client_type(transport=httpx.MockTransport(upstream), **kwargs))
+    c, _, _ = ctx
+    b = book(c)
+    entry = {**body(), 'currency': original, 'amount': '100.00'}
+    assert c.post(f'/api/ledger/{b}/entries', json=entry).status_code == 200
+    assert c.patch(f'/api/ledger/{b}/currency', json={'target_currency': target}).status_code == 200
+    response = c.get(f'/api/ledger/{b}/conversion?refresh=true')
+    assert response.status_code == 200
+    result = response.json()
+    assert result['total_minor'] == expected and result['target_currency'] == target
+    assert result['missing'] == [] and result['stale'] is False
+    assert result['items'][0]['rate_date'] == day
+    assert result['source'] == 'Frankfurter' and result['fetched_at']
+    assert c.get(f'/api/ledger/{b}').json()['totals'] == {original: 10000}
+    assert len(requests) == 1
+
 def test_ledger_requires_auth(ctx):
     c,_,_=ctx;c.app.dependency_overrides.pop(get_current_user)
     assert c.get('/api/ledger').status_code==401

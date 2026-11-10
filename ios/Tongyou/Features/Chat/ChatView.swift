@@ -100,7 +100,7 @@ private struct MessageRow: View {
         switch message.role {
         case "user": UserBubble(message: message)
         case "progress": ProgressRow(message: message, store: store, isLast: isLast)
-        default: AssistantRow(message: message, store: store)
+        default: AssistantRow(message: message, store: store, isLast: isLast)
         }
     }
 }
@@ -218,6 +218,7 @@ private struct HandoffCard: View {
 private struct AssistantRow: View {
     let message: ChatMessage
     let store: ChatStore
+    var isLast = false
     @State private var showReasoning = false
     @State private var showSources = false
     @State private var importing = false
@@ -287,6 +288,7 @@ private struct AssistantRow: View {
         if message.streaming && !message.content.isEmpty {
             Text("已生成 \(message.content.count) 字").font(.caption).foregroundStyle(.secondary)
         }
+        if !message.streaming && !message.places.isEmpty { PlaceCardsRow(places: message.places) }
         if !message.sources.isEmpty {
             DisclosureGroup(isExpanded: $showSources) {
                 VStack(alignment: .leading, spacing: 8) {
@@ -314,6 +316,9 @@ private struct AssistantRow: View {
                 .font(.caption).foregroundStyle(.secondary)
         }
         if !message.streaming && message.isGuide { actions }
+        if isLast && !store.running && !message.streaming && !message.suggestions.isEmpty {
+            SuggestionChips(items: message.suggestions) { text in Task { await store.send(text) } }
+        }
     }
 
     private var actions: some View {

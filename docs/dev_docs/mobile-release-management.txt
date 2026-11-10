@@ -99,3 +99,38 @@ Android 0.6.0 (9) / 2026-10-20
 - 本地包 android/releases/0.9.0-14/17tongyou-android-0.9.0-14.apk，2852150 bytes；SHA256 8cc107a63ea1ae4d866aadcc3c4b19dbb5aaff16d75df2f0b4194b5f1d75b4fc。
 - 用户明确授权后，Android 0.9.0 (14) 已发布至 https://17tongyou.com/downloads/android/0.9.0-14/17tongyou-android-0.9.0-14.apk，latest 清单已原子更新；HTTPS 下载、SHA256、Range、Web 入口及更新清单核验全部通过。旧 APK 保留。Web 和业务后端未部署。
 - 计划、坑与完整验收见 docs/task_plans/双端简版分享与同行邀请-2026-10-22.md、docs/pitfalls/攻略导出不能截图滚动容器与无限长画布-2026-10-22.md、docs/test_cases/双端简版分享与邀请动效-2026-10-22.md。
+
+2026-10-24 朋友 iPhone 本地安装
+- 按用户要求，通过本电脑原个人开发团队，将 USB 连接的朋友 iPhone 17 Pro Max 登记到描述文件，首次安装当前源码 iOS 1.0.22 (23)。朋友手机完成开发者模式与签名信任。
+- clean Release、严格签名、profile 包含目标设备、实际安装版本、启动与进程存活全部通过。签名有效至 2026-10-31 09:44:41 +08:00；未上架 App Store / TestFlight。
+- 本次没有修改功能或版本号，没有部署 Web、Android 或后端。验收：docs/test_cases/当前连接iPhone安装-2026-10-24.md。
+
+2026-11-10 三端同步发布
+- 后端 + Web 已部署：直答配实景图、追问按钮、地点卡、定位回答「附近」、出行当天首页、同行人投票、「我的」好友入口。新增表 travel_trip_poll / travel_trip_poll_vote；新增接口向后兼容，旧客户端不受影响。
+- iOS 1.0.23 (24)：同上功能的原生实现（新增 FriendsView、PlaceCards、TripPolls、LocationOnce；Info.plist 增加定位用途说明）。Release 签名构建并安装到 iPhone 17 Pro Max，设备查询版本一致；手机锁屏未能自动启动。签名到期 2026-11-16。
+- Android 0.11.0 (27)：共享前端快照 + WebView 定位授权（ACCESS_COARSE_LOCATION，仅本站来源）。单测、lint、Release 通过；已发布
+  https://17tongyou.com/downloads/android/0.11.0-27/17tongyou-android-0.11.0-27.apk ，latest 清单已更新（SHA256 a5bae4ff…a45010，2875486 bytes）。
+  未做真机覆盖安装检查和设备测试。
+- 同日：Android 0.12.0 (29) 已发布（原生第一阶段：登录 / 旅行首页 / AI 对话为 Kotlin + Compose，其余走 WebFallbackActivity）。发版前修了 5 处：迁移读取失败不再当成未登录、迁移超时不再无限转圈、密钥库读不出时可回登录页、联网搜索默认开并记住选择、回答图片只走本站代理。35 项单测、lint、Release 构建通过；**未跑设备测试、未做真机覆盖安装**（按用户要求直接发布）。0.11.1 (28) 未发布，被 0.12.0 取代。
+  下载 https://17tongyou.com/downloads/android/0.12.0-29/17tongyou-android-0.12.0-29.apk ，SHA256 7d660be1…37ce20。
+- 同日：Android 0.12.1 (30) 已发布。底栏玻璃质感（Android 12+ 真模糊，页面内容从底栏下滚过；更低版本退成近不透明底色）、页面切换过渡动画、追问只跟在最后一条回答下、地点卡原生「加入行程」、初步判断徽章、深度推理提示按钮、今天卡片文案补全。35 项单测、lint、Release 构建通过；未跑设备测试（按用户要求直接发布）。
+  下载 https://17tongyou.com/downloads/android/0.12.1-30/17tongyou-android-0.12.1-30.apk ，SHA256 f4b40a51…2744f0，2884524 bytes。
+- 同日：Android 0.13.0 (32) 已发布（0.12.2 (31) 未发布，被本版取代）。下载 https://17tongyou.com/downloads/android/0.13.0-32/17tongyou-android-0.13.0-32.apk ，SHA256 76b45db7…7b8a52，2984836 bytes。按用户真机截图反馈重做：
+  主题改为品牌蓝 + 中性色（去掉 Material 默认淡紫）、悬浮胶囊底栏 + 「问 AI」胶囊、首页卡片与字号；
+  新增原生页面：记账（账本列表/详情/记一笔/一句话记账/汇率/成员与分享）、全部行程与行程详情（按天地点增删改、出发日期、成员邀请与链接、投票、群聊）、
+  好友、历史对话、通知与公告。仍走网页兜底的：行程地图与 AI 改行程/美食/行李/避坑、手账海报、预算明细、扫码登录卡、
+  攻略转行程、记忆/技能/连接/客服/资料编辑/管理员页。兜底页已隐藏网页自带底栏与游游，返回条改为同色文字条。
+  39 项单测、lint、Release 构建通过；未跑设备测试、未在真机看过界面。
+- 同日：Android 0.13.1 (33) 已发布（https://17tongyou.com/downloads/android/0.13.1-33/17tongyou-android-0.13.1-33.apk ，SHA256 9de9edcf…616dd9，3059128 bytes）。按用户「问 AI 界面很丑，一切 UI 和 iOS、网页对齐」重做：
+  对话页照 iOS ChatView：用户蓝色气泡靠右、回答不套卡片、思考过程单行折叠、思考面板（状态 + 足迹）、来源胶囊、横滑地点卡、
+  追问小胶囊（仅最后一条）、攻略操作胶囊（分享/预算/海报/转协同行程，后三项原生发起）、登录确认卡、扫码截图原生显示、
+  底部「选项圆钮 + 胶囊输入框 + 圆形发送键」、空状态「想去哪儿，一起想想」+ 四个任务；Markdown 按 iOS 渲染（蓝点列表、圆角表格、圆角配图、引用竖线）。
+  全局：表单改为底部整页面板 SheetDialog（取消 / 标题 / 保存），标题栏居中，悬浮按钮改胶囊，「我的」加头像。
+  39 项单测、lint、Release 构建通过；未跑设备测试、未在真机看过界面。
+- 同日：Android 0.14.0 (34) 已发布（https://17tongyou.com/downloads/android/0.14.0-34/17tongyou-android-0.14.0-34.apk ，SHA256 d8a02d8e…bdc0e4，3108280 bytes）。按用户「字体不合适；不要兜底跳转，全部搬过来」：
+  字号整体下调一档（Theme 排版表重写）；界面内**已无任何 WebFallbackActivity 调用**——新增原生：个人资料（头像/名称/城市/简介）、
+  修改密码（含强制改初始密码，改后用新令牌替换会话）、旅行偏好与记忆（删除/整理）、技能、连接（扫码截图轮询）、帮助与反馈、
+  管理（用户角色/邀请码/发公告/客服收件箱与回复）、手账海报与预算明细卡片、分享计划单（系统分享文本）、行程当天静态地图、
+  让 AI 改行程（建议采纳/忽略/撤销）、美食、行李三态、避坑、调整当天顺序、邀请链接（/t/短链、?join=、?ledger_join= 原生解析与加入）。
+  WebFallbackActivity 与打包进 APK 的网页快照仍在工程里但已无入口，待单独清理（涉及打包脚本的快照校验与设备测试）。
+  41 项单测、lint、Release 构建通过；未跑设备测试、未在真机看过界面。

@@ -13,8 +13,12 @@ struct HomeView: View {
     @State private var showNotifications = false
     @State private var creating = false
     @State private var title = ""
+    @State private var hasDate = false
+    @State private var startDate = Date()
     @State private var busy = false
     @State private var unread = 0
+    @State private var today: TodayTrip?
+    @Environment(\.openURL) private var openURL
     @Namespace private var transition
 
     var body: some View {
@@ -25,6 +29,7 @@ struct HomeView: View {
                         Text("\(session.account?.displayName ?? "朋友")，下一站去哪儿？").font(.subheadline).foregroundStyle(.secondary)
                         Text("把期待，\n变成一段旅行。").font(.largeTitle.weight(.semibold))
                     }.padding(.top, 16)
+                    if let today { todayCard(today) }
                     HStack(spacing: 12) {
                         Button { creating = true } label: { Label("新建旅行", systemImage: "plus").frame(minHeight: 32) }.buttonStyle(.glassProminent)
                         Button { ask("帮我把这篇攻略整理成行程：") } label: { Label("导入攻略", systemImage: "arrow.up.right").frame(minHeight: 32) }.buttonStyle(.glass)
@@ -96,27 +101,70 @@ struct HomeView: View {
         .onChange(of: path.count) { _, count in router.travelDetailOpen = count > 0 }
     }
     private func ask(_ prompt: String) { router.aiPrompt = prompt; router.aiOpen = true }
+
+    /// 出行期间（或临出发）先给今天的安排，不用再去翻行程。
+    private func todayCard(_ trip: TodayTrip) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Button { path.append(TripRef(id: trip.id)) } label: {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(trip.day.map { "今天 · 第 \($0) / \(trip.days ?? $0) 天" } ?? (trip.startsIn == 1 ? "明天出发" : "还有 \(trip.startsIn ?? 0) 天出发"))
+                            .font(.footnote.weight(.semibold)).foregroundStyle(Palette.sky)
+                        Text((trip.dayTitle ?? "").isEmpty ? trip.title : trip.dayTitle!).font(.title3.weight(.semibold)).foregroundStyle(.primary)
+                            .multilineTextAlignment(.leading)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.footnote).foregroundStyle(.secondary)
+                }
+            }.buttonStyle(TravelPressStyle())
+            if trip.day != nil, (trip.stops ?? []).isEmpty {
+                Text("今天还没有安排，打开行程加几个地点。").font(.footnote).foregroundStyle(.secondary)
+            }
+            ForEach((trip.stops ?? []).prefix(5)) { stop in
+                Divider()
+                HStack(spacing: 8) {
+                    if !(stop.startTime ?? "").isEmpty { Text(stop.startTime!).font(.footnote).monospacedDigit().foregroundStyle(.secondary) }
+                    Text(stop.name).font(.subheadline).lineLimit(1)
+                    Spacer(minLength: 8)
+                    if let url = stop.navURL {
+                        Button("导航") { openURL(url) }.buttonStyle(.glassProminent).font(.footnote)
+                            .accessibilityLabel("导航到 \(stop.name)")
+                    }
+                }
+            }
+            if (trip.stops ?? []).count > 5 { Text("还有 \((trip.stops ?? []).count - 5) 个地点").font(.footnote).foregroundStyle(.secondary) }
+        }
+        .padding(16).glassCard(cornerRadius: 24)
+    }
     private var createSheet: some View {
         NavigationStack {
             Form {
                 Section("给这次旅行起个名字") { TextField("比如：杭州的慢周末", text: $title) }
+                Section {
+                    Toggle("已确定出发日期", isOn: $hasDate.animation())
+                    if hasDate { DatePicker("出发日期", selection: $startDate, displayedComponents: .date) }
+                } footer: { Text("填了之后，出行当天首页会直接显示今天的安排。之后也可以在行程里改。") }
                 Section { Button(busy ? "正在创建…" : "创建旅行") { Task { await create() } }.disabled(busy || title.trimmingCharacters(in: .whitespaces).isEmpty) }
                 if let error { Text(error).foregroundStyle(.red).font(.footnote) }
             }.navigationTitle("新建旅行").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { creating = false } } }
-        }.presentationDetents([.medium]).presentationDragIndicator(.visible)
+        }.presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
     }
     private func create() async {
         guard !busy else { return }; busy = true
         defer { busy = false }
         do {
             struct Created: Decodable { var id: String }
-            let result = try await API.shared.post("trips", body: ["title": title, "days": 2], as: Created.self)
+            let day = startDate.formatted(.iso8601.year().month().day().dateSeparator(.dash))
+            let result = try await API.shared.post("trips", body: ["title": title, "days": 2, "start_date": hasDate ? String(day.prefix(10)) : ""], as: Created.self)
             Haptics.success()
-            creating = false; title = ""; await load(); path.append(TripRef(id: result.id))
+            creating = false; title = ""; hasDate = false; await load(); path.append(TripRef(id: result.id))
         } catch { Haptics.error(); self.error = error.localizedDescription }
     }
     private func load() async {
+        let date = Date().formatted(.iso8601.year().month().day().dateSeparator(.dash).timeZone(separator: .omitted))
+        struct Today: Decodable { var trip: TodayTrip? }
+        today = (try? await API.shared.get("trips/today", query: ["date": String(date.prefix(10))], as: Today.self))?.trip
         do { trips = try await API.shared.get("trips", as: [TripSummary].self); error = nil }
         catch { self.error = error.localizedDescription }
         loading = false
@@ -155,4 +203,17 @@ struct TravelBookCard: View {
         .background { RoundedRectangle(cornerRadius: 22).fill(tint.opacity(0.08)).padding(.horizontal, 6).offset(y: 5) }
         .padding(.bottom, 6)
     }
+}
+
+
+struct TodayTrip: Decodable {
+    struct Stop: Decodable, Identifiable {
+        var id: String; var name: String; var startTime: String?; var nav: JSONValue?
+        /// 境内开高德，境外开苹果地图（高德没有当地数据）
+        var navURL: URL? {
+            (nav?["domestic"]?.bool == false ? nav?["apple"]?.string : nav?["amap"]?.string).flatMap(URL.init(string:))
+        }
+    }
+    var id: String; var title: String; var days: Int?
+    var day: Int?; var dayTitle: String?; var startsIn: Int?; var stops: [Stop]?
 }

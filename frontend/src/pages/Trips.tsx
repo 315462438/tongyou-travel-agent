@@ -183,6 +183,7 @@ const TRIP_TOOL_TABS = [
   { id: 'money', icon: '💰', label: '记账' },
   { id: 'packing', icon: '🧳', label: '行李' },
   { id: 'tips', icon: '⚠️', label: '避坑' },
+  { id: 'polls', icon: '🗳️', label: '投票' },
   { id: 'assistant', icon: '✦', label: '助手' },
   { id: 'log', icon: '◷', label: '动态' },
 ] as const
@@ -1341,6 +1342,7 @@ function TripList({ onOpen, mobile, initialCreate }: { onOpen: (id: string) => v
   const [trips, setTrips] = useState<TripSummary[] | null>(null)
   const [title, setTitle] = useState('')
   const [dest, setDest] = useState('')
+  const [startDate, setStartDate] = useState('')
   const [seedPrompt, setSeedPrompt] = useState('')
   const [busy, setBusy] = useState(false)
   const { notify } = useToast()
@@ -1378,7 +1380,7 @@ function TripList({ onOpen, mobile, initialCreate }: { onOpen: (id: string) => v
       const res = await authFetch(`${API}/trips`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: title || (dest ? `${dest}之行` : '新行程'), destination: dest, days: 2 }),
+        body: JSON.stringify({ title: title || (dest ? `${dest}之行` : '新行程'), destination: dest, days: 2, start_date: startDate }),
       })
       if (!res.ok) {
         const body = await res.json().catch(() => null)
@@ -1415,6 +1417,7 @@ function TripList({ onOpen, mobile, initialCreate }: { onOpen: (id: string) => v
         <div className="trip-create-row">
           <label>行程名称<input placeholder="例如：杭州的慢周末" value={title} onChange={(e) => setTitle(e.target.value)} /></label>
           <label>目的地<input placeholder="例如：杭州" value={dest} onChange={(e) => setDest(e.target.value)} /></label>
+          <label>出发日期（可选）<input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} /><small className="trip-create-hint">填了之后，出行当天首页会直接显示今天的安排</small></label>
         </div>
         <details className="trip-create-ai"><summary>想让 AI 先安排一版？（可选）</summary>
         <textarea
@@ -3000,6 +3003,7 @@ function TripBoard({
       {compact && workspaceView === 'day' && routeMap}
       <div className="trip-workspace-scroll" data-panel-level={panelLevel} data-workspace={workspaceView}>
       <PetMemberWelcome tripId={trip.id} members={trip.members} username={username} />
+      {!trip.start_date && <StartDateAsk tripId={trip.id} onSave={(date) => call('', 'PATCH', { start_date: date })} />}
       {compact && workspaceView === 'day' && <div className="trip-panel-handle"
         onPointerDown={e => {if((e.target as HTMLElement).closest("button"))return;panelDrag.current=e.clientY;e.currentTarget.setPointerCapture(e.pointerId)}}
         onPointerUp={e => {if(panelDrag.current!=null){const delta=e.clientY-panelDrag.current;if(Math.abs(delta)>24)setPanelLevel(x=>Math.max(0,Math.min(2,x+(delta<0?1:-1))))}panelDrag.current=null}}
@@ -3425,6 +3429,7 @@ function TripBoard({
               onInvite={(n) => call('/invite', 'POST', { username: n }).then((r) => !!r)} />
           )}
           {aiTab === 'tips' && <TipsPanel tripId={tripId} active />}
+          {aiTab === 'polls' && <PollsPanel tripId={tripId} active />}
 
           {/* ---- 住宿 tab：每晚住哪汇总 + 酒店推荐 ---- */}
           {aiTab === 'stay' && (
@@ -5574,6 +5579,103 @@ function TipsPanel({ tripId, active }: { tripId: string; active: boolean }) {
           onChange={(e) => setContent(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && add()} />
         <button className="trip-btn primary" onClick={add}>添加</button>
       </div>
+    </div>
+  )
+}
+
+
+interface PollItem {
+  id: string; question: string; closed: boolean; my_vote: number | null; total: number; members: number
+  created_by: string; mine: boolean
+  options: { text: string; votes: number; voters: string[] }[]
+}
+
+/** 同行人投票：住哪家、哪天走这类事，发个投票比在群里来回问快。每人一票，可以改。 */
+function PollsPanel({ tripId, active }: { tripId: string; active: boolean }) {
+  const { data, setData, reload } = useModuleData<PollItem[]>(tripId, 'polls', active, [])
+  const [question, setQuestion] = useState('')
+  const [options, setOptions] = useState(['', ''])
+  const [busy, setBusy] = useState(false)
+  const { notify } = useToast()
+  const call = async (path: string, method: string, body?: unknown) => {
+    const r = await authFetch(`${API}/trips/${tripId}/polls${path}`, {
+      method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined,
+    })
+    if (!r.ok) { notify((await r.json().catch(() => null))?.detail || '操作失败，请重试', 'error'); return null }
+    return r.json()
+  }
+  const create = async () => {
+    if (busy) return
+    setBusy(true)
+    const made = await call('', 'POST', { question, options: options.filter(o => o.trim()) })
+    setBusy(false)
+    if (made) { setQuestion(''); setOptions(['', '']); reload() }
+  }
+  const replace = (poll: PollItem | null) => { if (poll) setData(cur => cur.map(p => p.id === poll.id ? poll : p)) }
+  return (
+    <div className="trip-panel trip-module">
+      <div className="trip-panel-head">🗳️ 一起决定 <span className="trip-day-km">每人一票，可以改</span></div>
+      {data.length === 0 && <p className="trip-module-empty">还没有投票。住哪家、哪天走，发一个让大家点一下。</p>}
+      {data.map(poll => {
+        const top = Math.max(0, ...poll.options.map(o => o.votes))
+        return (
+          <section key={poll.id} className={`trip-poll${poll.closed ? ' closed' : ''}`}>
+            <header><b>{poll.question}</b><small>{poll.closed ? '已结束' : `${poll.total}/${poll.members} 人已投`}{poll.created_by ? ` · ${poll.created_by} 发起` : ''}</small></header>
+            {poll.options.map((option, index) => (
+              <button key={option.text} disabled={poll.closed} aria-pressed={poll.my_vote === index}
+                className={`trip-poll-option${poll.my_vote === index ? ' mine' : ''}${poll.closed && option.votes === top && top > 0 ? ' win' : ''}`}
+                onClick={async () => replace(await call(`/${poll.id}/vote`, 'POST', { option: index }))}>
+                <i style={{ width: `${poll.total ? Math.round(option.votes * 100 / poll.total) : 0}%` }} aria-hidden />
+                <span>{poll.my_vote === index ? '✓ ' : ''}{option.text}</span>
+                <em title={option.voters.join('、')}>{option.votes} 票{option.voters.length ? ` · ${option.voters.join('、')}` : ''}</em>
+              </button>
+            ))}
+            {poll.mine && <footer>
+              {!poll.closed && <button onClick={async () => replace(await call(`/${poll.id}/close`, 'POST'))}>结束投票</button>}
+              <button onClick={async () => { if (await call(`/${poll.id}`, 'DELETE')) reload() }}>删除</button>
+            </footer>}
+          </section>
+        )
+      })}
+      <div className="trip-poll-new">
+        <input placeholder="要大家决定什么？如「住哪家」" value={question} maxLength={120} onChange={e => setQuestion(e.target.value)} />
+        {options.map((value, index) => (
+          <input key={index} placeholder={`选项 ${index + 1}`} value={value} maxLength={60}
+            onChange={e => setOptions(cur => cur.map((o, i) => i === index ? e.target.value : o))} />
+        ))}
+        <div>
+          {options.length < 4 && <button className="trip-btn" onClick={() => setOptions(cur => [...cur, ''])}>＋ 加选项</button>}
+          <button className="trip-btn primary" disabled={busy || !question.trim() || options.filter(o => o.trim()).length < 2} onClick={create}>发起投票</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+
+/**
+ * 没定出发日期的行程（导入的、早先建的）主动问一句：多数人不会去找设置入口，
+ * 而首页「今天」卡、天气检查都靠这个日期。每个行程只问一次，点「还没定」就不再出现。
+ */
+function StartDateAsk({ tripId, onSave }: { tripId: string; onSave: (date: string) => Promise<boolean> }) {
+  const key = `trip_date_asked_${tripId}`
+  const [hidden, setHidden] = useState(() => { try { return localStorage.getItem(key) === '1' } catch { return false } })
+  const [date, setDate] = useState('')
+  const [busy, setBusy] = useState(false)
+  const { notify } = useToast()
+  if (hidden) return null
+  const dismiss = () => { try { localStorage.setItem(key, '1') } catch { /* 存不了就只隐藏这一次 */ } setHidden(true) }
+  return (
+    <div className="trip-date-ask" role="group" aria-label="设置出发日期">
+      <span><b>哪天出发？</b><small>定了日期，出行当天首页会直接显示今天的安排</small></span>
+      <input type="date" value={date} onChange={(e) => setDate(e.target.value)} aria-label="出发日期" />
+      <button className="trip-btn primary" disabled={!date || busy} onClick={async () => {
+        setBusy(true)
+        const ok = await onSave(date)
+        setBusy(false)
+        if (ok) notify('出发日期已保存', 'success'); else notify('保存失败，请重试', 'error')
+      }}>保存</button>
+      <button className="trip-btn" disabled={busy} onClick={dismiss}>还没定</button>
     </div>
   )
 }

@@ -2409,6 +2409,61 @@ def _live_weather_block(cid: str, user_text: str, context: str) -> str:
 # 本轮打开了「联网搜索」开关的会话（2026-10-16）。按 cid 记在进程内而不是层层传参：
 # 闲聊分支在 LangGraph 的 parse 节点里，开关要穿过图状态才能到那儿。
 _WEB_SEARCH_CIDS: set[str] = set()
+# 本轮设备定位（cid → "lng,lat" WGS-84）。只活在这一轮里，不进库、不进记忆。
+_TURN_LOCATION: dict[str, str] = {}
+
+
+class _NearbyKeyword(BaseModel):
+    keyword: str = ""
+
+
+def _nearby_block(cid: str, user_text: str) -> tuple[str, list[dict], str]:
+    """用户带了定位：告诉模型他在哪，并按距离查一批周边地点 → (prompt 块, 地点卡候选, 城市)。
+
+    解决的是「你在合肥哪个区？」这种反问——App 本来就知道。定位只在这一轮用，
+    明确标成临时位置，免得被记忆提炼当成常驻城市。查不到/出错返回空，照常直答。
+    """
+    location = _TURN_LOCATION.get(cid, "")
+    if not location:
+        return "", [], ""
+    try:
+        from app.tools import amap
+
+        here = _run_coro(amap.locate_device(location))
+        if not here:
+            return "", [], ""
+        lines = [f"用户此刻所在位置（设备定位，只是临时位置，不代表常驻地，不要记进长期记忆）：{here['address']}。",
+                 "用户说「附近/周边/离我近」时以这里为准，不要再反问他在哪个城市、哪个区。"]
+        r = get_llm().classify(
+            f"用户问题：{user_text}"[:600], _NearbyKeyword,
+            system="用户在找附近的地方。输出一个适合在地图里搜索的品类或名称关键词（例：「洗浴」「火锅」「咖啡」「地铁站」），"
+                   "只输出关键词本身；问题不是在找附近的地点就输出空字符串。",
+            effort="off", timeout=settings.llm_route_timeout_s, retries=1,
+        )
+        keyword = (r.keyword or "").strip()[:20]
+        cards: list[dict] = []
+        if keyword:
+            _progress(cid, f"正在按你的位置找附近的{keyword}")
+            found = _run_coro(amap.search_around(here["location"], keyword))
+            rows = []
+            for i, poi in enumerate(found, 1):
+                dist = f"{poi['distance']} 米" if poi["distance"] < 1000 else f"{poi['distance'] / 1000:.1f} 公里"
+                rows.append(f"{i}. {poi['name']}｜{dist}｜{poi['address']}" + (f"｜评分 {poi['rating']}" if poi["rating"] else ""))
+                cards.append({"name": poi["name"], "poi_name": poi["name"], "address": poi["address"],
+                              "location": poi["location"],
+                              "photo": f"/travel/api/img?u={_urlquote(poi['photo'], safe='')}" if poi["photo"] else ""})
+            if rows:
+                lines.append(f"高德地图按距离查到的附近「{keyword}」（距离为直线距离）：\n" + "\n".join(rows)
+                             + "\n推荐时优先从这份清单里选，写出距离；清单里没有的不要编造距离。")
+        return "\n".join(lines), cards, here["city"]
+    except Exception as e:  # noqa: BLE001 — 定位是增强项，失败照常直答
+        from app.agent.cancel import TurnCancelled
+        from app.llm.retry import LLMUnavailableError
+
+        if isinstance(e, (TurnCancelled, LLMUnavailableError)):
+            raise
+        logger.warning("nearby lookup failed cid=%s", cid, exc_info=True)
+        return "", [], ""
 
 
 class _SearchQueries(BaseModel):
@@ -2486,6 +2541,162 @@ def _web_search_block(cid: str, user_text: str, context: str) -> tuple[str, list
         return "", []
 
 
+class _PhotoPlaces(BaseModel):
+    city: str = ""
+    places: list[str] = []
+
+
+_DIRECT_IMG_TIMEOUT_S = 6.0
+_DIRECT_IMG_CONCURRENCY = 4  # 同 poster：高德 key 的 QPS 配额低
+
+
+def _direct_image_block(cid: str, user_text: str, context: str, web_block: str = "") -> tuple[dict, str, list[dict]]:
+    """直答配实景图（2026-11-10）：挑出本轮会具体提到的地点 → 高德实景图 → (图名→代理URL, prompt 块)。
+
+    只在「用户明确要图」或「本轮联网搜到了结果」时跑；其余直答不增加延迟。
+    图只来自高德（/api/img 白名单内）——搜索结果网页里的图域名任意，不能进代理。
+    查不到/出错返回 ({}, "") 或一句「没找到图」的说明，绝不让直答失败。
+    """
+    asked = wants_image_refresh(user_text)
+    if not settings.direct_images_enabled or not (asked or web_block):
+        return {}, "", []
+    not_found = ("（用户想看图片，但这次没有找到可用的实景图：如实说暂时没找到这几处的图，"
+                 "可以建议到大众点评/小红书看网友实拍；不要说自己是纯文字助手或不能发图。）") if asked else ""
+    try:
+        from app.agent.cancel import check as _cancel_check
+        from app.tools import amap
+
+        if not amap.enabled():
+            return {}, "", []
+        r = get_llm().classify(
+            f"{context[-3000:]}\n\n{web_block[:4000]}\n\n用户最新问题：{user_text}"[:8000], _PhotoPlaces,
+            system="从对话上下文和搜索结果里，挑出本轮回答最可能具体提到、用户会想看实景图的地点"
+                   "（店铺/景点/酒店/餐厅的**具体名称**），最多 6 个，并给出它们所在的城市。"
+                   "只取原文里出现过的具体名称，不要编造，不要泛称（如「洗浴中心」「市中心」）。"
+                   "用户在要图片时，取他指的那几处；没指明就取上一轮回答里推荐的那几处。"
+                   "没有合适的地点就输出空列表。" + EXTERNAL_POLICY,
+            effort="off", timeout=settings.llm_route_timeout_s, retries=1,
+        )
+        city = (r.city or "").strip()[:20]
+        places: list[str] = []
+        for name in r.places:
+            name = re.sub(r"[\[\]()（）!|\n]", " ", str(name or "")).strip()[:30]  # 名称要进占位符与 Markdown
+            if len(name) >= 2 and name not in places:
+                places.append(name)
+        places = places[:6]
+        if not places:
+            return {}, not_found, []
+        _cancel_check(cid)
+        _progress(cid, "正在找实景图：" + "、".join(places)[:40])
+        per_place = 3 if asked else 1
+
+        async def _all():
+            import httpx
+
+            sem = asyncio.Semaphore(_DIRECT_IMG_CONCURRENCY)
+            async with httpx.AsyncClient(trust_env=False) as client:
+                async def one(name: str):
+                    async with sem:
+                        return await amap.search_poi_photos(client, name, city=city, limit=per_place)
+
+                return await asyncio.wait_for(
+                    asyncio.gather(*(one(n) for n in places), return_exceptions=True),
+                    timeout=_DIRECT_IMG_TIMEOUT_S,
+                )
+
+        found = _run_coro(_all())
+        _cancel_check(cid)
+        image_map: dict[str, str] = {}
+        seen_urls: set[str] = set()
+        cards: list[dict] = []
+        for name, info in zip(places, found):
+            if not isinstance(info, dict):
+                continue
+            first = next(iter(info.get("photos") or []), "")
+            cards.append({
+                "name": name, "poi_name": info.get("name") or name,
+                "address": info.get("address") or "", "location": info.get("location") or "",
+                "photo": f"/travel/api/img?u={_urlquote(first, safe='')}" if first else "",
+            })
+            n = 0
+            for url in info.get("photos") or []:
+                if url in seen_urls or len(image_map) >= 10:
+                    continue
+                seen_urls.add(url)
+                n += 1
+                image_map[name if n == 1 else f"{name} 图{n}"] = f"/travel/api/img?u={_urlquote(url, safe='')}"
+        if not image_map:
+            return {}, not_found, cards
+        block = (
+            "可插入的实景图（来自高德地图的商户/网友上传图）：" + "、".join(image_map) + "\n"
+            "在提到对应地点的那段后面，另起一行用 [[img:名称]] 插入，名称必须与上面完全一致，不要写网址，"
+            "不要放进表格或括号里。"
+            + ("用户这轮就是来要图片的：把清单里的图都放出来，每处配一句看点，并说明图来自高德、"
+               "实际环境以到店为准。" if asked else "每处最多插一张。")
+            + "清单里没有的地点如实说暂时没找到图；不要说自己是纯文字助手或不能发图。"
+        )
+        return image_map, block, cards
+    except Exception as e:  # noqa: BLE001 — 配图是增强项，失败照常直答
+        from app.agent.cancel import TurnCancelled
+        from app.llm.retry import LLMUnavailableError
+
+        if isinstance(e, (TurnCancelled, LLMUnavailableError)):
+            raise
+        logger.warning("direct image lookup failed cid=%s", cid, exc_info=True)
+        return {}, not_found, []
+
+
+_SUGGEST_RE = re.compile(r"\[\[\s*追问\s*[:：]([^\]\n]*)\]\]?")
+_SUGGEST_DIRECTIVE = (
+    "（回答写完后，另起一行用 [[追问:选项一|选项二|选项三]] 给出 2-3 个用户最可能接着发给你的短句，"
+    "站在用户口吻、每个不超过 12 个字、彼此不同（例：[[追问:我在滨湖区|想带吃饭的|看看图片]]）；"
+    "你在回答里向用户提了问题时，选项就是这个问题最常见的几种回答。寒暄、致谢等没有合适追问的就不写这一行。"
+    "这一行不算正文，不要在正文里提到它。）"
+)
+
+
+def _split_suggestions(text: str) -> tuple[str, list[str]]:
+    """把模型写在末尾的 [[追问:…]] 从正文里拿出来 → (正文, 追问列表)。
+
+    追问是界面上的可点按钮，不是正文；模型没写、写歪了都只是没有按钮，正文不受影响。
+    """
+    found: list[str] = []
+    for m in _SUGGEST_RE.finditer(text or ""):
+        for item in re.split(r"[|｜]", m.group(1)):
+            item = re.sub(r"[\[\]*`#>]", "", item).strip(" 　\"“”「」")
+            if 1 < len(item) <= 16 and item not in found:
+                found.append(item)
+    body = re.sub(r"\[\[\s*追问[^\]]*$", "", _SUGGEST_RE.sub("", text or ""))  # 被截断的半截也不留
+    return body.rstrip(), found[:3]
+
+
+def _hide_suggestion_tail(text: str) -> str:
+    """流式中：去掉已写完的追问行，以及末尾还没闭合的那半截，避免按钮文案在正文里闪一下。"""
+    text = _SUGGEST_RE.sub("", text or "")
+    cut = text.rfind("[[", max(0, len(text) - 60))
+    if cut >= 0 and "]]" not in text[cut:] and "追问"[: len(text) - cut - 2] == text[cut + 2: cut + 4]:
+        text = text[:cut]
+    elif text.endswith("["):
+        text = text[:-1]
+    return text.rstrip()
+
+
+def _place_cards(cards: list[dict], answer: str, asked: bool) -> list[dict]:
+    """回答里真的提到了的地点 → 地点卡（名称/地址/图/导航）。没坐标的不出卡（卡的用处就是导航和加入行程）。"""
+    from app.agent.nav_links import build_nav_links
+
+    out: list[dict] = []
+    for c in cards:
+        if not c.get("location") or not (asked or c["name"] in answer or c["poi_name"] in answer):
+            continue
+        nav = build_nav_links(c["location"], c["poi_name"])
+        if not nav:
+            continue
+        out.append({"name": c["poi_name"], "address": c["address"], "photo": c["photo"],
+                    "location": c["location"], "nav": nav})
+    return out[:6]
+
+
 def run_direct_answer(cid: str, user_text: str, user_id: str) -> None:
     """轻量直答（Phase 22）：无浏览器、无来源，记忆+近几轮历史 → 单次流式生成。
 
@@ -2518,16 +2729,31 @@ def run_direct_answer(cid: str, user_text: str, user_id: str) -> None:
     weather = _live_weather_block(cid, user_text, "\n".join(user_parts))
     if weather:
         user_parts.append(weather)
+    nearby_block, nearby_cards, here_city = _nearby_block(cid, user_text)
+    if nearby_block:
+        user_parts.append(nearby_block)
     web_sources: list[dict] = []
+    web_block = ""
     if cid in _WEB_SEARCH_CIDS:
         recent = "\n".join(str(m.get("content", ""))[:400] for m in history_msgs[-4:])
-        block, web_sources = _web_search_block(cid, user_text, recent)
-        if block:
-            user_parts.append(block)
+        if here_city:
+            recent += f"\n（用户当前在{here_city}）"
+        web_block, web_sources = _web_search_block(cid, user_text, recent)
+        if web_block:
+            user_parts.append(web_block)
         # 开关已经开着：别再叫用户「打开联网搜索」（线上实测模型照着 system 提示照说不误）
         user_parts.append("（本轮已开启联网搜索，不要再提示用户打开「联网搜索」开关；搜索结果没覆盖的"
                           "价格、团购、营业状态，建议用户到大众点评/美团等平台核实。）")
+    # 直答配实景图：要图时地点在上一轮回答里，所以上下文要比搜索那步给得长
+    image_map, image_block, place_cards = _direct_image_block(
+        cid, user_text, "\n".join(str(m.get("content", ""))[:1500] for m in history_msgs[-4:]), web_block)
+    if image_block:
+        user_parts.append(image_block)
+    known = {c["poi_name"] for c in place_cards}
+    place_cards = place_cards + [c for c in nearby_cards if c["poi_name"] not in known]
     user_parts.append(f"用户问题：{user_text}")
+    if settings.direct_suggestions_enabled:
+        user_parts.append(_SUGGEST_DIRECTIVE)
     messages = (
         [{"role": "system", "content": DIRECT_SYSTEM}]
         + history_msgs
@@ -2551,19 +2777,26 @@ def run_direct_answer(cid: str, user_text: str, user_id: str) -> None:
             continue
         (reasoning_parts if kind == "reasoning" else content_parts).append(delta)
         if is_cancelled(cid):
-            partial = "".join(content_parts)
+            partial = _hide_suggestion_tail("".join(content_parts))
+            if image_map and partial:  # 停止时也别把占位符原样留给用户
+                partial = _embed_images(partial, image_map, streaming=True)
             _finalize_streaming_message(
                 msg_id, (partial + "\n\n_（已停止生成）_") if partial else "已停止本轮。",
                 "".join(reasoning_parts), meta={},
             )
             raise TurnCancelled()
         if _time.monotonic() - last_flush > settings.streaming_flush_interval_s:
-            _update_streaming_message(msg_id, _strip_toolcall_leak("".join(content_parts)),
-                                      "".join(reasoning_parts))
+            shown = _hide_suggestion_tail(_strip_toolcall_leak("".join(content_parts)))
+            if image_map:
+                shown = _embed_images(shown, image_map, streaming=True)
+            _update_streaming_message(msg_id, shown, "".join(reasoning_parts))
             last_flush = _time.monotonic()
     raw_answer = "".join(content_parts)
-    answer = _strip_toolcall_leak(raw_answer)
+    answer, suggestions = _split_suggestions(_strip_toolcall_leak(raw_answer))
+    if image_map and answer.strip():
+        answer = _embed_images(answer, image_map)  # 占位符→图；模型漏插时在醒目提及处兜底
     if raw_answer.strip() and not answer.strip():
+        suggestions = []
         # 模型把整段回答写成了工具调用（以为自己能搜）→ 不把这种文本给用户
         logger.warning("direct answer was tool-call markup cid=%s", cid)
         answer = ("这个问题需要查最新信息。打开输入框旁的「联网搜索」开关，再发一次就能联网查。"
@@ -2577,6 +2810,11 @@ def run_direct_answer(cid: str, user_text: str, user_id: str) -> None:
         direct_meta.update(sources=web_sources, direct=True)
     if mem_ctx.get("announced"):  # 已通知过的记忆变更，下一轮据此跳过
         direct_meta["memories_changed"] = mem_ctx["announced"]
+    if suggestions and not truncated:
+        direct_meta["suggestions"] = suggestions      # 前端渲染成可点的追问按钮
+    cards = _place_cards(place_cards, answer, wants_image_refresh(user_text)) if answer else []
+    if cards:
+        direct_meta["places"] = cards                 # 地点卡：图 / 导航 / 加入行程
     _finalize_streaming_message(
         msg_id, answer or "抱歉，这次没有生成内容，请重试。", "".join(reasoning_parts),
         meta=direct_meta,
@@ -2587,6 +2825,7 @@ def run_direct_answer(cid: str, user_text: str, user_id: str) -> None:
 def run_conversation_turn(
     cid: str, user_text: str, user_id: str, turn_id: str = "", deep_reasoning: bool = False,
     sandbox_enabled: bool = False, image_ids: list[str] | None = None, web_search: bool = False,
+    location: str = "",
 ) -> None:
     """BackgroundTasks 入口：三路路由（Phase 22/23）→ 各链路。
 
@@ -2607,6 +2846,10 @@ def run_conversation_turn(
         _WEB_SEARCH_CIDS.add(cid)
     else:
         _WEB_SEARCH_CIDS.discard(cid)
+    if location:
+        _TURN_LOCATION[cid] = location
+    else:
+        _TURN_LOCATION.pop(cid, None)
     _mark_inflight(cid, turn_id, user_id)
     # Phase 105：带图消息。**图先变成文本，再走现有路由**——刻意不给路由新增一条
     # 「图片链路」，也不换成开放式 agent（那个我们已经有了，就是 Phase 21 的
@@ -2688,6 +2931,7 @@ def run_conversation_turn(
     finally:
         clear_cancel(cid)
         _WEB_SEARCH_CIDS.discard(cid)
+        _TURN_LOCATION.pop(cid, None)
         _clear_inflight(cid)
         obs.flush()  # 在后台线程冲刷埋点缓冲，不挡请求
 

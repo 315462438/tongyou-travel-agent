@@ -145,6 +145,8 @@ struct TripDetailView: View {
     @State private var adding = false
     @State private var sheet: Sheet?
     @State private var showingLedger = false
+    @State private var showingPolls = false
+    @State private var askingDate = false
     @State private var retryingImport = false
     @State private var confirmingRemoval = false
     @State private var removing = false
@@ -250,6 +252,8 @@ struct TripDetailView: View {
                 }
             }
         }
+        .sheet(isPresented: $showingPolls) { TripPollsView(tripID: tripID) }
+        .sheet(isPresented: $askingDate) { StartDatePrompt(tripID: tripID) { Task { await load() } }.presentationDetents([.height(300)]) }
         .sheet(isPresented: $showingLedger) { LedgerView(initialTrip: LedgerTrip(id: tripID, title: trip?.title ?? "行程")) }
         .toolbar(.hidden, for: .tabBar)
         .toolbar {
@@ -262,6 +266,7 @@ struct TripDetailView: View {
                     Button("调整当天顺序", systemImage: "arrow.up.arrow.down") { sheet = .reorder }
                     Button("旅行账本", systemImage: "book.closed") { showingLedger = true }
                     Button("记一笔共同账单", systemImage: "creditcard") { sheet = .expense }
+                    Button("一起投票", systemImage: "checklist") { showingPolls = true }
                     Divider()
                     Button("成员与邀请", systemImage: "person.2") { sheet = .members }
                     Button("行程设置", systemImage: "gearshape") { sheet = .settings }
@@ -311,6 +316,11 @@ struct TripDetailView: View {
         HStack(spacing: 8) {
             Text([trip.destination, "\(trip.dayCount) 天", trip.startDate].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
                 .lineLimit(1)
+            if (trip.startDate ?? "").isEmpty {
+                // 多数人不会去翻右上角的设置：没定日期时把入口放在眼前
+                Button { sheet = .settings } label: { Label("设置出发日期", systemImage: "calendar.badge.plus") }
+                    .foregroundStyle(Palette.sky)
+            }
             Spacer(minLength: 4)
             Button { sheet = .members } label: {
                 Label("\(trip.members?.count ?? 1) 人同行", systemImage: "person.2")
@@ -464,6 +474,12 @@ struct TripDetailView: View {
             petMemberBaseline = names; petBaselineTrip = tripID
             if !added.isEmpty { petWelcome = added.prefix(2).joined(separator: "、") + (added.count > 2 ? "等搭子" : "") + " 加入啦，一起出发！" }
             trip = detail
+            // 没定出发日期的行程（导入的、早先建的）主动问一次；点「还没定」后不再问
+            let asked = "tripDateAsked-\(tripID)"
+            if (detail.startDate ?? "").isEmpty, !UserDefaults.standard.bool(forKey: asked) {
+                UserDefaults.standard.set(true, forKey: asked)
+                askingDate = true
+            }
             if day > detail.dayCount { day = 1 }
             error = nil
             expenses = try? await API.shared.get("trips/\(tripID)/expenses/summary", as: ExpenseSummary.self)

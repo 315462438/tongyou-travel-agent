@@ -1,0 +1,106 @@
+{
+  "preflight": {
+    "baseline": "cabb526ebdc3ea7e106731b24231016d5129a630cea36b3d9ac7c171c8fda1fc",
+    "recent_inflight": 0,
+    "recent_trip_jobs": 0,
+    "backup": "/home/ubuntu/travel-agent/.release-backups/ledger-fx-f246e40f0c7f4c118cc2890fb3b149dd/ledger_fx.before.py"
+  },
+  "published_at": "2026-10-24T09:15:16.284041+00:00",
+  "module_sha256": "8dd289beabae71b5e88ae8549da763fc2e5a3a343fd88405011280e314584d2e",
+  "health": "ok",
+  "backup": "/home/ubuntu/travel-agent/.release-backups/ledger-fx-f246e40f0c7f4c118cc2890fb3b149dd/ledger_fx.before.py",
+  "live_checks": [
+    {
+      "input_minor": {
+        "CNY": 10000
+      },
+      "conversion": {
+        "target_currency": "SGD",
+        "total_minor": 1916,
+        "items": [
+          {
+            "currency": "CNY",
+            "original_minor": 10000,
+            "converted_minor": 1916,
+            "rate": "0.1916075876604713546656447595",
+            "rate_date": "2026-10-25"
+          }
+        ],
+        "missing": [],
+        "stale": false,
+        "source": "Frankfurter",
+        "fetched_at": "2026-10-24T09:15:14.961722+00:00"
+      }
+    },
+    {
+      "input_minor": {
+        "SGD": 10000
+      },
+      "conversion": {
+        "target_currency": "CNY",
+        "total_minor": 52189,
+        "items": [
+          {
+            "currency": "SGD",
+            "original_minor": 10000,
+            "converted_minor": 52189,
+            "rate": "5.218934293617243358906111372",
+            "rate_date": "2026-10-25"
+          }
+        ],
+        "missing": [],
+        "stale": false,
+        "source": "Frankfurter",
+        "fetched_at": "2026-10-24T09:15:15.681377+00:00"
+      }
+    },
+    {
+      "input_minor": {
+        "MYR": 10000,
+        "SGD": 10000,
+        "USD": 10000,
+        "CNY": 10000
+      },
+      "conversion": {
+        "target_currency": "CNY",
+        "total_minor": 145183,
+        "items": [
+          {
+            "currency": "CNY",
+            "original_minor": 10000,
+            "converted_minor": 10000,
+            "rate": "1",
+            "rate_date": ""
+          },
+          {
+            "currency": "MYR",
+            "original_minor": 10000,
+            "converted_minor": 16327,
+            "rate": "1.632706374085684430512016719",
+            "rate_date": "2026-10-25"
+          },
+          {
+            "currency": "SGD",
+            "original_minor": 10000,
+            "converted_minor": 52189,
+            "rate": "5.218934293617243358906111372",
+            "rate_date": "2026-10-25"
+          },
+          {
+            "currency": "USD",
+            "original_minor": 10000,
+            "converted_minor": 66667,
+            "rate": "6.666666666666666666666666667",
+            "rate_date": "2026-10-25"
+          }
+        ],
+        "missing": [],
+        "stale": false,
+        "source": "Frankfurter",
+        "fetched_at": "2026-10-24T09:15:16.283238+00:00"
+      }
+    }
+  ],
+  "public_health": "ok",
+  "unauthenticated_ledger_status": 401
+}

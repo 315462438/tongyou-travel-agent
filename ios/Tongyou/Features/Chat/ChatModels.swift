@@ -50,6 +50,24 @@ struct ChatMessage: Decodable, Identifiable, Equatable {
         var host: String { URL(string: url)?.host?.replacingOccurrences(of: "www.", with: "") ?? url }
     }
     struct Candidate: Hashable { var name: String; var reason: String; var tag: String }
+
+    /// 直答末尾的可点追问。
+    var suggestions: [String] { meta?["suggestions"]?.array?.compactMap(\.string) ?? [] }
+    /// 回答里提到的地点：图 / 导航 / 加入行程。
+    var places: [Place] {
+        meta?["places"]?.array?.compactMap { item in
+            guard let name = item["name"]?.string, let location = item["location"]?.string else { return nil }
+            let nav = item["nav"]
+            // 境内开高德（国内用户装的是它），境外开苹果地图（高德没有当地数据）
+            let link = nav?["domestic"]?.bool == false ? nav?["apple"]?.string : nav?["amap"]?.string
+            return Place(name: name, address: item["address"]?.string ?? "", photo: item["photo"]?.string ?? "",
+                         location: location, navURL: link.flatMap(URL.init(string:)))
+        } ?? []
+    }
+    struct Place: Hashable, Identifiable {
+        var name: String; var address: String; var photo: String; var location: String; var navURL: URL?
+        var id: String { name }
+    }
 }
 
 private struct MessagesReply: Decodable {
@@ -155,10 +173,13 @@ final class ChatStore {
             if !images.isEmpty { meta = .object(["images": .array(images.map(JSONValue.string))]) }
             messages.append(ChatMessage(id: "local-\(UUID().uuidString)", role: "user", content: content, meta: meta))
             running = true
+            // 只在问「附近」时取一次定位；拿不到就照常发
+            let location = LocationOnce.wantsNearby(content) ? (await LocationOnce.shared.current() ?? "") : ""
             do {
                 _ = try await API.shared.request("POST", "chat/\(conversationID)/messages",
                                                  body: ["content": content, "deep_reasoning": deep ?? deepReasoning,
-                                                        "sandbox_enabled": false, "web_search": webSearch, "image_ids": images])
+                                                        "sandbox_enabled": false, "web_search": webSearch, "image_ids": images,
+                                                        "location": location])
             } catch APIError.server(409, _) {
                 // A turn is already running; just follow it.
             }

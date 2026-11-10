@@ -204,12 +204,19 @@ class TripCreate(BaseModel):
     title: str = "新行程"
     destination: str = ""
     days: int = 2
+    start_date: str = ""  # 可选 YYYY-MM-DD：建行程时就问，首页「今天」卡靠它（2026-11-10）
 
 
 @router.post("")
 def create_trip(body: TripCreate, db: Session = Depends(get_db), user: TravelUser = Depends(get_current_user)):
     trip = TravelTrip(owner_id=user.id, title=body.title.strip() or "新行程",
                       destination=body.destination.strip(), days=_clamp_trip_days(body.days))
+    try:  # 格式不对就当没填，不让建行程失败
+        from datetime import date as _date
+
+        trip.start_date = _date.fromisoformat(body.start_date.strip()[:10]).isoformat() if body.start_date.strip() else None
+    except ValueError:
+        trip.start_date = None
     db.add(trip)
     db.flush()
     db.add(TravelTripMember(trip_id=trip.id, user_id=user.id, role="owner"))
@@ -228,6 +235,59 @@ def list_trips(db: Session = Depends(get_db), user: TravelUser = Depends(get_cur
     return [{"id": t.id, "title": t.title, "destination": t.destination, "days": t.days,
              "role": role, "updated_at": t.updated_at.isoformat() if t.updated_at else ""}
             for t, role in rows]
+
+
+@router.get("/today")
+def today_trip(date: str = "", db: Session = Depends(get_db),
+               user: TravelUser = Depends(get_current_user)):
+    """出行当天的首页（2026-11-10）：今天正在进行的行程 + 今天的地点；没有则给 7 天内最近要出发的。
+
+    `date` 由客户端按本地时区给（YYYY-MM-DD）——服务器在 UTC+8，用户可能在别的时区，
+    「今天是第几天」必须按用户手上的日历算。必须声明在 `/{trip_id}` 之前，否则会被它吃掉。
+    """
+    from datetime import date as _date, datetime as _dt
+
+    try:
+        today = _date.fromisoformat(date[:10]) if date else _dt.now().date()
+    except ValueError:
+        today = _dt.now().date()
+    trips = db.execute(
+        select(TravelTrip)
+        .join(TravelTripMember, TravelTripMember.trip_id == TravelTrip.id)
+        .where(TravelTripMember.user_id == user.id, TravelTripMember.status == "accepted",
+               TravelTrip.start_date.is_not(None))
+    ).scalars().all()
+    current, upcoming = None, None
+    for trip in trips:
+        try:
+            start = _date.fromisoformat((trip.start_date or "")[:10])
+        except ValueError:
+            continue
+        offset = (today - start).days
+        if 0 <= offset < max(1, trip.days or 1):
+            if current is None or offset < current[1]:
+                current = (trip, offset)
+        elif -7 <= offset < 0 and (upcoming is None or offset > upcoming[1]):
+            upcoming = (trip, offset)
+    if current is None and upcoming is None:
+        return {"trip": None}
+    trip, offset = current or upcoming
+    base = {"id": trip.id, "title": trip.title, "destination": trip.destination or "", "days": trip.days}
+    if current is None:
+        return {"trip": {**base, "starts_in": -offset}}
+    day = offset + 1
+    stops = db.execute(
+        select(TravelTripStop).where(TravelTripStop.trip_id == trip.id, TravelTripStop.day == day)
+        .order_by(TravelTripStop.order_no)
+    ).scalars().all()
+    titles = {}
+    try:
+        titles = json.loads(trip.day_titles_json or "{}") or {}
+    except ValueError:
+        pass
+    return {"trip": {**base, "day": day, "day_title": str(titles.get(str(day)) or ""),
+                     "stops": [{k: v for k, v in _stop_dict(s).items()
+                                if k in ("id", "name", "start_time", "note", "nav")} for s in stops]}}
 
 
 @router.get("/{trip_id}")
@@ -343,7 +403,9 @@ def delete_trip(trip_id: str, db: Session = Depends(get_db), user: TravelUser = 
         TravelTripPackingState, TravelTripTip,
     )
     from sqlalchemy import delete
-    for model in (TravelTripPackingState, TravelTripPackingItem, TravelTripFood,
+    from app.db.models import TravelTripPoll
+
+    for model in (TravelTripPoll, TravelTripPackingState, TravelTripPackingItem, TravelTripFood,
                   TravelTripTip, TravelTripExpense, TravelTripComment, TravelTripSuggestion,
                   TravelTripEvent, TravelTripChatMessage, TravelTripStop, TravelTripMember):
         db.execute(delete(model).where(model.trip_id == trip_id))

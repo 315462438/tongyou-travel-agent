@@ -606,3 +606,25 @@ export function mergeTripPresence<T extends { ai_status: unknown; members: LiveM
 export function sameChatMessages(a: { id: string; content: string }[], b: { id: string; content: string }[]) {
   return a.length === b.length && a.every((m, i) => m.id === b[i].id && m.content === b[i].content)
 }
+
+
+/** 用户是不是在问「附近」——只有这时才取定位，其他消息一律不带位置。 */
+export function wantsNearby(text: string): boolean {
+  return /附近|周边|周围|离我|我旁边|就近|我这边|我这儿/.test(text || '')
+}
+
+/**
+ * 取一次设备定位，返回后端要的 "lng,lat"（WGS-84）。拿不到（拒绝/超时/不支持）返回空串——
+ * 定位是增强项，绝不能挡住发送。
+ */
+export function currentLocation(timeoutMs = 4000): Promise<string> {
+  return new Promise((resolve) => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) return resolve('')
+    const timer = setTimeout(() => resolve(''), timeoutMs + 500)
+    navigator.geolocation.getCurrentPosition(
+      (pos) => { clearTimeout(timer); resolve(`${pos.coords.longitude.toFixed(6)},${pos.coords.latitude.toFixed(6)}`) },
+      () => { clearTimeout(timer); resolve('') },
+      { enableHighAccuracy: false, timeout: timeoutMs, maximumAge: 120000 },
+    )
+  })
+}

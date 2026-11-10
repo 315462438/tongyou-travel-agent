@@ -485,3 +485,46 @@ struct ExpenseEditor: View {
         }
     }
 }
+
+
+/// 打开一个没定出发日期的行程时问一次：多数人不会去翻右上角的设置。
+struct StartDatePrompt: View {
+    let tripID: String
+    let onSaved: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var date = Date()
+    @State private var working = false
+    @State private var failed = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("哪天出发？").font(.title3.weight(.semibold))
+            Text("定了日期，出行当天首页会直接显示今天的安排。之后可以在行程设置里改。")
+                .font(.footnote).foregroundStyle(.secondary)
+            DatePicker("出发日期", selection: $date, displayedComponents: .date)
+            if failed { Text("保存失败，请重试。").font(.footnote).foregroundStyle(.red) }
+            HStack(spacing: 10) {
+                Button { dismiss() } label: { Text("还没定").frame(maxWidth: .infinity).padding(.vertical, 8) }.buttonStyle(.glass)
+                Button(action: save) { Text(working ? "正在保存…" : "保存").frame(maxWidth: .infinity).padding(.vertical, 8) }
+                    .buttonStyle(.glassProminent).disabled(working)
+            }
+        }
+        .padding(22)
+        .presentationDragIndicator(.visible)
+    }
+
+    private func save() {
+        working = true
+        failed = false
+        Task {
+            do {
+                _ = try await API.shared.request("PATCH", "trips/\(tripID)",
+                                                 body: ["start_date": TripSettingsSheet.dayFormatter.string(from: date)])
+                Haptics.success()
+                onSaved()
+                dismiss()
+            } catch { Haptics.error(); failed = true }
+            working = false
+        }
+    }
+}

@@ -1,0 +1,6 @@
+小程序内容导入验收
+运行：cd backend && DATABASE_URL=sqlite:///:memory: .venv/bin/python -m pytest tests/test_mini_import.py tests/test_trip_import.py -q
+结果：31 passed（包含mini import 16项参数化用例）。
+覆盖：原文地点跨天重复、所有字段来源校验、虚构字段拒绝、来源编号与坐标拒绝、缺失与未分配原文、日期/时间/中文天序归一化、长度和段落限制、指令隔离、LLM正文追踪关闭、token篡改/过期、任务隔离与删除、使用限额、模型失败不回显正文、HTTP正文限制、定时删除结果。
+端到端：Putan_Wechat/tests/travel-import-native.js，使用合成Word/Excel；只模拟文件选择，文件本机解析、微信code2Session、HTTPS任务提交/轮询、DeepSeek识别均真实调用。三站两天行程正确提取，下午不补具体时刻、未写地址为空；预览修改后原子保存并打开行程。测试finally恢复原本机存储。
+未进行真实手机微信会话文件选择，仍需体验版验证该平台入口；旧doc/xls、图片、扫描件明确不支持。

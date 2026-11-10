@@ -1,0 +1,23 @@
+{
+  "date": "2026-10-24",
+  "platform": "iOS",
+  "device": "朋友的 USB iPhone (2), iPhone 17 Pro Max",
+  "version": "1.0.22",
+  "build": 23,
+  "bundle_id": "com.yuchengjiang.tongyou",
+  "source_commit": "442db1d4145daf1edb7467d09715ed9bd41461c2",
+  "install_mode": "new installation; previous app absent",
+  "pairing": "passed",
+  "developer_mode": "enabled",
+  "release_build": "passed",
+  "codesign": "passed",
+  "target_in_profile": true,
+  "profile_expires_utc": "2026-10-31T01:44:41Z",
+  "developer_trust": "confirmed by user",
+  "install": "passed",
+  "installed_version": "passed",
+  "launch": "passed",
+  "process_alive": "passed",
+  "uninstalled_existing_app": false,
+  "web_android_backend_deployed": false
+}

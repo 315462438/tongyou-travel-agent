@@ -5,6 +5,13 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     database_url: str
+    # 私人小程序文档提取：密钥只放服务器环境，默认关闭直到配置完成。
+    mini_import_enabled: bool = False
+    mini_import_app_id: str = "wxd8ed1e6543fc69e7"
+    mini_import_app_secret: str = ""
+    mini_import_token_secret: str = ""
+    mini_import_daily_limit: int = 10
+
     deepseek_api_key: str = ""
     deepseek_base_url: str = "https://api.deepseek.com"
 
@@ -349,6 +356,10 @@ class Settings(BaseSettings):
     route_reasoning_effort: str = "off"
     quick_take_reasoning_effort: str = "off"
     direct_reasoning_effort: str = "low"
+    # 直答配实景图（2026-11-10）：用户要图或联网搜索有结果时，给具体地点配高德实景图。纯增强可关。
+    direct_images_enabled: bool = True
+    # 直答末尾给 2-3 个可点的追问（meta.suggestions）。模型没写就没有按钮，可关。
+    direct_suggestions_enabled: bool = True
     guide_max_tokens: int = 16000
     guide_max_continuations: int = 2  # 最多续写几轮（16000×3 远超任何真实攻略长度）
     # guide 快答先行（2026-08-13，Phase 71 机制的 guide 版）：parse 后立刻用快模型给

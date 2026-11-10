@@ -95,6 +95,12 @@ def test_orphan_task_not_readable(db):
 # 有意公开的端点（改动需在此显式登记，评审时能看见）
 PUBLIC_ROUTES = {
     ("ledger_api", "preview_share"),     # 随机分享 token：仅标题/邀请者/权限/有效期，账单仍需登录及成员权限
+    # 小程序导入：不走站内账号。session 用微信 code 换导入令牌（登录入口，必须公开）；
+    # start/poll/discard 由 mini_import_api.subject 校验该 HMAC 令牌，属于另一套鉴权，不是没鉴权。
+    ("mini_import_api", "session"),
+    ("mini_import_api", "start"),
+    ("mini_import_api", "poll"),
+    ("mini_import_api", "discard"),
     ("auth_api", "register"),      # 注册必须公开
     ("auth_api", "login"),         # 登录必须公开
     ("chat_api", "handoff_screenshot"),   # <img> 不能带 header，cid 不可猜

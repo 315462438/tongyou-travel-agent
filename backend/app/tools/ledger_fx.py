@@ -7,11 +7,25 @@ import httpx
 _CACHE: dict[tuple, dict] = {}
 
 
+def _valid_rate_day(value: object, today: date) -> date | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        day = date.fromisoformat(value)
+    except (ValueError, TypeError):
+        return None
+    # Frankfurter v2 includes observations published for the next day.
+    # Preserve the actual date; tolerate only this documented one-day lead.
+    # https://github.com/lineofflight/frankfurter/blob/main/CHANGELOG.md#240---2026-09-09
+    return day if -1 <= (today - day).days <= 7 else None
+
+
 async def convert_totals(totals: dict[str, int], target: str, refresh: bool = False) -> dict:
     quotes = sorted(c for c in totals if c != target)
     key = (target, tuple(quotes))
     cached = _CACHE.get(key)
     now = time.time()
+    today = datetime.now(timezone.utc).date()
     data = cached
     stale = False
     if quotes and (not cached or now - cached['ts'] >= (30 if refresh else 900)):
@@ -28,11 +42,14 @@ async def convert_totals(totals: dict[str, int], target: str, refresh: bool = Fa
                     continue
                 if row.get('base') != target or row.get('quote') not in quotes:
                     continue
-                rate = Decimal(str(row['rate']))
-                day = date.fromisoformat(row['date'])
-                age = (datetime.now(timezone.utc).date() - day).days
-                if rate.is_finite() and rate > 0 and 0 <= age <= 7:
-                    rates[row['quote']] = {'rate': str(Decimal(1) / rate), 'date': day.isoformat()}
+                try:
+                    rate = Decimal(str(row['rate']))
+                    day = _valid_rate_day(row.get('date'), today)
+                    if day and rate.is_finite() and rate > 0:
+                        rates[row['quote']] = {'rate': str(Decimal(1) / rate), 'date': day.isoformat()}
+                except (ValueError, TypeError, KeyError, ArithmeticError):
+                    # One malformed currency must not discard other valid quotes.
+                    continue
             data = {'ts': now, 'rates': rates, 'fetched_at': datetime.now(timezone.utc).isoformat()}
             # 不缓存空失败，避免一次异常让用户长期拿不到汇率。
             if rates:
@@ -46,7 +63,7 @@ async def convert_totals(totals: dict[str, int], target: str, refresh: bool = Fa
     missing = []
     for currency, minor in sorted(totals.items()):
         quote = {'rate': '1', 'date': ''} if currency == target else (data or {}).get('rates', {}).get(currency)
-        if quote and quote['date'] and (datetime.now(timezone.utc).date() - date.fromisoformat(quote['date'])).days > 7:
+        if currency != target and quote and not _valid_rate_day(quote.get('date'), today):
             quote = None
         if not quote:
             missing.append(currency)

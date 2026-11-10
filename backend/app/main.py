@@ -25,10 +25,12 @@ from app.api.upload_api import router as upload_router
 from app.api.trip_api import router as trip_router
 from app.api.ledger_api import router as ledger_router
 from app.api.trip_modules_api import router as trip_modules_router
+from app.api.mini_import_api import MiniImportBodyLimit, router as mini_import_router
 from app.db.models import Base
 from app.db.session import engine
 
 app = FastAPI(title="17同游 Travel Agent", version="0.1.0")
+app.add_middleware(MiniImportBodyLimit)
 
 app.add_middleware(
     CORSMiddleware,
@@ -88,6 +90,7 @@ async def security_headers(request, call_next):
     resp.headers.setdefault("X-Frame-Options", "DENY")
     return resp
 
+app.include_router(mini_import_router)
 app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(agent_router)

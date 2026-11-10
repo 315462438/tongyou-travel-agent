@@ -714,6 +714,31 @@ class TravelTripTip(Base):
         DateTime(timezone=True), default=_now, index=True)
 
 
+class TravelTripPoll(Base):
+    """同行人投票（2026-11-10）：多人出行最卡的是「住哪家、哪天走」。一个问题 2-4 个选项，每人一票可改。"""
+
+    __tablename__ = "travel_trip_poll"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    trip_id: Mapped[str] = mapped_column(String(32), index=True)
+    question: Mapped[str] = mapped_column(String(120))
+    options_json: Mapped[str] = mapped_column(Text)  # ["选项一", "选项二", …]
+    created_by: Mapped[str] = mapped_column(String(32), default="")
+    closed: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+
+
+class TravelTripPollVote(Base):
+    """一人一票：(poll_id, user_id) 一行，改票就地改 option_idx。"""
+
+    __tablename__ = "travel_trip_poll_vote"
+
+    poll_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    option_idx: Mapped[int] = mapped_column(Integer)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+
 class TravelGuideObject(Base):
     """本体对象存储（Phase 86）：一条攻略消息 ↔ 一份规范化行程对象图。
 

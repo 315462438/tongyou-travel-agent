@@ -21,6 +21,8 @@ from app.db.models import (
     TravelTripFood,
     TravelTripPackingItem,
     TravelTripPackingState,
+    TravelTripPoll,
+    TravelTripPollVote,
     TravelTripTip,
     TravelUser,
 )
@@ -391,5 +393,140 @@ def delete_tip(trip_id: str, tip_id: str, db: Session = Depends(get_db),
     _log_event(db, trip_id, user, "删除避坑提示")
     db.delete(t)
     _touch(db, trip)
+    db.commit()
+    return {"ok": True}
+
+
+# ---------- 同行人投票（2026-11-10） ----------
+
+class PollBody(BaseModel):
+    question: str
+    options: list[str]
+
+
+class VoteBody(BaseModel):
+    option: int
+
+
+def _poll_dict(db: Session, poll: TravelTripPoll, users: dict[str, str], me: str) -> dict:
+    options = json.loads(poll.options_json or "[]")
+    votes = db.execute(select(TravelTripPollVote).where(TravelTripPollVote.poll_id == poll.id)).scalars().all()
+    voters: list[list[str]] = [[] for _ in options]
+    mine = None
+    for v in votes:
+        if v.user_id not in users or not 0 <= v.option_idx < len(options):
+            continue  # 已退出行程的人的票不再计入
+        voters[v.option_idx].append(users[v.user_id])
+        if v.user_id == me:
+            mine = v.option_idx
+    return {
+        "id": poll.id, "question": poll.question, "closed": bool(poll.closed),
+        "options": [{"text": text, "votes": len(voters[i]), "voters": voters[i]} for i, text in enumerate(options)],
+        "my_vote": mine, "total": sum(len(v) for v in voters), "members": len(users),
+        "created_by": users.get(poll.created_by, ""), "mine": poll.created_by == me,
+        "created_at": poll.created_at.isoformat() if poll.created_at else "",
+    }
+
+
+def _poll(db: Session, trip_id: str, poll_id: str) -> TravelTripPoll:
+    poll = db.get(TravelTripPoll, poll_id)
+    if poll is None or poll.trip_id != trip_id:
+        raise HTTPException(404, "投票不存在")
+    return poll
+
+
+@router.get("/{trip_id}/polls")
+def list_polls(trip_id: str, db: Session = Depends(get_db),
+               user: TravelUser = Depends(get_current_user)):
+    _member(db, trip_id, user)
+    users = _trip_users(db, trip_id)
+    rows = db.execute(
+        select(TravelTripPoll).where(TravelTripPoll.trip_id == trip_id)
+        .order_by(TravelTripPoll.closed, TravelTripPoll.created_at.desc())  # 进行中的在前
+    ).scalars().all()
+    return [_poll_dict(db, r, users, user.id) for r in rows]
+
+
+@router.post("/{trip_id}/polls")
+def create_poll(trip_id: str, body: PollBody, db: Session = Depends(get_db),
+                user: TravelUser = Depends(get_current_user)):
+    from app.api.notification_api import upsert_notification
+
+    trip = _member(db, trip_id, user)
+    question = _clean(body.question, 120)
+    options: list[str] = []
+    for raw in body.options:
+        text = _clean(raw, 60)
+        if text and text not in options:
+            options.append(text)
+    if not question:
+        raise HTTPException(400, "写一下要大家决定什么")
+    if not 2 <= len(options) <= 4:
+        raise HTTPException(400, "需要 2 到 4 个不重复的选项")
+    poll = TravelTripPoll(trip_id=trip_id, question=question,
+                          options_json=json.dumps(options, ensure_ascii=False), created_by=user.id)
+    db.add(poll)
+    db.flush()
+    _log_event(db, trip_id, user, f"发起投票「{question[:30]}」")
+    _touch(db, trip)
+    users = _trip_users(db, trip_id)
+    actor = (user.display_name or user.username or "同行者").strip()
+    for member_id in users:
+        if member_id == user.id:
+            continue
+        upsert_notification(  # 与投票同事务：投票建了通知没落，或反过来，都比一起失败难查
+            db, user_id=member_id, actor_id=user.id, type="trip_poll",
+            title=f"{actor} 发起了投票", body=question[:80],
+            target_kind="trip", target_id=trip_id,
+            dedupe_key=f"trip-poll:{poll.id}:{member_id}",
+            meta={"trip_id": trip_id, "poll_id": poll.id, "trip_title": trip.title or ""},
+        )
+    db.commit()
+    return _poll_dict(db, poll, users, user.id)
+
+
+@router.post("/{trip_id}/polls/{poll_id}/vote")
+def vote_poll(trip_id: str, poll_id: str, body: VoteBody, db: Session = Depends(get_db),
+              user: TravelUser = Depends(get_current_user)):
+    _member(db, trip_id, user)
+    poll = _poll(db, trip_id, poll_id)
+    if poll.closed:
+        raise HTTPException(400, "投票已结束")
+    if not 0 <= body.option < len(json.loads(poll.options_json or "[]")):
+        raise HTTPException(400, "没有这个选项")
+    vote = db.get(TravelTripPollVote, (poll_id, user.id))
+    if vote is None:
+        db.add(TravelTripPollVote(poll_id=poll_id, user_id=user.id, option_idx=body.option))
+    else:
+        vote.option_idx = body.option
+    db.commit()  # 投票不写 event：高频点击会刷爆时间线（同行李三态）
+    return _poll_dict(db, poll, _trip_users(db, trip_id), user.id)
+
+
+@router.post("/{trip_id}/polls/{poll_id}/close")
+def close_poll(trip_id: str, poll_id: str, db: Session = Depends(get_db),
+               user: TravelUser = Depends(get_current_user)):
+    trip = _member(db, trip_id, user)
+    poll = _poll(db, trip_id, poll_id)
+    if user.id not in {poll.created_by, trip.owner_id}:
+        raise HTTPException(403, "只有发起人或行程创建者可以结束投票")
+    poll.closed = True
+    _log_event(db, trip_id, user, f"结束投票「{poll.question[:30]}」")
+    db.commit()
+    return _poll_dict(db, poll, _trip_users(db, trip_id), user.id)
+
+
+@router.delete("/{trip_id}/polls/{poll_id}")
+def delete_poll(trip_id: str, poll_id: str, db: Session = Depends(get_db),
+                user: TravelUser = Depends(get_current_user)):
+    from app.db.models import TravelNotification
+
+    trip = _member(db, trip_id, user)
+    poll = _poll(db, trip_id, poll_id)
+    if user.id not in {poll.created_by, trip.owner_id}:
+        raise HTTPException(403, "只有发起人或行程创建者可以删除投票")
+    db.execute(delete(TravelTripPollVote).where(TravelTripPollVote.poll_id == poll_id))
+    db.execute(delete(TravelNotification).where(TravelNotification.dedupe_key.like(f"trip-poll:{poll_id}:%")))
+    db.delete(poll)
     db.commit()
     return {"ok": True}

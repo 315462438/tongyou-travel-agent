@@ -1,0 +1,20 @@
+{
+  "date": "2026-10-24",
+  "regression_before": {
+    "failed": 9,
+    "passed": 13
+  },
+  "final_backend": {
+    "passed": 69,
+    "failed": 0,
+    "warnings": 1,
+    "command": ".venv/bin/python -m pytest tests/test_ledger_fx.py tests/test_personal_ledger.py tests/test_ledger_collaboration.py tests/test_ledger_draft.py -q"
+  },
+  "local_live_probes": 3,
+  "production_live_probes": 3,
+  "public_health": "ok",
+  "unauthenticated_ledger_status": 401,
+  "client_api_unchanged": true,
+  "client_reinstall_required": false,
+  "module_sha256": "8dd289beabae71b5e88ae8549da763fc2e5a3a343fd88405011280e314584d2e"
+}

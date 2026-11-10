@@ -210,3 +210,18 @@ html.native-android[data-android-appearance=dark] .app.journey-shell .ai-workspa
 html.native-android[data-android-appearance=dark] .app.journey-shell .ai-workspace .next-steps { background: linear-gradient(180deg, #1a2232, #182030); border-color: var(--x-n88); }
 html.native-android[data-android-appearance=dark] .app.journey-shell .ai-workspace .jump-bottom { background: var(--x-n100); color: var(--tx-brand); border-color: var(--x-n88); }
 html.native-android[data-android-appearance=dark] .app.journey-shell.view-mobile .ai-workspace .composer-wrap { background: rgba(15, 21, 33, .72); }
+
+/* 2026-11-10：出行当天的首页卡 */
+.travel-today { margin-bottom:24px;padding:16px 18px;border:1px solid var(--journey-line);border-radius:24px;background:var(--journey-card, rgba(255,255,255,.72)); }
+.travel-today-head { width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0;border:0;background:none;text-align:left;color:inherit;cursor:pointer; }
+.travel-today-head small { display:block;font-size:13px;color:#2563eb;font-weight:600; }
+.travel-today-head strong { display:block;margin-top:2px;font-size:19px;line-height:1.3; }
+.travel-today-head i { flex:none;font-style:normal;font-size:13px;opacity:.6; }
+.travel-today ol { list-style:none;margin:12px 0 0;padding:0;display:grid;gap:2px; }
+.travel-today li { display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px;border-top:1px solid var(--journey-line); }
+.travel-today li span { min-width:0;display:flex;align-items:baseline;gap:8px;font-size:15px; }
+.travel-today li b { font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+.travel-today li time { flex:none;font-size:13px;opacity:.6;font-variant-numeric:tabular-nums; }
+.travel-today li a { flex:none;min-height:32px;display:grid;place-items:center;padding:0 14px;border-radius:16px;background:#2563eb;color:#fff;font-size:13px;text-decoration:none; }
+.travel-today li.more span,.travel-today-empty { font-size:13px;opacity:.6; }
+.travel-today-empty { margin:10px 0 0; }

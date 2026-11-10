@@ -9422,3 +9422,60 @@ body { color: var(--tx-ink); background: var(--x-n96); }
 }
 .skill-sandbox { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 12px; font-size: 13px; line-height: 1.5; cursor: pointer; }
 .skill-sandbox input { margin-top: 3px; }
+
+/* ---------- 2026-11-10：直答地点卡 + 追问按钮 ---------- */
+.place-cards { display: flex; gap: 10px; margin-top: 12px; padding-bottom: 4px; overflow-x: auto; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; }
+.place-card { flex: 0 0 208px; display: flex; flex-direction: column; overflow: hidden; scroll-snap-align: start; border: 1px solid var(--x-glass-line); border-radius: var(--x-r-xl); background: var(--x-n100); }
+.place-card > img, .place-card-blank { width: 100%; height: 112px; object-fit: cover; background: var(--x-n96); }
+.place-card-blank { display: grid; place-items: center; font-size: 26px; }
+.place-card-body { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px 12px; min-width: 0; }
+.place-card-body strong { font-size: 14px; color: var(--x-n12); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.place-card-body small { font-size: 12px; color: var(--x-n50); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.place-card-actions { display: flex; gap: 8px; margin-top: 6px; }
+.place-card-actions a, .place-card-actions button { flex: 1; min-height: 34px; display: grid; place-items: center; border: 1px solid var(--x-glass-line); border-radius: var(--x-r-pill); background: transparent; font-size: 13px; color: var(--x-n20); text-decoration: none; cursor: pointer; }
+.place-card-actions a { border-color: transparent; background: var(--x-pine-44); color: #fff; }
+.place-card-actions button:disabled { color: var(--x-n60); cursor: default; }
+.place-sheet-mask { position: fixed; inset: 0; z-index: 1200; display: flex; align-items: flex-end; justify-content: center; background: rgba(0, 0, 0, .32); }
+.place-sheet { width: min(420px, 100%); max-height: 70vh; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 18px 16px calc(16px + env(safe-area-inset-bottom)); border-radius: 20px 20px 0 0; background: var(--x-n100); }
+@media (min-width: 721px) { .place-sheet-mask { align-items: center; } .place-sheet { border-radius: 20px; } }
+.place-sheet h3 { margin: 0 0 4px; font-size: 16px; color: var(--x-n12); }
+.place-sheet-hint { margin: 0; font-size: 13px; color: var(--x-n50); }
+.place-sheet button { min-height: 44px; padding: 0 14px; text-align: left; border: 1px solid var(--x-glass-line); border-radius: 12px; background: transparent; font-size: 14px; color: var(--x-n12); cursor: pointer; }
+.place-sheet .place-sheet-new { color: var(--x-pine-44); }
+.place-sheet .place-sheet-cancel { text-align: center; border-color: transparent; color: var(--x-n50); }
+.suggest-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.suggest-chips button { min-height: 36px; padding: 0 14px; border: 1px solid var(--x-glass-line); border-radius: var(--x-r-pill); background: var(--x-n100); font-size: 14px; color: var(--x-pine-44); cursor: pointer; }
+.suggest-chips button:hover { background: var(--x-n96); }
+
+/* 好友页（同游圈隐藏后的精简入口）：不出左侧导航栏与装饰标题，只留搜索 + 列表 */
+.social-overlay.friends-only .social-rail { display: none; }
+.social-overlay.friends-only .social-main { grid-column: 1 / -1; }
+.social-overlay.friends-only .profile-stats > div:first-child,
+.social-overlay.friends-only .profile-stats > div:nth-child(2) { display: none; }
+.social-back { margin-left: auto; margin-right: 10px; min-height: 36px; padding: 0 12px; border: 1px solid var(--x-glass-line); border-radius: var(--x-r-pill); background: transparent; font-size: 13px; color: var(--x-n20); cursor: pointer; }
+
+/* 2026-11-10：同行人投票 */
+.trip-poll { margin: 10px 0; padding: 12px; border: 1px solid var(--x-glass-line); border-radius: 14px; display: grid; gap: 8px; }
+.trip-poll header { display: grid; gap: 2px; }
+.trip-poll header b { font-size: 15px; color: var(--x-n12); }
+.trip-poll header small, .trip-poll-option em { font-size: 12px; color: var(--x-n50); font-style: normal; }
+.trip-poll-option { position: relative; overflow: hidden; display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 44px; padding: 0 12px; border: 1px solid var(--x-glass-line); border-radius: 12px; background: transparent; text-align: left; font-size: 14px; color: var(--x-n12); cursor: pointer; }
+.trip-poll-option i { position: absolute; inset: 0 auto 0 0; background: rgba(37, 99, 235, .12); transition: width .25s ease; }
+.trip-poll-option span, .trip-poll-option em { position: relative; }
+.trip-poll-option em { flex: none; max-width: 55%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.trip-poll-option.mine { border-color: #2563eb; }
+.trip-poll-option.win { font-weight: 600; }
+.trip-poll-option:disabled { cursor: default; }
+.trip-poll footer { display: flex; gap: 12px; justify-content: flex-end; }
+.trip-poll footer button { border: 0; background: none; padding: 4px 0; font-size: 12px; color: var(--x-n50); cursor: pointer; }
+.trip-poll-new { display: grid; gap: 8px; margin-top: 14px; }
+.trip-poll-new input { min-height: 40px; padding: 0 12px; border: 1px solid var(--x-glass-line); border-radius: 10px; background: transparent; font-size: 14px; color: inherit; }
+.trip-poll-new > div { display: flex; gap: 8px; justify-content: flex-end; }
+
+.trip-create-hint { display: block; margin-top: 4px; font-size: 12px; font-weight: 400; color: var(--x-n50); }
+
+.trip-date-ask { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 12px; padding: 12px 14px; border: 1px solid var(--x-glass-line); border-radius: 14px; background: rgba(37, 99, 235, .06); }
+.trip-date-ask > span { flex: 1 1 180px; display: grid; gap: 2px; }
+.trip-date-ask b { font-size: 14px; color: var(--x-n12); }
+.trip-date-ask small { font-size: 12px; color: var(--x-n50); }
+.trip-date-ask input { min-height: 36px; padding: 0 10px; border: 1px solid var(--x-glass-line); border-radius: 10px; background: transparent; color: inherit; font-size: 14px; }

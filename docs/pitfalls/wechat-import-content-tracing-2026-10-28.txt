@@ -1,0 +1,5 @@
+小程序导入正文与共享LLM追踪
+现象：复用17同游LLMClient会默认使用Langfuse包装器，私有文档可能进入已有模型正文追踪。
+处理：构造函数新增trace_content=True默认参数；仅mini_import显式传False使用原OpenAI客户端，其余业务行为不变。异常不打印原始模型错误，避免回显文档或凭据。
+微信code2Session URL包含AppSecret，使用不记录httpx INFO URL的urllib，失败返回通用信息。凭据仅服务端.env，权限0600，不进小程序/版本备注/仓库。
+生产增量：先核对三个既有文件与git HEAD基线相同，备份原文件与.env，再同步限定五文件。用户其他账本、移动端修改不部署。

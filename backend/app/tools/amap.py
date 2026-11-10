@@ -13,6 +13,7 @@ MD5，随 sig 参数发送（算法与铺探项目 amap-proxy 一致）。
 import asyncio
 import hashlib
 import logging
+import re
 
 import httpx
 
@@ -83,6 +84,71 @@ async def search_poi(client: httpx.AsyncClient, keyword: str, city: str = "") ->
         "district": p.get("adname") or "",
         "address": p.get("address") if isinstance(p.get("address"), str) else "",
     }
+
+
+_PAREN_RE = re.compile(r"[(（][^)）]*[)）]")
+_PUNCT_RE = re.compile(r"[\s·・\-—_,，.。、|｜/]+")
+
+
+def _poi_name_matches(keyword: str, poi_name: str, city: str = "") -> bool:
+    """查到的 POI 是不是用户说的那家。**配错图比不配更糟**，拿不准一律 False。
+
+    包含关系算对得上；否则要求关键词（去掉城市名后）的头三个字出现在 POI 名里——
+    店名的辨识部分几乎总在开头，而头两个字不够（线上实测「天沐温泉」配到了
+    「天沐养生SPA·肩颈调理」）；「XX洗浴中心」与「YY洗浴中心」
+    共有的是结尾的品类词，按公共子串判会把它们配成一家。
+    """
+    def norm(text: str) -> str:
+        text = _PUNCT_RE.sub("", _PAREN_RE.sub("", text or "")).lower()
+        short = (city or "").strip().removesuffix("市")
+        if short and text.startswith(short):
+            text = text[len(short):].removeprefix("市")
+        return text
+
+    a, b = norm(keyword), norm(poi_name)
+    if len(a) < 2 or len(b) < 2:
+        return False
+    return a in b or b in a or (len(a) >= 4 and a[:3] in b)
+
+
+async def search_poi_photos(
+    client: httpx.AsyncClient, keyword: str, city: str = "", limit: int = 1,
+) -> dict | None:
+    """按名称找一处地点，返回 {name, address, location, photos:[url…]}；没有对得上名字的返回 None。
+
+    与 ``search_poi`` 的区别：向后看 5 条（第一条常常没图）、限定城市、校验名称。
+    优先取有图的那条；都没图就取第一条名字对得上的（photos 为空，地点卡仍可导航）。
+    直答配图 / 地点卡用（2026-11-10）。
+    """
+    keyword = (keyword or "").strip()[:40]
+    if not keyword or not enabled():
+        return None
+    params = {"keywords": keyword, "offset": 5, "extensions": "all"}
+    if city:
+        params.update(city=city, citylimit="true")
+    data = await _call(client, "/v3/place/text", **params)
+    fallback = None
+    for poi in (data or {}).get("pois") or []:
+        name = poi.get("name") or ""
+        if not _poi_name_matches(keyword, name, city):
+            continue
+        photos: list[str] = []
+        for ph in poi.get("photos") or []:
+            url = (ph or {}).get("url")
+            if isinstance(url, str) and url.startswith("http") and url not in photos:
+                photos.append(url)
+        loc = poi.get("location")
+        address = poi.get("address")
+        info = {
+            "name": name,
+            "address": ((poi.get("adname") or "") + (address if isinstance(address, str) else ""))[:60],
+            "location": loc if isinstance(loc, str) else "",
+            "photos": photos[:max(1, limit)],
+        }
+        if photos:
+            return info
+        fallback = fallback or info
+    return fallback
 
 
 async def search_destination_cover(client: httpx.AsyncClient, destination: str) -> str:
@@ -285,6 +351,63 @@ async def search_hotels(city: str, limit: int = 12) -> list[dict]:
         })
         if len(out) >= limit:
             break
+    return out
+
+
+async def locate_device(location: str) -> dict | None:
+    """设备定位（WGS-84 "lng,lat"）→ {location(GCJ-02), city, district, address}。失败返回 None。
+
+    手机/浏览器给的是 WGS-84，高德全部接口吃 GCJ-02——不转的话境内偏 ~500m，
+    「附近」会按另一条街去找（同 Phase 100，只是方向相反）。转换交给高德自己的接口。
+    """
+    from app.agent.nav_links import parse_location
+
+    parsed = parse_location(location)
+    if parsed is None or not enabled():
+        return None
+    async with httpx.AsyncClient(trust_env=False) as client:
+        conv = await _call(client, "/v3/assistant/coordinate/convert",
+                           locations=f"{parsed[0]:.6f},{parsed[1]:.6f}", coordsys="gps")
+        gcj = ((conv or {}).get("locations") or "").split(";")[0]
+        if parse_location(gcj) is None:
+            return None
+        data = await _call(client, "/v3/geocode/regeo", location=gcj)
+    reg = (data or {}).get("regeocode") or {}
+    comp = reg.get("addressComponent") or {}
+
+    def text(key: str) -> str:
+        v = comp.get(key)
+        return v if isinstance(v, str) else ""
+
+    address = reg.get("formatted_address")
+    city = text("city") or text("province")
+    if not city:
+        return None  # 境外/海上：高德认不出来，就当没有定位
+    return {"location": gcj, "city": city, "district": text("district"),
+            "address": address if isinstance(address, str) else city + text("district")}
+
+
+async def search_around(location: str, keyword: str, radius: int = 5000, limit: int = 8) -> list[dict]:
+    """周边搜索：按距离由近到远，返回 [{name, address, location, distance(米), rating, photo}]。"""
+    if not enabled() or not (keyword or "").strip():
+        return []
+    async with httpx.AsyncClient(trust_env=False) as client:
+        data = await _call(client, "/v3/place/around", location=location, keywords=keyword.strip()[:30],
+                           radius=radius, sortrule="distance", offset=limit, extensions="all")
+    out: list[dict] = []
+    for poi in (data or {}).get("pois") or []:
+        loc, address = poi.get("location"), poi.get("address")
+        if not isinstance(loc, str) or not poi.get("name"):
+            continue
+        biz = poi.get("biz_ext") if isinstance(poi.get("biz_ext"), dict) else {}
+        rating = biz.get("rating")
+        try:
+            distance = int(float(poi.get("distance") or 0))
+        except (TypeError, ValueError):
+            distance = 0
+        out.append({"name": poi["name"], "address": address if isinstance(address, str) else "",
+                    "location": loc, "distance": distance,
+                    "rating": rating if isinstance(rating, str) else "", "photo": _first_photo(poi.get("photos"))})
     return out
 
 

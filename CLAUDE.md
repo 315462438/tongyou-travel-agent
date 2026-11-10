@@ -473,6 +473,38 @@ iOS 配图 `scaledToFill` 会撑宽整列，必须 `Color.clear` 定框 + overla
 做成后端内部函数而非 MCP（同进程、权限一行 `_book` 校验），将来主对话「记一笔」或外部 MCP 复用同一对函数。
 计划 `docs/task_plans/记账页AI一句话记账-2026-10-22.md`，用例 `docs/test_cases/记账页AI一句话记账-验收用例.md`。
 
+**Phase 119 — 定位回答「附近」+ 出行当天首页 + 同行人投票**（2026-11-10）：① **定位**：客户端只在消息含
+「附近/周边/离我…」时取一次定位随消息发 `location`（WGS-84）；后端 `_TURN_LOCATION[cid]` **只活一轮、不进库不进记忆**，
+`amap.locate_device` 转 GCJ-02（不转偏 ~500m，同 Phase 100 反方向）+ 逆地理，`_nearby_block` 把位置写进 prompt
+（标明临时位置、不许反问）并用 `search_around` 按距离查周边，清单进 prompt 兼作地点卡候选。只在直答链路生效。
+② **当天首页**：`GET /api/trips/today?date=`（日期由客户端按本地时区给；**必须声明在 `/{trip_id}` 之前**）返回进行中行程的
+当天地点或 7 天内倒计时；依赖行程设了 `start_date`。③ **投票**：`travel_trip_poll` + `travel_trip_poll_vote`
+（(poll,user) 一行），接口在 `trip_modules_api.py`，发起时同事务写 `trip_poll` 通知，投票不写时间线。
+**未做**：投票结果不自动写回行程；guide/研究链路不用定位。计划 `docs/task_plans/定位附近与当天首页与同行投票-2026-11-10.md`，
+用例 `docs/test_cases/定位附近与当天首页与同行投票-验收用例.md`。
+
+**Phase 118 — 直答追问按钮 + 地点卡 + 好友入口**（2026-11-10）：① **追问**：直答 prompt 末尾要求另起一行写
+`[[追问:A|B|C]]`，终稿时 `_split_suggestions` 拿出正文放 `meta.suggestions`，流式用 `_hide_suggestion_tail` 遮住；
+**同一次生成带出、不加调用不挡终稿**；模型没写就没按钮。客户端只在最后一条回答下显示，点击即发送。
+② **地点卡**：复用 Phase 117 的地点查询（`search_poi_photos` 现返回地址+坐标，没图也返回），回答里**真的提到**且有坐标的
+地点进 `meta.places`（含后端算好的 `nav`）；卡上「导航」+「加入行程」（走现有 `POST /trips/{id}/stops`，不新增接口）。
+③ **好友入口**：同游圈隐藏后好友无处可看——网页/安卓「我的」第一行「好友」打开 `SocialHub friendsOnly`（CSS 隐藏侧栏与接力）；
+iOS 新增原生 `FriendsView`。界面原则：不加主入口。计划 `docs/task_plans/直答追问按钮与地点卡及好友入口-2026-11-10.md`，
+用例 `docs/test_cases/直答追问按钮与地点卡及好友入口-验收用例.md`。
+
+**Phase 117 — 直答配实景图**（2026-11-10）：线上问「有没有图片」被答「我是纯文字助手」——直答链路
+（`run_direct_answer`）从没接过图。现在**用户明确要图**（`wants_image_refresh`）或**本轮联网搜到结果**时，
+`_direct_image_block` 先用一次 `classify(effort=off)` 从近几轮对话+搜索结果里挑具体地点名（≤6）+城市 →
+`amap.search_poi_photos`（限定城市、向后看 5 条、**名称必须对得上**）→ 图名单末置进 user（不动 `DIRECT_SYSTEM`，
+保前缀缓存）→ 流式/终稿过 `_embed_images`。要图时每处 ≤3 张（`名称 图2`），否则 1 张；其余直答不触发、零延迟。
+⚠️ **配错图比不配更糟**：`_poi_name_matches` 只认包含关系或头三个字命中——按公共子串判会把「XX洗浴中心」配成
+「YY洗浴中心」，头两个字也不够（实测「天沐温泉」→「天沐养生SPA」）。实测覆盖：景点/连锁餐厅好，本地洗浴类约 1/3。
+**图只来自高德**：阿里云联网搜索的响应里**没有图片字段**（实测只有 link/title/content/snippet/meta_info）；
+必应图片搜索 HTTP 可用（0.6s/35 张）但同名异地严重（搜「合肥 汤连得」出来的是上海门店），且图片域名任意、
+要给 `/api/img` 开任意域代理——未做，待定。`direct_images_enabled` 可关。计划
+`docs/task_plans/直答配实景图-2026-11-10.md`，用例 `docs/test_cases/直答配实景图-验收用例.md`
+（`tests/test_direct_images.py` 17 passed）。
+
 **Phase 113 — 切换 DeepSeek V4.1 + 视觉切片按像素预算重校准**（读 `deepseek-harness` 上游
 09-09~09-10 后的改造）：① 2026-09-10 V4.1 Flash 发布（正式名 `deepseek-flash`，原生多模态），
 **规划/抽取/分类/视觉全部改用 `deepseek-flash`**——开放平台公告 V4.1 Flash 全面超过 V4 Pro，且

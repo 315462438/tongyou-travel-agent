@@ -93,11 +93,14 @@ export default function SocialHub({
   onProfileChanged,
   initialTab = 'station',
   initialDestination = '天堂寨',
+  friendsOnly = false,
 }: {
   onClose: () => void
   onProfileChanged?: (profile: { display_name: string; avatar_url: string }) => void
   initialTab?: SocialTab
   initialDestination?: string
+  /** 同游圈已隐藏：只保留好友（搜索 / 申请 / 列表 / 对方主页），不出接力站与导航栏 */
+  friendsOnly?: boolean
 }) {
   const startDestination = initialDestination.trim() || '天堂寨'
   const android = isAndroidApp()
@@ -393,7 +396,7 @@ export default function SocialHub({
   const myProfile = viewProfile?.id === profile?.id
 
   return (
-    <div className="social-overlay" role={android ? 'region' : 'dialog'} aria-modal={android ? undefined : true} aria-label="17同游社交中心">
+    <div className={`social-overlay${friendsOnly ? ' friends-only' : ''}`} role={android ? 'region' : 'dialog'} aria-modal={android ? undefined : true} aria-label={friendsOnly ? '好友' : '17同游社交中心'}>
       <aside className="social-rail">
         <div className="social-brand"><span>17</span><div><b>同游圈</b><small>真实旅行者接力</small></div></div>
         <nav aria-label="社交中心导航">
@@ -407,13 +410,14 @@ export default function SocialHub({
 
       <main className="social-main">
         <header className="social-topbar">
-          <div><h1 className="mobile-social-title">同游圈</h1><span>17同游 · 一起规划，也把经验留给下一位</span></div>
-          {android && <details className="android-social-menu"><summary aria-label="同游圈更多">•••</summary><div>
+          <div><h1 className="mobile-social-title">{friendsOnly ? '好友' : '同游圈'}</h1><span>{friendsOnly ? '加了好友，邀请同行时可以直接选人' : '17同游 · 一起规划，也把经验留给下一位'}</span></div>
+          {friendsOnly && tab !== 'friends' && <button className="social-back" onClick={() => setTab('friends')}>‹ 返回好友</button>}
+          {android && !friendsOnly && <details className="android-social-menu"><summary aria-label="同游圈更多">•••</summary><div>
             <button onClick={e => {setTab('station'); e.currentTarget.closest('details')?.removeAttribute('open')}}>目的地接力站</button>
             <button onClick={e => {setTab('friends'); e.currentTarget.closest('details')?.removeAttribute('open')}}>好友{friends.received.length > 0 ? ` · ${friends.received.length} 个申请` : ''}</button>
             <button onClick={e => {setViewProfile(profile);setTab('profile'); e.currentTarget.closest('details')?.removeAttribute('open')}}>我的主页</button>
           </div></details>}
-          <button className="social-close" onClick={onClose} aria-label="关闭同游圈">关闭 <b>×</b></button>
+          <button className="social-close" onClick={onClose} aria-label={friendsOnly ? '关闭好友' : '关闭同游圈'}>关闭 <b>×</b></button>
         </header>
         {error && <div className="social-error" role="alert"><span>{error}</span><button onClick={() => setError('')}>×</button></div>}
 
@@ -500,11 +504,11 @@ export default function SocialHub({
 
         {tab === 'friends' && (
           <div className="friends-page">
-            <header><small>TRAVEL CONNECTIONS</small><h1>和同频的人保持联系</h1><p>好友不会自动看到你的私人行程；只有你主动分享或邀请协同时才会进入行程。</p></header>
+            {!friendsOnly && <header><small>TRAVEL CONNECTIONS</small><h1>和同频的人保持联系</h1><p>好友不会自动看到你的私人行程；只有你主动分享或邀请协同时才会进入行程。</p></header>}
             <section className="friend-search"><input value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void findPeople() }} placeholder="搜索用户名、昵称或常驻城市" /><button onClick={findPeople}>搜索旅行者</button></section>
             {people.length > 0 && <section className="people-results"><h2>找到这些旅行者</h2><div>{people.map((person) => <article key={person.id}><button className="person-main" onClick={() => openPerson(person.id)}><Avatar user={person} size="lg" /><span><b>{person.display_name}</b><small>@{person.username}{person.home_city ? ` · ${person.home_city}` : ''}</small><em>{person.travel_styles.slice(0, 3).join(' · ') || '旅行风格待补充'}</em></span></button>{person.friendship_status === 'accepted' ? <span className="friend-state">已是好友</span> : person.friendship_status === 'pending' ? <span className="friend-state">申请处理中</span> : <button className="friend-add" onClick={() => requestFriend(person.id)}>＋ 加好友</button>}</article>)}</div></section>}
             {friends.received.length > 0 && <FriendSection title={`新的好友申请 · ${friends.received.length}`} rows={friends.received} actions={(row) => <><button onClick={() => respondFriend(row.friendship_id, false)}>忽略</button><button className="primary" onClick={() => respondFriend(row.friendship_id, true)}>接受</button></>} onOpen={openPerson} />}
-            <FriendSection title={`我的好友 · ${friends.friends.length}`} rows={friends.friends} empty="还没有好友。可以从接力站认识旅行风格相近的人。" actions={(row) => <button onClick={() => removeFriend(row.friendship_id)}>删除好友</button>} onOpen={openPerson} />
+            <FriendSection title={`我的好友 · ${friends.friends.length}`} rows={friends.friends} empty={friendsOnly ? '还没有好友。在上面搜索对方的用户名或昵称，发个申请。' : '还没有好友。可以从接力站认识旅行风格相近的人。'} actions={(row) => <button onClick={() => removeFriend(row.friendship_id)}>删除好友</button>} onOpen={openPerson} />
             {friends.sent.length > 0 && <FriendSection title="已发送的申请" rows={friends.sent} actions={(row) => <button onClick={() => removeFriend(row.friendship_id)}>撤回</button>} onOpen={openPerson} />}
           </div>
         )}
@@ -522,7 +526,7 @@ export default function SocialHub({
             ) : (
               <section className="public-profile-body"><div><h2>关于我</h2><p>{viewProfile.bio || '这位旅行者还没有填写个人简介。'}</p></div><div><h2>旅行风格</h2><div className="public-style-list">{viewProfile.travel_styles.length ? viewProfile.travel_styles.map((style) => <span key={style}>{style}</span>) : <p>暂未补充</p>}</div></div></section>
             )}
-            {viewProfile.recent_relay.length > 0 && <section className="profile-relay-history"><div><small>RECENT RELAY</small><h2>最近留下的旅行接力</h2></div><div>{viewProfile.recent_relay.map((post) => <article key={post.id}><header><span>{post.destination}</span><b>{PHASE_COPY[post.phase].label} · {KIND_COPY[post.kind].label}</b><time>{ago(post.created_at)}</time></header><p>{post.content}</p></article>)}</div></section>}
+            {!friendsOnly && viewProfile.recent_relay.length > 0 && <section className="profile-relay-history"><div><small>RECENT RELAY</small><h2>最近留下的旅行接力</h2></div><div>{viewProfile.recent_relay.map((post) => <article key={post.id}><header><span>{post.destination}</span><b>{PHASE_COPY[post.phase].label} · {KIND_COPY[post.kind].label}</b><time>{ago(post.created_at)}</time></header><p>{post.content}</p></article>)}</div></section>}
           </div>
         )}
       </main>

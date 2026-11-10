@@ -56,10 +56,11 @@ import {
   pickImageFiles,
   type PendingImage,
   type LayoutMode,
-} from '../interaction'
+  wantsNearby, currentLocation } from '../interaction'
 
 const TripsOverlay = lazy(() => import('./Trips'))
 const Ledger = lazy(() => import('./Ledger'))
+import { PlaceCards, Suggestions, type PlaceCard } from '../components/PlaceCards'
 const SocialHub = lazy(() => import('../components/SocialHub'))
 
 interface SubagentRun {
@@ -107,6 +108,9 @@ interface Msg {
     hint_prompt?: string
     // Phase 76：区域型提问的候选目的地，点一下即作为下一轮提问发出
     candidates?: { name: string; reason: string; tag: string }[]
+    // 2026-11-10：直答末尾的可点追问 + 回答里提到的地点卡
+    suggestions?: string[]
+    places?: PlaceCard[]
     // Phase 88：深度研究并发派出的子代理运行态（面板置于对话最上方）
     subagents?: SubagentRun[]
   } | null
@@ -290,6 +294,14 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
   }, [setPetPreferences])
   const [createTrip, setCreateTrip] = useState(false)
   const [showSocial, setShowSocial] = useState(false)
+  // 「我的 → 好友」入口上的新申请数：进页面时和关掉好友页后各取一次，不轮询
+  const [friendRequests, setFriendRequests] = useState(0)
+  useEffect(() => {
+    if (showSocial) return
+    authFetch(`${API}/social/friends`).then(async (r) => {
+      if (r.ok) setFriendRequests(((await r.json()).received || []).length)
+    }).catch(() => {})
+  }, [showSocial])
   const [socialLaunch, setSocialLaunch] = useState<{ tab: SocialTab; destination: string }>({ tab: 'station', destination: '天堂寨' })
   const openSocial = useCallback((tab: SocialTab = 'station', destination = '天堂寨') => {
     setMobilePanel(null)
@@ -463,7 +475,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
       if (tripId) {
         setTripsBoard(tripId)
         setShowTrips(true)
-        setOpenChatSignal((n) => n + 1)
+        if (item.type === 'trip_chat') setOpenChatSignal((n) => n + 1)  // 投票通知只打开行程，不展开群聊
         return
       }
     }
@@ -866,11 +878,13 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
         conv = (await res.json()).conversation_id as string
         setCid(conv)
       }
+      // 只在问「附近」时取定位；拿不到就照常发，后端会按没有定位处理
+      const location = wantsNearby(content) ? await currentLocation() : ''
       const res = await authFetch(`${API}/chat/${conv}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          content, deep_reasoning: requestDeep, sandbox_enabled: sandbox, web_search: webSearch, image_ids: imageIds,
+          content, deep_reasoning: requestDeep, sandbox_enabled: sandbox, web_search: webSearch, image_ids: imageIds, location,
         }),
       })
       if (res.status === 409) {
@@ -1206,6 +1220,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
                     onEnableDeep={enableDeep}
                     onPickDestination={pickDestination}
                     onRefineByDate={refineByDate}
+                    onSuggest={(text) => void send(text)}
                     onRegenerateDeep={regenerateDeep}
                     turnId={turnIds[i]}
                     traceOpen={traceFor === turnIds[i]}
@@ -1250,10 +1265,11 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
         )}
       </main>
       {showSocial && (
-        <Suspense fallback={<div className="overlay-loading" role="status"><span className="spinner" /> 正在打开同游圈…</div>}>
+        <Suspense fallback={<div className="overlay-loading" role="status"><span className="spinner" /> 正在打开好友…</div>}>
           <SocialHub
             initialTab={socialLaunch.tab}
             initialDestination={socialLaunch.destination}
+            friendsOnly
             onClose={() => setShowSocial(false)}
             onProfileChanged={onProfileChanged}
           />
@@ -1273,6 +1289,7 @@ export default function Home({ user, onLogout, onPasswordChanged, onProfileChang
         </> : <>
           <div className="mobile-profile-card"><span className="mobile-account-avatar">{user.avatar_url ? <img src={user.avatar_url} alt="" /> : (user.display_name || user.username).slice(0, 1)}</span><span><strong>{user.display_name || user.username}</strong><small>@{user.username}</small></span></div>
           <div className="mobile-account-links">
+            <button onClick={() => openSocial('friends')}>好友{friendRequests > 0 ? ` · ${friendRequests} 个新申请` : ''}<span aria-hidden>›</span></button>
             <button onClick={openMobileHistory}>历史对话<span aria-hidden>›</span></button>
             <button onClick={() => setShowPetTools(true)}>游游 · 旅行搭子<span aria-hidden>›</span></button>
             <button onClick={() => setShowAnn(true)}>公告<span aria-hidden>›</span></button>
@@ -3098,6 +3115,7 @@ function Message({
   onEnableDeep,
   onPickDestination,
   onRefineByDate,
+  onSuggest,
   onRegenerateDeep,
   turnId,
   traceOpen,
@@ -3114,6 +3132,7 @@ function Message({
   onEnableDeep?: () => void
   onPickDestination?: (name: string) => void
   onRefineByDate?: () => void
+  onSuggest?: (text: string) => void
   onRegenerateDeep?: (text: string) => void
   turnId?: string
   traceOpen?: boolean
@@ -3262,7 +3281,11 @@ function Message({
           🧠 已记住：{saved.map((s) => s.content).join('；')}
         </div>
       )}
+      {!streaming && !!msg.meta?.places?.length && <PlaceCards places={msg.meta.places} />}
       {msg.meta?.sources && msg.meta.sources.length > 0 && <Sources sources={msg.meta.sources} />}
+      {isLast && !running && !streaming && !!msg.meta?.suggestions?.length && onSuggest && (
+        <Suggestions items={msg.meta.suggestions} onPick={onSuggest} />
+      )}
       {msg.meta?.artifacts && msg.meta.artifacts.length > 0 && <SandboxArtifacts items={msg.meta.artifacts} />}
       {!streaming && msg.content && (isGuide || (onToggleTrace && turnId && turnId !== 'tmp')) && (
         <div className="message-actions" aria-label="回复操作">
