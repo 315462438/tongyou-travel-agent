@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run packaged WebView tests on an explicitly selected emulator (no real accounts)."""
+"""Optional device regression: native + fallback tests, with local fixtures only."""
 import argparse
 import os
 from pathlib import Path
@@ -19,4 +19,5 @@ for apk in ['debug/app-debug.apk', 'androidTest/debug/app-debug-androidTest.apk'
     subprocess.run(adb + ['install', '-r', str(root / 'app/build/outputs/apk' / apk)], check=True)
 result = subprocess.run(adb + ['shell', 'am', 'instrument', '-w', 'com.tongyou.travel.debug.test/androidx.test.runner.AndroidJUnitRunner'], capture_output=True, text=True, check=True)
 print(result.stdout)
-assert re.search(r'OK \(20 tests\)', result.stdout), 'Instrumentation did not pass all twenty tests'
+match = re.search(r'OK \((\d+) tests\)', result.stdout)
+assert match and int(match[1]) >= 28 and 'FAILURES' not in result.stdout, 'Instrumentation did not pass the native and fallback suites'

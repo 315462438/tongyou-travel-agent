@@ -15,8 +15,8 @@ import static org.junit.Assert.*;
 
 @RunWith(AndroidJUnit4.class)
 public class HostInstrumentedTest {
-    @Rule public ActivityTestRule<MainActivity> rule=new ActivityTestRule<>(MainActivity.class,false,false);
-    private MainActivity activity;
+    @Rule public ActivityTestRule<WebFallbackActivity> rule=new ActivityTestRule<>(WebFallbackActivity.class,false,false);
+    private WebFallbackActivity activity;
     private UiDevice device;
     private String js(String script) throws Exception {
         CountDownLatch latch=new CountDownLatch(1); AtomicReference<String> result=new AtomicReference<>();
@@ -188,7 +188,7 @@ public class HostInstrumentedTest {
             js("document.querySelector('.journey-ai-fab').click()");until("document.querySelector('.unified-idea textarea')");
             js("(()=>{const e=document.querySelector('.unified-idea textarea');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,'保留旅程草稿');e.dispatchEvent(new Event('input',{bubbles:true}));window.startupMarker='same-document'})()");
             device.pressHome();SystemClock.sleep(300);
-            activity.startActivity(new Intent(activity,MainActivity.class).setAction(Intent.ACTION_MAIN).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP));
+            activity.startActivity(new Intent(activity,WebFallbackActivity.class).setAction(Intent.ACTION_MAIN).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP));
             device.waitForIdle();
             assertFalse("Warm resume must not replay splash",launching());
             assertEquals("\"same-document\"",js("window.startupMarker"));
@@ -202,11 +202,11 @@ public class HostInstrumentedTest {
             js("localStorage.setItem('startup_restore','kept')");
             InstrumentationRegistry.getInstrumentation().runOnMainSync(()->activity.recreate());
             long deadline=SystemClock.elapsedRealtime()+10000;
-            MainActivity previous=activity;
+            WebFallbackActivity previous=activity;
             while(activity==previous && SystemClock.elapsedRealtime()<deadline) {
                 InstrumentationRegistry.getInstrumentation().runOnMainSync(()->{
                     for(android.app.Activity a:androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED))
-                        if(a instanceof MainActivity)activity=(MainActivity)a;
+                        if(a instanceof WebFallbackActivity)activity=(WebFallbackActivity)a;
                 });SystemClock.sleep(100);
             }
             assertNotSame(previous,activity);

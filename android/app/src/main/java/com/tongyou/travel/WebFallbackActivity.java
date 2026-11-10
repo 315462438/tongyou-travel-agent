@@ -21,11 +21,15 @@ import java.util.*;
 import java.util.concurrent.*;
 
 /** The APK owns its UI snapshot; only API and user content reach the shared backend. */
-public class MainActivity extends Activity {
-    private static final int PICK_FILES = 41, SAVE_FILE = 42;
+public class WebFallbackActivity extends Activity {
+    private static final int PICK_FILES = 41, SAVE_FILE = 42, ASK_LOCATION = 43;
+    private String geoOrigin; private GeolocationPermissions.Callback geoCallback;
     WebView web;
     private WebView popup;
     private ScriptHandler appearanceScript;
+    private ScriptHandler sessionScript;
+    private TextView closeBar;
+    private String webSessionToken;
     private LinearLayout popupContainer;
     private LinearLayout root;
     private FrameLayout stage;
@@ -52,6 +56,12 @@ public class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        // After process death Android may restore this Activity before the native entry.
+        // Read the encrypted session before writing anything to the legacy origin.
+        if (!isFixture() && !((TongyouApplication)getApplication()).getSession().restoreForFallback()) {
+            startActivity(new Intent(this,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP|Intent.FLAG_ACTIVITY_SINGLE_TOP));
+            finish(); return;
+        }
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setBackgroundColor(Color.rgb(239,243,255));
         ViewCompat.setOnApplyWindowInsetsListener(root, (v, insets) -> {
@@ -62,6 +72,15 @@ public class MainActivity extends Activity {
             return WindowInsetsCompat.CONSUMED;
         });
         setContentView(root);
+        if (!isFixture()) {
+            // A flat bar in the page's own colour — a stock grey Button looked like a debug control.
+            closeBar = new TextView(this); closeBar.setText("‹  返回"); closeBar.setTextSize(16);
+            closeBar.setGravity(android.view.Gravity.CENTER_VERTICAL); closeBar.setPadding(dp(20),0,dp(20),0);
+            android.util.TypedValue ripple = new android.util.TypedValue();
+            getTheme().resolveAttribute(android.R.attr.selectableItemBackground, ripple, true);
+            closeBar.setBackgroundResource(ripple.resourceId);
+            closeBar.setOnClickListener(v -> finish()); root.addView(closeBar, new LinearLayout.LayoutParams(-1, dp(46)));
+        }
         WindowCompat.getInsetsController(getWindow(), root).setAppearanceLightNavigationBars(true);
         if (Build.VERSION.SDK_INT >= 27) getWindow().setNavigationBarColor(Color.rgb(239,243,255));
         networkBanner = new TextView(this); networkBanner.setText("网络已断开，已填写内容会保留。联网后重试。");
@@ -82,7 +101,10 @@ public class MainActivity extends Activity {
         }
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG);
         web = makeWebView(); stage.addView(web,0,new FrameLayout.LayoutParams(-1,-1));
-        installAppearanceScript(); applyAppearance();
+        if (!isFixture() && !WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+            showFatal("请先更新 Android System WebView 后打开此页面。"); return;
+        }
+        installSessionScript(); installAppearanceScript(); applyAppearance();
         // Debug fixtures never contact the public update service.
         updates=new AppUpdates(this, BuildConfig.DEBUG && getIntent().hasExtra("test_startup") ? ()->null : AppUpdates::fetchOfficial,
                 this::openExternal,getSharedPreferences("app_updates",MODE_PRIVATE));
@@ -91,6 +113,33 @@ public class MainActivity extends Activity {
         String initial = incoming(getIntent());
         if (state == null || web.restoreState(state) == null) web.loadUrl(initial == null ? UrlPolicy.HOME : initial);
         removeOldExports();
+    }
+    private boolean isFixture() { return BuildConfig.DEBUG && getIntent().hasExtra("test_startup"); }
+    private void installSessionScript() {
+        if (isFixture()) return;
+        webSessionToken = ((TongyouApplication)getApplication()).getSession().token();
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+            showFatal("请更新 Android System WebView 后打开此页面。"); return;
+        }
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT) && sessionScript != null) sessionScript.remove();
+        String route = getIntent().getStringExtra("native_route");
+        String id = getIntent().getStringExtra("native_id");
+        String script = "(()=>{if(location.origin!=="+JSONObject.quote(UrlPolicy.ORIGIN)+"||window.top!==window)return;"
+            + "const token="+(webSessionToken==null?"null":JSONObject.quote(webSessionToken))+";"
+            + "if(token)localStorage.setItem('travel_token',token);else localStorage.removeItem('travel_token');"
+            + "window.tongyouFallbackRoute={route:"+JSONObject.quote(route==null?"home":route)+",id:"+JSONObject.quote(id==null?"":id)+"};"
+            // The native shell owns navigation and the AI entry. Left visible, the page's own tab bar, pet and
+            // AI button made a second, conflicting set of controls under the native return bar.
+            + "const chrome=document.createElement('style');chrome.textContent='.mobile-bottom-nav,.travel-pet-dock,.journey-ai-fab{display:none!important}';"
+            + "const addChrome=()=>(document.head||document.documentElement).appendChild(chrome);"
+            + "if(document.documentElement)addChrome();else document.addEventListener('DOMContentLoaded',addChrome);"
+            + "const set=Storage.prototype.setItem,remove=Storage.prototype.removeItem,clear=Storage.prototype.clear;"
+            + "const report=()=>TongyouNative.postMessage(JSON.stringify({type:'session',token:localStorage.getItem('travel_token')}));"
+            + "Storage.prototype.setItem=function(k,v){set.call(this,k,v);if(this===localStorage&&k==='travel_token')report()};"
+            + "Storage.prototype.removeItem=function(k){remove.call(this,k);if(this===localStorage&&k==='travel_token')report()};"
+            + "Storage.prototype.clear=function(){clear.call(this);if(this===localStorage)report()};})();";
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT))
+            sessionScript=WebViewCompat.addDocumentStartJavaScript(web,script,Collections.singleton(UrlPolicy.ORIGIN));
     }
     private void showLaunch() {
         launchGeneration++;
@@ -128,13 +177,14 @@ public class MainActivity extends Activity {
         return "window.tongyouAndroidAppearance='"+mode+"';if(document.documentElement)document.documentElement.dataset.androidAppearance='"+mode+"';";
     }
     private void installAppearanceScript() {
-        if(appearanceScript!=null) { appearanceScript.remove(); appearanceScript=null; }
+        if(appearanceScript!=null && WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) { appearanceScript.remove(); appearanceScript=null; }
         if(web!=null && WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT))
             appearanceScript=WebViewCompat.addDocumentStartJavaScript(web,appearanceJavascript(),Collections.singleton(UrlPolicy.ORIGIN));
     }
     private void applyAppearance() {
         boolean dark=darkAppearance();int background=dark?Color.rgb(13,17,27):Color.rgb(239,243,255);
         root.setBackgroundColor(background);
+        if(closeBar!=null)closeBar.setTextColor(dark?Color.rgb(143,176,255):Color.rgb(37,99,235));
         if(launchOverlay!=null)launchOverlay.applyAppearance(dark);
         WindowCompat.getInsetsController(getWindow(),root).setAppearanceLightStatusBars(!dark);
         WindowCompat.getInsetsController(getWindow(),root).setAppearanceLightNavigationBars(!dark);
@@ -220,6 +270,14 @@ public class MainActivity extends Activity {
         });
         view.setWebChromeClient(new WebChromeClient() {
             @Override public void onProgressChanged(WebView v,int p) { if(v==web) progress.setProgress(p); }
+            // 网页只在用户问「附近」时请求定位。仅放行本站来源；系统权限没给过就问一次，拒绝则网页按无定位继续。
+            @Override public void onGeolocationPermissionsShowPrompt(String origin,GeolocationPermissions.Callback cb) {
+                if (!UrlPolicy.trustedOrigin(origin)) { cb.invoke(origin,false,false); return; }
+                if (checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION)==android.content.pm.PackageManager.PERMISSION_GRANTED) { cb.invoke(origin,true,false); return; }
+                if (geoCallback != null) geoCallback.invoke(geoOrigin,false,false);
+                geoOrigin=origin; geoCallback=cb;
+                requestPermissions(new String[]{android.Manifest.permission.ACCESS_COARSE_LOCATION},ASK_LOCATION);
+            }
             @Override public boolean onShowFileChooser(WebView v,ValueCallback<Uri[]> cb,FileChooserParams params) {
                 if (!UrlPolicy.trustedOrigin(v.getUrl())) { cb.onReceiveValue(null); return true; }
                 if (fileCallback != null) fileCallback.onReceiveValue(null);
@@ -232,25 +290,25 @@ public class MainActivity extends Activity {
                 return true;
             }
             @Override public boolean onJsAlert(WebView v,String url,String msg,JsResult r) {
-                new AlertDialog.Builder(MainActivity.this).setMessage(msg).setPositiveButton("确定",(d,w)->r.confirm()).setOnCancelListener(d->r.cancel()).show(); return true;
+                new AlertDialog.Builder(WebFallbackActivity.this).setMessage(msg).setPositiveButton("确定",(d,w)->r.confirm()).setOnCancelListener(d->r.cancel()).show(); return true;
             }
             @Override public boolean onJsConfirm(WebView v,String url,String msg,JsResult r) {
-                new AlertDialog.Builder(MainActivity.this).setMessage(msg).setPositiveButton("确定",(d,w)->r.confirm()).setNegativeButton("取消",(d,w)->r.cancel()).setOnCancelListener(d->r.cancel()).show(); return true;
+                new AlertDialog.Builder(WebFallbackActivity.this).setMessage(msg).setPositiveButton("确定",(d,w)->r.confirm()).setNegativeButton("取消",(d,w)->r.cancel()).setOnCancelListener(d->r.cancel()).show(); return true;
             }
             @Override public boolean onJsPrompt(WebView v,String url,String msg,String value,JsPromptResult r) {
-                EditText input=new EditText(MainActivity.this); input.setText(value);
-                new AlertDialog.Builder(MainActivity.this).setMessage(msg).setView(input).setPositiveButton("确定",(d,w)->r.confirm(input.getText().toString())).setNegativeButton("取消",(d,w)->r.cancel()).setOnCancelListener(d->r.cancel()).show(); return true;
+                EditText input=new EditText(WebFallbackActivity.this); input.setText(value);
+                new AlertDialog.Builder(WebFallbackActivity.this).setMessage(msg).setView(input).setPositiveButton("确定",(d,w)->r.confirm(input.getText().toString())).setNegativeButton("取消",(d,w)->r.cancel()).setOnCancelListener(d->r.cancel()).show(); return true;
             }
             @Override public boolean onCreateWindow(WebView v,boolean dialog,boolean gesture,Message result) {
                 if (!gesture || popup != null || !UrlPolicy.trustedOrigin(v.getUrl())) return false;
                 String hit=v.getHitTestResult().getExtra();
                 if (hit!=null && UrlPolicy.external(hit) && !UrlPolicy.appPage(hit)) { openExternal(hit); return false; }
                 popup=makeWebView();
-                popupContainer=new LinearLayout(MainActivity.this); popupContainer.setOrientation(LinearLayout.VERTICAL);
+                popupContainer=new LinearLayout(WebFallbackActivity.this); popupContainer.setOrientation(LinearLayout.VERTICAL);
                 popupContainer.setBackgroundColor(Color.WHITE);
-                LinearLayout toolbar=new LinearLayout(MainActivity.this);
-                Button close=new Button(MainActivity.this); close.setText("关闭预览"); close.setOnClickListener(b->closePopup()); toolbar.addView(close);
-                Button print=new Button(MainActivity.this); print.setText("保存 PDF"); print.setOnClickListener(b->{ if(popup!=null) ((PrintManager)getSystemService(PRINT_SERVICE)).print("17同游旅行攻略",popup.createPrintDocumentAdapter("17同游旅行攻略"),null); }); toolbar.addView(print);
+                LinearLayout toolbar=new LinearLayout(WebFallbackActivity.this);
+                Button close=new Button(WebFallbackActivity.this); close.setText("关闭预览"); close.setOnClickListener(b->closePopup()); toolbar.addView(close);
+                Button print=new Button(WebFallbackActivity.this); print.setText("保存 PDF"); print.setOnClickListener(b->{ if(popup!=null) ((PrintManager)getSystemService(PRINT_SERVICE)).print("17同游旅行攻略",popup.createPrintDocumentAdapter("17同游旅行攻略"),null); }); toolbar.addView(print);
                 popupContainer.addView(toolbar); popupContainer.addView(popup,new LinearLayout.LayoutParams(-1,0,1));
                 stage.addView(popupContainer,new FrameLayout.LayoutParams(-1,-1));
                 ((WebView.WebViewTransport)result.obj).setWebView(popup); result.sendToTarget(); return true;
@@ -281,6 +339,15 @@ public class MainActivity extends Activity {
         try {
             JSONObject m=new JSONObject(raw);
             switch(m.optString("type")) {
+                case "session": {
+                    if (source != web || isFixture()) break;
+                    String token=m.isNull("token")?null:m.optString("token",null);
+                    if (token != null && token.length()>4096) break;
+                    ((TongyouApplication)getApplication()).getSession().fromWeb(webSessionToken,token);
+                    webSessionToken=token; installSessionScript();
+                    if (token==null) finish();
+                    break;
+                }
                 case "ready": pageReady(source); break;
                 case "share": {
                     String text=m.optString("text"); if(text.length()>16000) return;
@@ -403,6 +470,12 @@ public class MainActivity extends Activity {
         send.setClipData(ClipData.newRawUri("17同游导出",uri));
         try { startActivity(Intent.createChooser(send,"分享文件")); } catch(ActivityNotFoundException e) { toast("没有可用的分享应用"); }
     }
+    @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] results) {
+        super.onRequestPermissionsResult(request,permissions,results);
+        if (request != ASK_LOCATION || geoCallback == null) return;
+        boolean granted=results.length>0 && results[0]==android.content.pm.PackageManager.PERMISSION_GRANTED;
+        geoCallback.invoke(geoOrigin,granted,false); geoCallback=null; geoOrigin=null;
+    }
     @Override protected void onActivityResult(int request,int result,Intent data) {
         super.onActivityResult(request,result,data);
         if(request==PICK_FILES && fileCallback!=null) {
@@ -470,6 +543,7 @@ public class MainActivity extends Activity {
         if(web==null) { finish(); return; }
         web.evaluateJavascript("Boolean(window.tongyouAndroidBack && window.tongyouAndroidBack())",value-> {
             if("true".equals(value)) { lastBack=0; return; }
+            if (!isFixture()) { finish(); return; }
             // React panels own back navigation; URL/hash history is not a reliable page stack.
             long now=SystemClock.elapsedRealtime();
             if(now-lastBack<2000) moveTaskToBack(true);
@@ -519,6 +593,7 @@ public class MainActivity extends Activity {
     @Override protected void onResume() { super.onResume(); if(web!=null) { web.onResume(); web.evaluateJavascript("window.dispatchEvent(new Event('focus'))",null); } if(updates!=null)updates.onResume(); }
     @Override protected void onPause() { if(updates!=null)updates.onPause(); if(web!=null) web.onPause(); CookieManager.getInstance().flush(); super.onPause(); }
     @Override protected void onDestroy() {
+        if(sessionScript!=null && WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT))sessionScript.remove();
         if(updates!=null)updates.close();
         launchHandler.removeCallbacksAndMessages(null);removeLaunch();
         if(networkCallback!=null) connectivity.unregisterNetworkCallback(networkCallback);

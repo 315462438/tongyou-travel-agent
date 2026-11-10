@@ -1,6 +1,16 @@
 17同游 Android 好友测试版
 
-当前发布：0.9.0 (14)，新增简版逐日分享计划单、同行邀请卡与轻量交互动效；旅行 / 记账 / 我的三入口、独立问 AI；协同行程大地图 + 58% 可拖动行程面板、缩略图与紧凑时间摘要、景点图文详情，保留首页字号、开场动画、系统深浅外观及启动检查更新。
+2026-11-10 原生改造（本地开发版，未发布）：0.12.0 (29)
+- 已落实方案阶段 0 + 1：Kotlin / Compose 登录、旅行首页、AI 对话与 Markdown；OkHttp 协议层、Keystore AES-GCM 登录迁移、原生深浅主题。
+- 行程详情、账本、账户高级工具、通知、海报/预算/分享/扫码继续由 WebFallbackActivity 打开 APK 固定网页快照；原生首页保留旅行 / 记账 / 我的入口。
+- MainActivity.kt 是原生入口；data/ 为网络协议，session/ 为登录与旧存储迁移，chat/ 为聊天状态和阅读组件，ui/ 为首页、登录、主题。
+- scripts/vite-native.mjs 只在 Android 构建时给网页兜底注入路由，不修改 frontend/src、frontend/dist、backend/static。
+- 用户本轮明确不需要模拟器；设备测试代码保留，设备/覆盖升级/不同 Android 系统的视觉验收未作为本轮完成门槛，也未宣称通过。
+- 本地检查：./gradlew :app:testDebugUnitTest :app:lintRelease :app:assembleRelease :app:assembleDebugAndroidTest
+  附加脚本测试：在仓库根目录运行 python3 -m unittest discover -s android/tests -v
+- 旧网页壳的历史发布记录见下文。正式包的签名、包名、App Links 与更新服务沿用；本轮没有发布 APK 或修改线上 latest.json。
+
+历史发布记录：0.9.0 (14)，新增简版逐日分享计划单、同行邀请卡与轻量交互动效；旅行 / 记账 / 我的三入口、独立问 AI；协同行程大地图 + 58% 可拖动行程面板、缩略图与紧凑时间摘要、景点图文详情，保留首页字号、开场动画、系统深浅外观及启动检查更新。
 下载：https://17tongyou.com/downloads/android/0.9.0-14/17tongyou-android-0.9.0-14.apk
 直接覆盖安装，无需卸载旧版。0.1.0 (1) 历史产物与旧链接保留。
 

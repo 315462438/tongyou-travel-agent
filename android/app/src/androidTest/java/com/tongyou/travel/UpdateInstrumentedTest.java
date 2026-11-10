@@ -17,8 +17,8 @@ import static org.junit.Assert.*;
 
 @RunWith(AndroidJUnit4.class)
 public class UpdateInstrumentedTest {
-    @Rule public ActivityTestRule<MainActivity> rule=new ActivityTestRule<>(MainActivity.class,false,false);
-    private MainActivity activity;
+    @Rule public ActivityTestRule<WebFallbackActivity> rule=new ActivityTestRule<>(WebFallbackActivity.class,false,false);
+    private WebFallbackActivity activity;
     private UiDevice device;
     private SharedPreferences prefs;
     private final AtomicReference<String> downloaded=new AtomicReference<>();

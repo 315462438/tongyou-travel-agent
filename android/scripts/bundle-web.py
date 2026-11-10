@@ -10,7 +10,7 @@ root = android.parent
 output = android / 'app/build/generated/webAssets'
 web = output / 'web'
 subprocess.run(['npx', 'tsc', '-b'], cwd=root / 'frontend', check=True)
-subprocess.run(['npx', 'vite', 'build', '--target', 'chrome111', '--outDir', str(web), '--emptyOutDir'], cwd=root / 'frontend', check=True)
+subprocess.run(['npx', 'vite', 'build', '--config', str(android / 'scripts/vite-native.mjs'), '--target', 'chrome111', '--outDir', str(web), '--emptyOutDir'], cwd=root / 'frontend', check=True)
 # Instrumentation tests use a separate debug-only fixture; production contains only this snapshot.
 files = {str(p.relative_to(web)): hashlib.sha256(p.read_bytes()).hexdigest()
          for p in sorted(web.rglob('*')) if p.is_file()}
